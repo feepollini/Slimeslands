@@ -188,6 +188,322 @@ export class TabStore {
     ).join('');
   }
 
+  private resolveCardObj(name: string): any {
+    if (this.templates && this.templates.length > 0) {
+      const found = this.templates.find((t: any) => t && t.name === name);
+      if (found) return found;
+    }
+    return (CARD_TEMPLATES as any[]).find((t: any) => t && t.name === name) || null;
+  }
+
+  private getRarityColor(rarity: string): string {
+    const r = String(rarity || '').toLowerCase();
+    if (r.includes('leg') || r.includes('mit')) return '#ffd700';
+    if (r.includes('epi')) return '#a855f7';
+    if (r.includes('rar')) return '#38bdf8';
+    return '#94a3b8';
+  }
+
+  private getRarityLabel(rarity: string): string {
+    const r = String(rarity || '').toLowerCase();
+    if (r.includes('leg') || r.includes('mit')) return '👑 Lendária';
+    if (r.includes('epi')) return '⭐ Épica';
+    if (r.includes('rar')) return '🔷 Rara';
+    return '⚪ Comum';
+  }
+
+  private getAllAvailableCards(): any[] {
+    const cardMap = new Map<string, any>();
+    (CARD_TEMPLATES as any[]).forEach(c => {
+      if (c && c.name) cardMap.set(c.name, c);
+    });
+    (this.templates || []).forEach(c => {
+      if (c && c.name) cardMap.set(c.name, c);
+    });
+    return Array.from(cardMap.values());
+  }
+
+  private openCardGalleryModal(onSelect: (cardName: string) => void) {
+    const allCards = this.getAllAvailableCards();
+    let currentFilterRarity = 'all';
+    let searchQuery = '';
+
+    const modal = document.createElement('div');
+    modal.id = 'store-card-gallery-modal';
+    modal.style.cssText = `
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: rgba(4, 6, 12, 0.88);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+      font-family: 'Outfit', sans-serif;
+    `;
+
+    const renderCardsGrid = (filter: string, query: string) => {
+      const q = query.trim().toLowerCase();
+      const filtered = allCards.filter(c => {
+        const matchesQuery = !q || (c.name && c.name.toLowerCase().includes(q));
+        if (!matchesQuery) return false;
+        if (filter === 'all') return true;
+        const r = String(c.preferredRarity || c.rarity || 'common').toLowerCase();
+        if (filter === 'legendary') return r.includes('leg') || r.includes('mit');
+        if (filter === 'epic') return r.includes('epi');
+        if (filter === 'rare') return r.includes('rar');
+        if (filter === 'common') return !r.includes('leg') && !r.includes('mit') && !r.includes('epi') && !r.includes('rar');
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        return `
+          <div style="grid-column:1/-1; padding:40px 20px; text-align:center; color:#888; font-size:0.85rem;">
+            🔍 Nenhuma carta encontrada com esses filtros.
+          </div>
+        `;
+      }
+
+      return filtered.map(c => {
+        const rColor = this.getRarityColor(c.preferredRarity || c.rarity);
+        const rLabel = this.getRarityLabel(c.preferredRarity || c.rarity);
+        const img = c.image || c.frontImage || '';
+        const atk = c.baseAtk || c.atk || 0;
+        const pv = c.basePv || c.pv || 0;
+        const cost = c.cost || c.mana || 0;
+
+        return `
+          <div class="gallery-card-item" data-name="${this.esc(c.name)}" style="
+            background: linear-gradient(180deg, rgba(26,30,46,0.95), rgba(12,14,22,0.95));
+            border: 1.5px solid ${rColor};
+            border-radius: 12px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            cursor: pointer;
+            position: relative;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+            user-select: none;
+          ">
+            <!-- Thumbnail da Arte -->
+            <div style="
+              width: 100%;
+              aspect-ratio: 3/4;
+              border-radius: 8px;
+              ${img ? `background: url('${img}') center/cover;` : 'background: #181a24;'}
+              border: 1px solid rgba(255,255,255,0.15);
+              position: relative;
+              overflow: hidden;
+            ">
+              <!-- Custo Mana -->
+              <div style="
+                position: absolute;
+                top: 4px;
+                left: 4px;
+                background: rgba(0,0,0,0.75);
+                border: 1px solid #38bdf8;
+                border-radius: 4px;
+                padding: 1px 4px;
+                font-size: 0.58rem;
+                font-weight: 900;
+                color: #7ee7ff;
+              ">💎 ${cost}</div>
+
+              <!-- Badge Raridade -->
+              <div style="
+                position: absolute;
+                top: 4px;
+                right: 4px;
+                background: rgba(0,0,0,0.75);
+                border: 1px solid ${rColor};
+                border-radius: 4px;
+                padding: 1px 4px;
+                font-size: 0.52rem;
+                font-weight: 800;
+                color: ${rColor};
+              ">${rLabel.split(' ')[0]}</div>
+
+              <!-- Stats no rodapé da arte -->
+              <div style="
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: linear-gradient(180deg, transparent, rgba(0,0,0,0.85) 60%);
+                padding: 4px 6px 3px 6px;
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.62rem;
+                font-weight: 900;
+              ">
+                <span style="color:#ef4444;">⚔️ ${atk}</span>
+                <span style="color:#4ade80;">❤️ ${pv}</span>
+              </div>
+            </div>
+
+            <!-- Nome da Carta -->
+            <div style="
+              font-size: 0.72rem;
+              font-weight: 900;
+              color: #ffd700;
+              text-align: center;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            " title="${this.esc(c.name)}">${this.esc(c.name)}</div>
+          </div>
+        `;
+      }).join('');
+    };
+
+    modal.innerHTML = `
+      <div style="
+        width: min(860px, 95vw);
+        height: min(720px, 90vh);
+        background: linear-gradient(180deg, #131625 0%, #0c0e18 100%);
+        border: 2px solid rgba(255,215,0,0.4);
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.9), 0 0 35px rgba(255,215,0,0.2);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      ">
+        <!-- Topo da Modal -->
+        <div style="
+          padding: 14px 20px;
+          border-bottom: 1px solid rgba(255,255,255,0.1);
+          background: rgba(0,0,0,0.3);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-shrink: 0;
+        ">
+          <div>
+            <div style="font-size: 1.05rem; font-weight: 950; color: #ffd700; letter-spacing: 1px;">
+              🃏 GALERIA VISUAL DE CARTAS
+            </div>
+            <div style="font-size: 0.65rem; color: #888;">
+              Toque em qualquer carta para selecioná-la · Total: ${allCards.length} cartas
+            </div>
+          </div>
+          <button id="modal-close-btn" class="editor-btn-secondary" style="
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            color: #ef4444;
+            border-color: rgba(239,68,68,0.4);
+          ">✕</button>
+        </div>
+
+        <!-- Barra de Ferramentas / Filtros -->
+        <div style="
+          padding: 10px 20px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          background: rgba(0,0,0,0.2);
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          flex-shrink: 0;
+        ">
+          <input type="text" id="gallery-search-input" class="editor-input" placeholder="🔍 Buscar carta por nome..." style="
+            width: 240px;
+            font-size: 0.75rem;
+            padding: 6px 10px;
+          ">
+
+          <!-- Botões de Raridade -->
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="gallery-rarity-btn editor-btn-secondary active" data-rarity="all" style="font-size:0.65rem; padding:4px 10px; border-color:#ffd700; color:#ffd700;">Todas</button>
+            <button class="gallery-rarity-btn editor-btn-secondary" data-rarity="common" style="font-size:0.65rem; padding:4px 10px;">⚪ Comum</button>
+            <button class="gallery-rarity-btn editor-btn-secondary" data-rarity="rare" style="font-size:0.65rem; padding:4px 10px;">🔷 Rara</button>
+            <button class="gallery-rarity-btn editor-btn-secondary" data-rarity="epic" style="font-size:0.65rem; padding:4px 10px;">⭐ Épica</button>
+            <button class="gallery-rarity-btn editor-btn-secondary" data-rarity="legendary" style="font-size:0.65rem; padding:4px 10px;">👑 Lendária</button>
+          </div>
+        </div>
+
+        <!-- Grade de Cartas com Rolagem -->
+        <div id="gallery-cards-grid" style="
+          flex: 1;
+          overflow-y: auto;
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+          gap: 12px;
+          padding: 16px 20px;
+          align-content: start;
+        ">
+          ${renderCardsGrid(currentFilterRarity, searchQuery)}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const updateGrid = () => {
+      const grid = modal.querySelector('#gallery-cards-grid');
+      if (grid) {
+        grid.innerHTML = renderCardsGrid(currentFilterRarity, searchQuery);
+        bindCards();
+      }
+    };
+
+    const bindCards = () => {
+      modal.querySelectorAll('.gallery-card-item').forEach(item => {
+        item.addEventListener('mouseenter', () => {
+          (item as HTMLElement).style.transform = 'translateY(-4px) scale(1.03)';
+          (item as HTMLElement).style.boxShadow = '0 10px 24px rgba(0,0,0,0.8), 0 0 16px rgba(255,215,0,0.4)';
+        });
+        item.addEventListener('mouseleave', () => {
+          (item as HTMLElement).style.transform = 'none';
+          (item as HTMLElement).style.boxShadow = '0 4px 14px rgba(0,0,0,0.6)';
+        });
+        item.addEventListener('click', () => {
+          const cardName = (item as HTMLElement).dataset.name;
+          if (cardName) {
+            modal.remove();
+            onSelect(cardName);
+          }
+        });
+      });
+    };
+
+    bindCards();
+
+    modal.querySelector('#modal-close-btn')?.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+
+    const searchInput = modal.querySelector('#gallery-search-input') as HTMLInputElement;
+    searchInput?.addEventListener('input', () => {
+      searchQuery = searchInput.value;
+      updateGrid();
+    });
+
+    modal.querySelectorAll('.gallery-rarity-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        modal.querySelectorAll('.gallery-rarity-btn').forEach(b => {
+          (b as HTMLElement).style.borderColor = 'rgba(255,255,255,0.15)';
+          (b as HTMLElement).style.color = '#ccc';
+        });
+        (btn as HTMLElement).style.borderColor = '#ffd700';
+        (btn as HTMLElement).style.color = '#ffd700';
+        currentFilterRarity = (btn as HTMLElement).dataset.rarity || 'all';
+        updateGrid();
+      });
+    });
+  }
+
   // =========================================================================
   // RENDERIZAÇÃO PRINCIPAL: 3 COLUNAS LADO A LADO SIMULTANEAMENTE
   // =========================================================================
@@ -512,19 +828,31 @@ export class TabStore {
                 </div>
                 <textarea class="editor-input store-deck-desc" data-idx="${i}" rows="2" style="font-size:0.65rem;" placeholder="Descrição do deck...">${this.esc(deck.desc || '')}</textarea>
                 
-                <div style="font-size:0.62rem; color:#aaa; font-weight:700;">Cartas no deck: ${(deck.cards || []).length}</div>
-                <div style="display:flex; gap:4px; flex-wrap:wrap; max-height:80px; overflow-y:auto; padding:2px;">
-                  ${(deck.cards || []).map((c, ci) => `
-                    <span style="font-size:0.58rem; background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:6px; display:flex; align-items:center; gap:4px;">
-                      ${this.esc(c)}
-                      <b class="store-deck-rmcard" data-idx="${i}" data-ci="${ci}" style="cursor:pointer; color:#ef4444;">✕</b>
-                    </span>
-                  `).join('')}
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.65rem; color:#ffd700; font-weight:800;">Cartas no deck (${(deck.cards || []).length}):</span>
+                  <button type="button" class="editor-btn-primary store-deck-open-gallery" data-idx="${i}" style="font-size:0.62rem; font-weight:900; padding:4px 10px; background:#9333ea; border-color:#a855f7;">
+                    🃏 + ADICIONAR PELA GALERIA
+                  </button>
                 </div>
-                <select class="editor-input store-deck-addcard" data-idx="${i}" style="font-size:0.65rem;">
-                  <option value="">+ Adicionar Carta ao Deck...</option>
-                  ${this.cardOptions('')}
-                </select>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; max-height:120px; overflow-y:auto; padding:6px; background:rgba(0,0,0,0.3); border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+                  ${(deck.cards && deck.cards.length > 0) ? deck.cards.map((c, ci) => {
+                    const cardObj = this.resolveCardObj(c);
+                    const cImg = cardObj?.image || cardObj?.frontImage || '';
+                    const cRarity = cardObj?.preferredRarity || cardObj?.rarity || 'common';
+                    const cBorder = this.getRarityColor(cRarity);
+                    return `
+                      <span style="font-size:0.6rem; background:rgba(255,255,255,0.06); border:1px solid ${cBorder}; padding:3px 8px; border-radius:8px; display:flex; align-items:center; gap:6px; box-shadow:0 2px 5px rgba(0,0,0,0.4);">
+                        <span style="width:18px; height:24px; border-radius:3px; ${cImg ? `background:url('${cImg}') center/cover;` : 'background:#222;'} border:1px solid rgba(255,255,255,0.2); display:inline-block; flex-shrink:0;"></span>
+                        <span style="font-weight:700; color:#fff; max-width:100px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(c)}</span>
+                        <b class="store-deck-rmcard" data-idx="${i}" data-ci="${ci}" style="cursor:pointer; color:#ef4444; font-size:0.75rem; padding-left:2px;" title="Remover carta do deck">✕</b>
+                      </span>
+                    `;
+                  }).join('') : `
+                    <div style="font-size:0.62rem; color:#888; padding:8px; text-align:center; width:100%;">
+                      Nenhuma carta no deck ainda. Clique em "+ ADICIONAR PELA GALERIA" acima!
+                    </div>
+                  `}
+                </div>
               </div>
             `).join('')}
           </div>
@@ -574,15 +902,36 @@ export class TabStore {
             <input type="text" id="store-title-daily" class="editor-input" value="${this.esc((d.titles as any)?.daily || 'OFERTAS DO DIA')}" style="font-size:0.72rem; font-weight:700;">
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            ${d.dailyPool.map((o, i) => `
-              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 10px; display:flex; gap:8px; align-items:center;">
-                <select class="editor-input store-daily-card" data-idx="${i}" style="flex:2; font-size:0.68rem;">${this.cardOptions(o.card)}</select>
-                <input type="number" class="editor-input store-daily-price" data-idx="${i}" value="${o.price}" min="0" style="flex:1; font-size:0.68rem;" title="Moedas">
-                <span style="font-size:0.75rem;">🪙</span>
-                <button class="editor-btn-secondary store-daily-del" data-idx="${i}" style="font-size:0.65rem; padding:4px 8px; color:#ef4444;">✕</button>
-              </div>
-            `).join('')}
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${d.dailyPool.map((o, i) => {
+              const cardObj = this.resolveCardObj(o.card);
+              const cImg = cardObj?.image || cardObj?.frontImage || '';
+              const cRarity = cardObj?.preferredRarity || cardObj?.rarity || 'common';
+              const cBorder = this.getRarityColor(cRarity);
+              const cLabel = this.getRarityLabel(cRarity);
+              const atk = cardObj?.baseAtk || cardObj?.atk || 0;
+              const pv = cardObj?.basePv || cardObj?.pv || 0;
+              return `
+                <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; gap:10px; align-items:center;">
+                  <!-- Seletor Visual de Carta -->
+                  <div class="store-pick-card btn-pick-daily-card" data-idx="${i}" style="flex:2; display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.5); border:1.5px solid ${cBorder}; border-radius:8px; padding:6px 10px; cursor:pointer; transition:all 0.15s ease;" title="Toque para escolher carta na galeria visual">
+                    <div style="width:32px; height:44px; border-radius:5px; ${cImg ? `background:url('${cImg}') center/cover;` : 'background:#222;'} border:1px solid ${cBorder}; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.6);"></div>
+                    <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                      <span style="font-size:0.75rem; font-weight:900; color:#ffd700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(o.card || 'Selecionar carta')}</span>
+                      <span style="font-size:0.58rem; color:#888;">${cLabel} · ⚔️ ${atk} ❤️ ${pv}</span>
+                    </div>
+                    <span style="font-size:0.6rem; color:#ffd700; background:rgba(255,215,0,0.15); border:1px solid rgba(255,215,0,0.4); padding:3px 6px; border-radius:6px; font-weight:800; white-space:nowrap;">🔍 Alterar</span>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                    <input type="number" class="editor-input store-daily-price" data-idx="${i}" value="${o.price}" min="0" style="width:70px; font-size:0.68rem;" title="Moedas">
+                    <span style="font-size:0.85rem;">🪙</span>
+                  </div>
+
+                  <button class="editor-btn-secondary store-daily-del" data-idx="${i}" style="font-size:0.68rem; padding:6px 10px; color:#ef4444; flex-shrink:0;" title="Excluir">✕</button>
+                </div>
+              `;
+            }).join('')}
           </div>
         `;
 
@@ -604,15 +953,36 @@ export class TabStore {
             <input type="text" id="store-title-rare" class="editor-input" value="${this.esc((d.titles as any)?.rare || 'CARTAS RARAS')}" style="font-size:0.72rem; font-weight:700;">
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            ${d.rare.map((o, i) => `
-              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 10px; display:flex; gap:8px; align-items:center;">
-                <select class="editor-input store-rare-card" data-idx="${i}" style="flex:2; font-size:0.68rem;">${this.cardOptions(o.card)}</select>
-                <input type="number" class="editor-input store-rare-price" data-idx="${i}" value="${o.price}" min="0" style="flex:1; font-size:0.68rem;" title="Diamantes">
-                <span style="font-size:0.75rem;">💎</span>
-                <button class="editor-btn-secondary store-rare-del" data-idx="${i}" style="font-size:0.65rem; padding:4px 8px; color:#ef4444;">✕</button>
-              </div>
-            `).join('')}
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${d.rare.map((o, i) => {
+              const cardObj = this.resolveCardObj(o.card);
+              const cImg = cardObj?.image || cardObj?.frontImage || '';
+              const cRarity = cardObj?.preferredRarity || cardObj?.rarity || 'rare';
+              const cBorder = this.getRarityColor(cRarity);
+              const cLabel = this.getRarityLabel(cRarity);
+              const atk = cardObj?.baseAtk || cardObj?.atk || 0;
+              const pv = cardObj?.basePv || cardObj?.pv || 0;
+              return `
+                <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:8px 12px; display:flex; gap:10px; align-items:center;">
+                  <!-- Seletor Visual de Carta -->
+                  <div class="store-pick-card btn-pick-rare-card" data-idx="${i}" style="flex:2; display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.5); border:1.5px solid ${cBorder}; border-radius:8px; padding:6px 10px; cursor:pointer; transition:all 0.15s ease;" title="Toque para escolher carta na galeria visual">
+                    <div style="width:32px; height:44px; border-radius:5px; ${cImg ? `background:url('${cImg}') center/cover;` : 'background:#222;'} border:1px solid ${cBorder}; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.6);"></div>
+                    <div style="display:flex; flex-direction:column; min-width:0; flex:1;">
+                      <span style="font-size:0.75rem; font-weight:900; color:#38bdf8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(o.card || 'Selecionar carta')}</span>
+                      <span style="font-size:0.58rem; color:#888;">${cLabel} · ⚔️ ${atk} ❤️ ${pv}</span>
+                    </div>
+                    <span style="font-size:0.6rem; color:#38bdf8; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); padding:3px 6px; border-radius:6px; font-weight:800; white-space:nowrap;">🔍 Alterar</span>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:4px; flex-shrink:0;">
+                    <input type="number" class="editor-input store-rare-price" data-idx="${i}" value="${o.price}" min="0" style="width:70px; font-size:0.68rem;" title="Diamantes">
+                    <span style="font-size:0.85rem;">💎</span>
+                  </div>
+
+                  <button class="editor-btn-secondary store-rare-del" data-idx="${i}" style="font-size:0.68rem; padding:6px 10px; color:#ef4444; flex-shrink:0;" title="Excluir">✕</button>
+                </div>
+              `;
+            }).join('')}
           </div>
         `;
 
@@ -754,7 +1124,7 @@ export class TabStore {
 
     previewWrap.innerHTML = '';
     try {
-      const liveStore = new StoreScreen(this.data);
+      const liveStore = new StoreScreen({ ...this.data, templates: this.templates });
       liveStore.render(previewWrap, { headerSpace: false });
 
       // Permite clicar em qualquer seção da vitrine do celular para selecioná-la no editor
@@ -1061,15 +1431,19 @@ export class TabStore {
 
     // Ofertas Diárias
     container.querySelector('#store-daily-add')?.addEventListener('click', () => {
-      const first = this.templates[0]?.name || '';
-      d.dailyPool.push({ card: first, price: 100 });
-      this.reRender();
+      this.openCardGalleryModal((cardName) => {
+        d.dailyPool.push({ card: cardName, price: 100 });
+        this.reRender();
+      });
     });
 
-    container.querySelectorAll('.store-daily-card').forEach(el => {
-      el.addEventListener('change', () => {
-        d.dailyPool[parseInt((el as HTMLElement).dataset.idx!)].card = (el as HTMLSelectElement).value;
-        this.updateLivePreview(container);
+    container.querySelectorAll('.btn-pick-daily-card').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        this.openCardGalleryModal((cardName) => {
+          d.dailyPool[idx].card = cardName;
+          this.reRender();
+        });
       });
     });
 
@@ -1089,15 +1463,19 @@ export class TabStore {
 
     // Cartas Raras
     container.querySelector('#store-rare-add')?.addEventListener('click', () => {
-      const first = this.templates[0]?.name || '';
-      d.rare.push({ card: first, price: 50 });
-      this.reRender();
+      this.openCardGalleryModal((cardName) => {
+        d.rare.push({ card: cardName, price: 50 });
+        this.reRender();
+      });
     });
 
-    container.querySelectorAll('.store-rare-card').forEach(el => {
-      el.addEventListener('change', () => {
-        d.rare[parseInt((el as HTMLElement).dataset.idx!)].card = (el as HTMLSelectElement).value;
-        this.updateLivePreview(container);
+    container.querySelectorAll('.btn-pick-rare-card').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        this.openCardGalleryModal((cardName) => {
+          d.rare[idx].card = cardName;
+          this.reRender();
+        });
       });
     });
 
@@ -1161,15 +1539,18 @@ export class TabStore {
       });
     });
 
-    container.querySelectorAll('.store-deck-addcard').forEach(el => {
-      el.addEventListener('change', () => {
-        const i = parseInt((el as HTMLElement).dataset.idx!);
-        const v = (el as HTMLSelectElement).value;
-        if (v) {
-          if (!d.decks[i].cards) d.decks[i].cards = [];
-          if (!d.decks[i].cards.includes(v)) d.decks[i].cards.push(v);
-          this.reRender();
-        }
+    container.querySelectorAll('.store-deck-open-gallery').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt((btn as HTMLElement).dataset.idx!);
+        this.openCardGalleryModal((cardName) => {
+          if (!d.decks[idx].cards) d.decks[idx].cards = [];
+          if (!d.decks[idx].cards.includes(cardName)) {
+            d.decks[idx].cards.push(cardName);
+            this.reRender();
+          } else {
+            this.showToast('Esta carta já está neste deck!');
+          }
+        });
       });
     });
 

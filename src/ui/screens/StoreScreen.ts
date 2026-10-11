@@ -212,13 +212,13 @@ export class StoreScreen {
       const cards = deck.cards || [];
       return `
         <div class="store-sec" style="display:flex; flex-direction:column; gap:8px; background:linear-gradient(180deg, rgba(58,42,21,0.92), rgba(20,13,6,0.92)); border:3px solid #0e0903; border-radius:14px; padding:12px 14px; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
-          <!-- Cabeçalho do Deck -->
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <!-- Cabeçalho do Deck (clicável para abrir visor) -->
+          <div class="store-view-deck" data-deck="${this.esc(deck.id)}" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="Toque para ver cartas do deck em tela cheia">
             <div style="font-size:0.8rem; font-weight:950; color:#ffd76a; letter-spacing:1px; text-shadow:0 2px 0 #000;">
               ${this.esc(deck.name).toUpperCase()}
             </div>
             <div style="font-size:0.6rem; color:#7ee7ff; font-weight:900;">
-              ${cards.length} ${t('store2.cards')}
+              ${cards.length} ${t('store2.cards')} 🔍
             </div>
           </div>
 
@@ -230,18 +230,22 @@ export class StoreScreen {
               <span style="font-size:0.56rem; font-weight:900; color:#ffd700; letter-spacing:0.5px;">CARTAS DO DECK (DESLIZE ‹ ›):</span>
               <span class="store-view-deck" data-deck="${this.esc(deck.id)}" style="font-size:0.56rem; color:#7ee7ff; cursor:pointer; font-weight:900;">🔍 Ver Todas em Tela Cheia</span>
             </div>
-            <div class="store-deck-cards-strip" style="display:flex; gap:8px; overflow-x:auto; padding:6px 2px; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x;">
-              ${cards.map((n: string, ci: number) => {
-                const c = this.resolveCard(n);
-                const art = c && c.image ? `background-image:url('${c.image}');` : 'background:rgba(255,255,255,0.06);';
-                return `
-                  <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:88px; border-radius:6px; border:2px solid #d4af37; ${art} background-size:cover; background-position:center; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
-                    <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.85); font-size:0.48rem; font-weight:900; color:#ffe9a8; text-align:center; padding:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                      ${this.esc(n)}
+            <div style="position:relative; width:100%; display:flex; align-items:center;">
+              <button class="store-strip-scroll-left" data-deck="${this.esc(deck.id)}" style="position:absolute; left:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">‹</button>
+              <div class="store-deck-cards-strip" id="deck-strip-${this.esc(deck.id)}" style="flex:1; display:flex; gap:8px; overflow-x:auto; padding:6px 18px; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x; scroll-behavior:smooth;">
+                ${cards.map((n: string, ci: number) => {
+                  const c = this.resolveCard(n);
+                  const art = c && c.image ? `background-image:url('${c.image}');` : 'background:rgba(255,255,255,0.06);';
+                  return `
+                    <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:88px; border-radius:6px; border:2px solid #d4af37; ${art} background-size:cover; background-position:center; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
+                      <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.85); font-size:0.48rem; font-weight:900; color:#ffe9a8; text-align:center; padding:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        ${this.esc(n)}
+                      </div>
                     </div>
-                  </div>
-                `;
-              }).join('')}
+                  `;
+                }).join('')}
+              </div>
+              <button class="store-strip-scroll-right" data-deck="${this.esc(deck.id)}" style="position:absolute; right:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">›</button>
             </div>
           </div>
 
@@ -1438,6 +1442,24 @@ export class StoreScreen {
         const deckId = h.dataset.deckId || h.dataset.deck || '';
         const idx = parseInt(h.dataset.cardIdx || '0');
         this.openDeckViewerFor(container, deckId, idx);
+      });
+    });
+
+    container.querySelectorAll('.store-strip-scroll-left').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const deckId = (btn as HTMLElement).dataset.deck;
+        const strip = container.querySelector(`#deck-strip-${deckId}`);
+        if (strip) strip.scrollBy({ left: -140, behavior: 'smooth' });
+      });
+    });
+
+    container.querySelectorAll('.store-strip-scroll-right').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const deckId = (btn as HTMLElement).dataset.deck;
+        const strip = container.querySelector(`#deck-strip-${deckId}`);
+        if (strip) strip.scrollBy({ left: 140, behavior: 'smooth' });
       });
     });
   }

@@ -64,7 +64,7 @@ class StartApp {
         <video src="/videos/download_bg.mp4" autoplay muted loop playsinline preload="auto" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;"></video>
         <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.78) 100%);"></div>
         <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; padding:0 32px 12vh; box-sizing:border-box; gap:14px;">
-          <div style="font-family:'Cinzel',serif; font-weight:900; font-size:1rem; letter-spacing:4px; text-indent:4px; color:#ffd76a; text-shadow:0 2px 0 #000;">BAIXANDO</div>
+          <div style="font-family:'Cinzel',serif; font-weight:900; font-size:1rem; letter-spacing:4px; text-indent:4px; color:#ffd76a; text-shadow:0 2px 0 #000;">DOWNLOADING</div>
           <div style="width:100%; max-width:380px; height:14px; border-radius:8px; background:rgba(0,0,0,0.65); border:2px solid #0e0903; overflow:hidden; box-shadow:0 2px 0 rgba(0,0,0,0.5);">
             <div id="dl-bar" style="width:0%; height:100%; background:linear-gradient(180deg,#ffe27a,#c78d12); transition:width 0.2s ease-out;"></div>
           </div>

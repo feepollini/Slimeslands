@@ -226,14 +226,49 @@ const DICT: Record<string, Record<Lang, string>> = {
 'store2.empty': { pt: 'VAZIO — CONFIGURE NA FORJA', en: 'EMPTY — SET IT IN THE FORGE', es: 'VACÍO — CONFIGÚRALO EN LA FORJA' }
 };
 
-const DEFAULT_LANG: Lang = 'pt';
+const LANG_KEY = 'low_lang';
 
-export function getLang(): Lang {
+function storedLang(): Lang | null {
   try {
-    const v = localStorage.getItem('low_lang');
+    const v = localStorage.getItem(LANG_KEY);
     if (v === 'en' || v === 'es' || v === 'pt') return v;
   } catch {}
-  return DEFAULT_LANG;
+  return null;
+}
+
+// Detecta pela região: Brasil/Portugal e demais países lusófonos -> pt;
+// Espanha e América Latina hispânica -> es; resto do mundo -> en.
+// Só vale quando o jogador ainda não escolheu manualmente (Ajustes).
+function detectLang(): Lang {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const city = tz.split('/')[1] || '';
+    if (/Sao_Paulo|Bahia|Belem|Boa_Vista|Campo_Grande|Cuiaba|Eirunepe|Fernando_de_Noronha|Fortaleza|Maceio|Manaus|Noronha|Porto_Velho|Recife|Rio_Branco|Santarem|Araguaina|Lisbon|Madeira|Azores|Luanda|Maputo|Bissau|Sao_Tome|Dili|Cape_Verde|Praia/i.test(city)) return 'pt';
+    if (/Madrid|Canary|Mexico|Cancun|Merida|Monterrey|Chihuahua|Hermosillo|Tijuana|Matamoros|Ojinaga|Bogota|Lima|Santiago|Buenos_Aires|Argentina|Caracas|La_Paz|Montevideo|Asuncion|San_Juan|Santo_Domingo|Havana|Panama|Costa_Rica|El_Salvador|Guatemala|Managua|Tegucigalpa|Guayaquil/i.test(city)) return 'es';
+  } catch {}
+  try {
+    const nav = (navigator.language || '').toLowerCase();
+    if (nav.startsWith('pt')) return 'pt';
+    if (nav.startsWith('es')) return 'es';
+  } catch {}
+  return 'en';
+}
+
+let detected: Lang | null = null;
+
+function resolvedLang(): Lang {
+  const s = storedLang();
+  if (s) return s;
+  if (!detected) {
+    detected = detectLang();
+    try { localStorage.setItem(LANG_KEY, detected); } catch {}
+    try { document.documentElement.lang = detected; } catch {}
+  }
+  return detected;
+}
+
+export function getLang(): Lang {
+  return resolvedLang();
 }
 
 export function setLang(l: Lang) {

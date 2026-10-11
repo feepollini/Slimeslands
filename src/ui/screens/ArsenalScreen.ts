@@ -193,6 +193,7 @@ export class ArsenalScreen {
         `;
 
         this.bind(container);
+        this.observeLazyBg(container);
     }
 
     private renderActiveContent(): string {
@@ -314,7 +315,7 @@ export class ArsenalScreen {
         return `
             <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''}" data-name="${t.name}">
                 <div class="ars-thumb-art">
-                    <div style="background-image: url('${t.image}'); width:100%; height:100%; background-size:cover; background-position:center; position:absolute; inset:0;"></div>
+                    <div data-lazybg="${t.image}" style="width:100%; height:100%; background-color:#141414; background-size:cover; background-position:center; position:absolute; inset:0;"></div>
                     <div class="ars-fav-indicator ${isFav ? 'active' : ''}">⭐</div>
                     
                     <div class="ars-thumb-capsules">
@@ -692,6 +693,7 @@ export class ArsenalScreen {
         if (!panel) return;
         gsap.to(panel.children, { y: 20, opacity: 0, duration: 0.2, stagger: 0.02, onComplete: () => {
             panel.innerHTML = this.renderActiveContent();
+            this.observeLazyBg(panel);
             gsap.fromTo(panel.children, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, stagger: 0.04, ease: 'power2.out' });
         }});
     }
@@ -701,6 +703,32 @@ export class ArsenalScreen {
         else this.collapsedSections.add(key);
         try { localStorage.setItem('arsenal_collapsed_sections', JSON.stringify([...this.collapsedSections])); } catch {}
         this.render(container);
+    }
+
+    // Lazy-load das artes das cartas: só baixa a imagem quando o thumb entra
+    // (ou está perto de entrar) na área visível. Sem isso o navegador dispara
+    // dezenas de downloads de ~700KB de uma vez ao abrir o deck.
+    private observeLazyBg(scope: HTMLElement) {
+        const els = scope.querySelectorAll('[data-lazybg]');
+        if (!els.length) return;
+        const paint = (node: HTMLElement) => {
+            const url = node.getAttribute('data-lazybg');
+            if (url) node.style.backgroundImage = `url('${url}')`;
+            node.removeAttribute('data-lazybg');
+        };
+        if (!('IntersectionObserver' in window)) {
+            els.forEach((el) => paint(el as HTMLElement));
+            return;
+        }
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach((en) => {
+                if (!en.isIntersecting) return;
+                const node = en.target as HTMLElement;
+                paint(node);
+                io.unobserve(node);
+            });
+        }, { root: scope.querySelector('.ars-scroller') || null, rootMargin: '400px' });
+        els.forEach((el) => io.observe(el));
     }
 
     private isArtifactInDeck(id: string) { return this.preDeckArtifacts.some(a => a && a.id === id); }

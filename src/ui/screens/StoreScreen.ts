@@ -350,7 +350,7 @@ export class StoreScreen {
       <div class="store-booster-pouch" style="aspect-ratio:1/1.78; width:${w}; border-radius:2px; position:relative; overflow:hidden; background:#0c0d12; border:2px solid ${borderColor}; box-shadow:${isMain ? `0 14px 40px rgba(0,0,0,0.9), 0 0 24px ${borderGlow}` : '0 6px 18px rgba(0,0,0,0.7)'}; display:flex; flex-direction:column; user-select:none; flex-shrink:0;">
         ${frontImg ? `
           <div style="width:100%; height:100%; position:relative; overflow:hidden; border-radius:0px; background:#000;">
-            <img src="${frontImg}" alt="${this.esc(pack.name)}" style="width:100%; height:100%; object-fit:cover; display:block; border-radius:0px;" />
+            <img src="${frontImg}" alt="${this.esc(pack.name)}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover; display:block; border-radius:0px;" />
             <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.02) 40%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.3) 100%);"></div>
           </div>
         ` : `
@@ -383,7 +383,7 @@ export class StoreScreen {
           return `
             <button class="store-booster-circle-btn" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
               ${p.customFront ? `
-                <img src="${p.customFront}" style="width:100%; height:100%; object-fit:cover;" />
+                <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
               ` : `
                 <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
               `}
@@ -574,7 +574,7 @@ export class StoreScreen {
             return `
               <button class="store-carousel-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
                 ${p.customFront ? `
-                  <img src="${p.customFront}" style="width:100%; height:100%; object-fit:cover;" />
+                  <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
                 ` : `
                   <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
                 `}
@@ -794,7 +794,7 @@ export class StoreScreen {
               return `
                 <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:34px; height:34px; border-radius:50%; border:${isActive ? '2.5px solid #38bdf8' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.12)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 12px rgba(56,189,248,0.7)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
                   ${p.customFront ? `
-                    <img src="${p.customFront}" style="width:100%; height:100%; object-fit:cover;" />
+                    <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
                   ` : `
                     <span style="font-size:1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
                   `}

@@ -59,8 +59,11 @@ export function closeCardViewer() {
   session = null;
 }
 
+let lastNavDir = 1;
+
 export function cardViewerNav(dir: number) {
   if (!session || session.list.length < 2) return;
+  lastNavDir = dir;
   session.idx = (session.idx + dir + session.list.length) % session.list.length;
   session.paint();
 }
@@ -151,8 +154,8 @@ export function openCardViewer(opts: OpenViewerOpts) {
 
     try {
       gsap.fromTo(overlay.querySelector('#cv-card'),
-        { scale: 0.92, opacity: 0, y: 16 },
-        { scale: 1, opacity: 1, y: 0, duration: 0.35, ease: 'power2.out' });
+        { x: lastNavDir * 50, scale: 0.94, opacity: 0 },
+        { x: 0, scale: 1, opacity: 1, duration: 0.28, ease: 'power2.out' });
     } catch {}
   };
 

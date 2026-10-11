@@ -1,5 +1,6 @@
 import { StoreScreen } from '../../StoreScreen';
 import { ProgressionManager } from '../../../../core/ProgressionManager';
+import { CARD_TEMPLATES } from '../../../../core/constants';
 
 export interface StoreDeck {
   id: string;

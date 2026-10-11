@@ -6,9 +6,17 @@ class StartApp {
   private container: HTMLElement;
   private entered = false;
   private splashDone = false;
+  private dlSkip = false;
 
   constructor() {
     this.container = document.getElementById('start-root')!;
+    void this.boot();
+  }
+
+  // 1o acesso: tela de download (video + barra real) que salva tudo no cache.
+  // Depois dela, segue o fluxo normal (intro -> hub). Nunca trava o jogador.
+  private async boot() {
+    await this.ensurePreloaded();
     this.render();
     this.bind();
     gsap.fromTo(this.container, { opacity: 0 }, { opacity: 1, duration: 0.5 });
@@ -16,6 +24,63 @@ class StartApp {
       { opacity: 0, y: 14 },
       { opacity: 1, y: 0, duration: 0.9, stagger: 0.35, ease: 'power2.out', delay: 0.3 });
     setTimeout(() => this.dismissSplash(), 3400);
+  }
+
+  private async ensurePreloaded(): Promise<void> {
+    let manifest: { version: number; files: string[] } | null = null;
+    try {
+      const res = await fetch('preload-manifest.json', { cache: 'no-cache' });
+      if (res.ok) manifest = await res.json();
+    } catch { /* sem rede/manifesto: segue p/ intro */ }
+    if (!manifest || !manifest.files?.length) return;
+    try {
+      if (localStorage.getItem('wosw_preload_v') === String(manifest.version)) return;
+    } catch { return; }
+    this.renderDownload();
+    const total = manifest.files.length;
+    let done = 0;
+    let cache: Cache | null = null;
+    try { cache = await caches.open('wosw-v' + manifest.version); } catch { cache = null; }
+    for (const url of manifest.files) {
+      if (this.dlSkip) break;
+      try {
+        if (cache) await cache.add(url);
+        else {
+          const r = await fetch(url).catch(() => null);
+          if (r) await r.arrayBuffer().catch(() => null);
+        }
+      } catch { /* item individual nao trava o resto */ }
+      done++;
+      this.paintDownload(done / total);
+    }
+    if (!this.dlSkip) {
+      try { localStorage.setItem('wosw_preload_v', String(manifest.version)); } catch {}
+    }
+  }
+
+  private renderDownload() {
+    this.container.innerHTML = `
+      <div id="dl-screen" style="position:relative; width:100%; height:100%; overflow:hidden; background:#000; cursor:pointer;">
+        <video src="/videos/download_bg.mp4" autoplay muted loop playsinline preload="auto" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;"></video>
+        <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.78) 100%);"></div>
+        <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; padding:0 32px 12vh; box-sizing:border-box; gap:14px;">
+          <div style="font-family:'Cinzel',serif; font-weight:900; font-size:1rem; letter-spacing:4px; text-indent:4px; color:#ffd76a; text-shadow:0 2px 0 #000;">BAIXANDO</div>
+          <div style="width:100%; max-width:380px; height:14px; border-radius:8px; background:rgba(0,0,0,0.65); border:2px solid #0e0903; overflow:hidden; box-shadow:0 2px 0 rgba(0,0,0,0.5);">
+            <div id="dl-bar" style="width:0%; height:100%; background:linear-gradient(180deg,#ffe27a,#c78d12); transition:width 0.2s ease-out;"></div>
+          </div>
+          <div id="dl-pct" style="font-size:0.7rem; font-weight:900; letter-spacing:2px; color:#fff;">0%</div>
+          <div style="font-size:0.6rem; letter-spacing:2px; color:rgba(255,255,255,0.4);">TOQUE PARA CONTINUAR</div>
+        </div>
+      </div>`;
+    document.getElementById('dl-screen')?.addEventListener('click', () => { this.dlSkip = true; });
+  }
+
+  private paintDownload(frac: number) {
+    const pct = Math.min(99, Math.round(frac * 100));
+    const bar = document.getElementById('dl-bar');
+    const label = document.getElementById('dl-pct');
+    if (bar) bar.style.width = `${pct}%`;
+    if (label) label.textContent = `${pct}%`;
   }
 
   private render() {

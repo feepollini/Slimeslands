@@ -276,7 +276,7 @@
       "price": 0,
       "currency": "gold",
       "cardsCount": 3,
-      "mode": "random",
+      "mode": "special",
       "rates": {
         "common": 80,
         "rare": 18,
@@ -291,56 +291,37 @@
       },
       "published": true,
       "customFront": "/cards/Batalha_dos_slimes_fant_sticos.png",
-      "fixedCards": []
-    },
-    {
-      "id": "booster_winter",
-      "name": "Booster Lendas do Inverno",
-      "desc": "Pacote com 5 cartas místicas e alta chance de raras e lendárias.",
-      "price": 0,
-      "currency": "gold",
-      "cardsCount": 5,
-      "mode": "random",
-      "rates": {
-        "common": 60,
-        "rare": 30,
-        "legendary": 10
-      },
-      "theme": "winter",
-      "customBack": "gold",
-      "cardGroups": {
-        "common": [],
-        "rare": [],
-        "legendary": []
-      },
-      "published": true
-    },
-    {
-      "id": "booster_special_elemental",
-      "name": "Pack Especial Elemental",
-      "desc": "Edição especial com cartas elementais selecionadas de veneno, gelo e lava.",
-      "price": 0,
-      "currency": "gems",
-      "cardsCount": 3,
-      "mode": "special",
       "fixedCards": [
-        "03 toxico",
+        "Trio de Ladr es Slimes no Be",
+        "10 lava",
+        "04 obsidiana",
         "05 gelo",
-        "10 lava"
-      ],
-      "theme": "mewtwo",
-      "customBack": "black",
-      "rates": {
-        "common": 70,
-        "rare": 25,
-        "legendary": 5
-      },
-      "cardGroups": {
-        "common": [],
-        "rare": [],
-        "legendary": []
-      },
-      "published": true
+        "06 areia",
+        "11 vento",
+        "Slime vulc nico martela a bi",
+        "12 relampago",
+        "07 mercurio",
+        "Slime colosso arranca coluna",
+        "16 abissal",
+        "Slime alquimista desviando d",
+        "Slime ninja roxo desliza sob",
+        "Slime obsidiana escala torre",
+        "Slime de Fogo em Investida E",
+        "Slime ametista lan a fragmen",
+        "19 musgo",
+        "20 eclipse",
+        "13 lunar",
+        "Slime violeta lan a espiral ",
+        "Slime lavanda tocando instru",
+        "Slime coral invoca drag o de",
+        "Slime de cobre na engrenagem",
+        "Guardi o mbar das ampulhetas",
+        "Slime cido saltando no esgot",
+        "Slime oce nico surfando na c",
+        "Slime pirata ndigo sob a tem",
+        "Slime rosa invertido entre c",
+        "17 fumaca"
+      ]
     }
   ],
   "sectionOrder": [
@@ -365,6 +346,6 @@
     "gems": true,
     "artifacts": true
   },
-  "deckLayoutMode": "carousel",
+  "deckLayoutMode": "standalone",
   "boosterDisplayMode": "carousel"
 }

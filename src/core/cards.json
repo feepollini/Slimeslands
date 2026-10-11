@@ -1,0 +1,1257 @@
+[
+  {
+    "name": "Nova Carta",
+    "baseAtk": 830,
+    "basePv": 940,
+    "image": "/cards/09.jpg",
+    "shopAvailability": {
+      "type": "always"
+    },
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "DESARMAR",
+        "enchantment": {
+          "id": "disarm",
+          "value": 50,
+          "turns": 2
+        },
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "MEDITAÇÃO",
+        "enchantment": {
+          "id": "meditate",
+          "value": 4
+        },
+        "cost": 0,
+        "costType": "mana"
+      }
+    ],
+    "classId": "elementar",
+    "abilityId": "none",
+    "parry": 0,
+    "cardBack": "/cards/fundo_de_carta.png"
+  },
+  {
+    "id": "card_1791678766476_0",
+    "name": "03 toxico",
+    "image": "/cards/03_toxico.png",
+    "baseAtk": 510,
+    "basePv": 770,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "vampire",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 510,
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 710,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766476_1",
+    "name": "Trio de Ladr es Slimes no Be",
+    "image": "/cards/Trio_de_Ladr_es_Slimes_no_Beco.png",
+    "baseAtk": 590,
+    "basePv": 840,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "deathblow",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 590,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "ESCUDO DE FÉ",
+        "enchantment": {
+          "id": "shield"
+        },
+        "cost": 4,
+        "costType": "stamina"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766476_2",
+    "name": "10 lava",
+    "image": "/cards/10_lava.png",
+    "baseAtk": 650,
+    "basePv": 530,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "tank",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "REANIMAÇÃO",
+        "enchantment": {
+          "id": "revive",
+          "value": 20
+        },
+        "cost": 7,
+        "costType": "mana"
+      },
+      {
+        "type": "enchantment",
+        "name": "FÚRIA (BERSERK)",
+        "enchantment": {
+          "id": "berserk"
+        },
+        "cost": 7,
+        "costType": "stamina"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766476_3",
+    "name": "04 obsidiana",
+    "image": "/cards/04_obsidiana.png",
+    "baseAtk": 710,
+    "basePv": 550,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "reflect",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 710,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 910,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766476_4",
+    "name": "05 gelo",
+    "image": "/cards/05_gelo.png",
+    "baseAtk": 740,
+    "basePv": 1000,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "elementar",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "DRENAGEM",
+        "enchantment": {
+          "id": "drain",
+          "value": 300
+        },
+        "cost": 5,
+        "costType": "mana"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 940,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766476_5",
+    "name": "06 areia",
+    "image": "/cards/06_areia.png",
+    "baseAtk": 620,
+    "basePv": 750,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "reflect",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 620,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "RECICLAR",
+        "enchantment": {
+          "id": "recycle"
+        },
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766476_6",
+    "name": "11 vento",
+    "image": "/cards/11_vento.png",
+    "baseAtk": 740,
+    "basePv": 530,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "suporte",
+    "abilityId": "absorb_50",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 740,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 940,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766476_7",
+    "name": "12 relampago",
+    "image": "/cards/12_relampago.png",
+    "baseAtk": 960,
+    "basePv": 1000,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "tank",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 960,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "FÚRIA (BERSERK)",
+        "enchantment": {
+          "id": "berserk"
+        },
+        "cost": 7,
+        "costType": "stamina"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_8",
+    "name": "07 mercurio",
+    "image": "/cards/07_mercurio.png",
+    "baseAtk": 900,
+    "basePv": 690,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "elementar",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 900,
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1100,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766477_9",
+    "name": "08 fungo",
+    "image": "/cards/08_fungo.png",
+    "baseAtk": 620,
+    "basePv": 830,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "rivalry",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 620,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 820,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_10",
+    "name": "13 lunar",
+    "image": "/cards/13_lunar.png",
+    "baseAtk": 840,
+    "basePv": 630,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 840,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1040,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_11",
+    "name": "20 eclipse",
+    "image": "/cards/20_eclipse.png",
+    "baseAtk": 750,
+    "basePv": 690,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "assassino",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 750,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 950,
+        "cost": 5,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_12",
+    "name": "19 musgo",
+    "image": "/cards/19_musgo.png",
+    "baseAtk": 710,
+    "basePv": 620,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "atirador",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 710,
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "MEDITAÇÃO",
+        "enchantment": {
+          "id": "meditate",
+          "value": 4
+        },
+        "cost": 0,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766477_13",
+    "name": "14 raizes",
+    "image": "/cards/14_raizes.png",
+    "baseAtk": 900,
+    "basePv": 880,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "vampire",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "VISÃO (REVEAL)",
+        "enchantment": {
+          "id": "reveal"
+        },
+        "cost": 2,
+        "costType": "mana"
+      },
+      {
+        "type": "enchantment",
+        "name": "ESMAGAR",
+        "enchantment": {
+          "id": "crush",
+          "value": 200
+        },
+        "cost": 4,
+        "costType": "stamina"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766477_14",
+    "name": "18 sal",
+    "image": "/cards/18_sal.png",
+    "baseAtk": 550,
+    "basePv": 860,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "VISÃO (REVEAL)",
+        "enchantment": {
+          "id": "reveal"
+        },
+        "cost": 2,
+        "costType": "mana"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 750,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_15",
+    "name": "17 fumaca",
+    "image": "/cards/17_fumaca.png",
+    "baseAtk": 720,
+    "basePv": 960,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "assassino",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 720,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 920,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_16",
+    "name": "F ria do slime de basalto 1",
+    "image": "/cards/F_ria_do_slime_de_basalto-1.png",
+    "baseAtk": 870,
+    "basePv": 990,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "rivalry",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 870,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "VISÃO (REVEAL)",
+        "enchantment": {
+          "id": "reveal"
+        },
+        "cost": 2,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_17",
+    "name": "Cavaleiro slime prateado blo",
+    "image": "/cards/Cavaleiro_slime_prateado_bloqueia_o_golpe-16.png",
+    "baseAtk": 930,
+    "basePv": 780,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "absorb_50",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 930,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1130,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766477_18",
+    "name": "15 quartzo",
+    "image": "/cards/15_quartzo.png",
+    "baseAtk": 850,
+    "basePv": 650,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "phantom",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 850,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1050,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766477_19",
+    "name": "Guardi o mbar das ampulhetas",
+    "image": "/cards/Guardi_o__mbar_das_ampulhetas-20.png",
+    "baseAtk": 600,
+    "basePv": 740,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 600,
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 800,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_20",
+    "name": "Slime de cobre na engrenagem",
+    "image": "/cards/Slime_de_cobre_na_engrenagem-9.png",
+    "baseAtk": 600,
+    "basePv": 550,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "assassino",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 600,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 800,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_21",
+    "name": "Slime coral invoca drag o de",
+    "image": "/cards/Slime_coral_invoca_drag_o_de_p_talas-13.png",
+    "baseAtk": 590,
+    "basePv": 540,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "absorb_50",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 590,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 790,
+        "cost": 5,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_22",
+    "name": "Slime colosso arranca coluna",
+    "image": "/cards/Slime_colosso_arranca_coluna_ancestral-11.png",
+    "baseAtk": 680,
+    "basePv": 850,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "phantom",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 680,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 880,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_23",
+    "name": "16 abissal",
+    "image": "/cards/16_abissal.png",
+    "baseAtk": 970,
+    "basePv": 510,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 970,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "CONGELAR (FREEZE)",
+        "enchantment": {
+          "id": "freeze",
+          "value": 200,
+          "turns": 1
+        },
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_24",
+    "name": "Slime alquimista desviando d",
+    "image": "/cards/Slime_alquimista_desviando_da_explos_o-10.png",
+    "baseAtk": 660,
+    "basePv": 580,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 660,
+        "cost": 6,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 860,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_25",
+    "name": "Slime de Fogo em Investida E",
+    "image": "/cards/Slime_de_Fogo_em_Investida_Explosiva.png",
+    "baseAtk": 790,
+    "basePv": 840,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "absorb_50",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 790,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "ECO",
+        "enchantment": {
+          "id": "echo"
+        },
+        "cost": 9,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_26",
+    "name": "Slime ametista lan a fragmen",
+    "image": "/cards/Slime_ametista_lan_a_fragmentos-8.png",
+    "baseAtk": 670,
+    "basePv": 670,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "atirador",
+    "abilityId": "deathblow",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "REANIMAÇÃO",
+        "enchantment": {
+          "id": "revive",
+          "value": 20
+        },
+        "cost": 7,
+        "costType": "mana"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 870,
+        "cost": 6,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_27",
+    "name": "Slime de vento soprando folh",
+    "image": "/cards/Slime_de_vento_soprando_folhas-15.png",
+    "baseAtk": 750,
+    "basePv": 550,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "suporte",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 750,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 950,
+        "cost": 5,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_28",
+    "name": "Slime explorador deslizando ",
+    "image": "/cards/Slime_explorador_deslizando_na_neve-18.png",
+    "baseAtk": 560,
+    "basePv": 560,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "CONGELAR (FREEZE)",
+        "enchantment": {
+          "id": "freeze",
+          "value": 200,
+          "turns": 1
+        },
+        "cost": 6,
+        "costType": "mana"
+      },
+      {
+        "type": "enchantment",
+        "name": "SIFÃO DE MANA",
+        "enchantment": {
+          "id": "siphon",
+          "value": 2
+        },
+        "cost": 7,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766478_29",
+    "name": "Slime astronauta no campo de",
+    "image": "/cards/Slime_astronauta_no_campo_de_asteroides-14.png",
+    "baseAtk": 810,
+    "basePv": 900,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "hit_kill",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 810,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "SACRIFÍCIO",
+        "enchantment": {
+          "id": "sacrifice",
+          "value": 5
+        },
+        "cost": 0,
+        "costType": "stamina"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_30",
+    "name": "Slime rosa invertido entre c",
+    "image": "/cards/Slime_rosa_invertido_entre_cogumelos_gigantes-6.png",
+    "baseAtk": 840,
+    "basePv": 690,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "mago",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "VISÃO (REVEAL)",
+        "enchantment": {
+          "id": "reveal"
+        },
+        "cost": 2,
+        "costType": "mana"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1040,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_31",
+    "name": "Slime pirata ndigo sob a tem",
+    "image": "/cards/Slime_pirata__ndigo_sob_a_tempestade-19.png",
+    "baseAtk": 670,
+    "basePv": 600,
+    "manaCost": 6,
+    "staminaCost": 6,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "vampire",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 670,
+        "cost": 5,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 870,
+        "cost": 5,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_32",
+    "name": "Slime oce nico surfando na c",
+    "image": "/cards/Slime_oce_nico_surfando_na_concha-7.png",
+    "baseAtk": 840,
+    "basePv": 760,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "guerreiro",
+    "abilityId": "mass_flip",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 840,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1040,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_33",
+    "name": "Slime cido saltando no esgot",
+    "image": "/cards/Slime__cido_saltando_no_esgoto-2.png",
+    "baseAtk": 520,
+    "basePv": 530,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "criatura",
+    "abilityId": "deathblow",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 520,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 720,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_34",
+    "name": "Slime Zen no Santu rio Flore",
+    "image": "/cards/Slime_Zen_no_Santu_rio_Florestal.png",
+    "baseAtk": 980,
+    "basePv": 950,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "elementar",
+    "abilityId": "reflect",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 980,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1180,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766478_35",
+    "name": "Slime vulc nico martela a bi",
+    "image": "/cards/Slime_vulc_nico_martela_a_bigorna-5.png",
+    "baseAtk": 760,
+    "basePv": 650,
+    "manaCost": 3,
+    "staminaCost": 3,
+    "preferredRarity": "rare",
+    "classId": "mago",
+    "abilityId": "mass_flip",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 760,
+        "cost": 3,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 960,
+        "cost": 3,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766479_36",
+    "name": "Slime violeta lan a espiral ",
+    "image": "/cards/Slime_violeta_lan_a_espiral_venenosa-3.png",
+    "baseAtk": 650,
+    "basePv": 980,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "atirador",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 650,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 850,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766479_37",
+    "name": "Slime lavanda tocando instru",
+    "image": "/cards/Slime_lavanda_tocando_instrumento_m_gico-17.png",
+    "baseAtk": 820,
+    "basePv": 620,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "monstro",
+    "abilityId": "none",
+    "attacks": [
+      {
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 820,
+        "cost": 4,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 1020,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  },
+  {
+    "id": "card_1791678766479_38",
+    "name": "Slime ninja roxo desliza sob",
+    "image": "/cards/Slime_ninja_roxo_desliza_sob_o_port_o-12.png",
+    "baseAtk": 710,
+    "basePv": 510,
+    "manaCost": 4,
+    "staminaCost": 4,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "reflect",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "FÚRIA (BERSERK)",
+        "enchantment": {
+          "id": "berserk"
+        },
+        "cost": 7,
+        "costType": "stamina"
+      },
+      {
+        "type": "damage",
+        "name": "HABILIDADE ESPECIAL",
+        "damage": 910,
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 1
+  },
+  {
+    "id": "card_1791678766479_39",
+    "name": "Slime obsidiana escala torre",
+    "image": "/cards/Slime_obsidiana_escala_torre_ao_luar-4.png",
+    "baseAtk": 660,
+    "basePv": 690,
+    "manaCost": 5,
+    "staminaCost": 5,
+    "preferredRarity": "rare",
+    "classId": "ilusionista",
+    "abilityId": "mass_flip",
+    "attacks": [
+      {
+        "type": "enchantment",
+        "name": "SACRIFÍCIO",
+        "enchantment": {
+          "id": "sacrifice",
+          "value": 5
+        },
+        "cost": 0,
+        "costType": "stamina"
+      },
+      {
+        "type": "enchantment",
+        "name": "REGENERAÇÃO",
+        "enchantment": {
+          "id": "regen",
+          "value": 150,
+          "turns": 3
+        },
+        "cost": 4,
+        "costType": "mana"
+      }
+    ],
+    "parry": 0
+  }
+]

@@ -1,0 +1,369 @@
+{
+  "titles": {
+    "daily": "OFERTAS DO DIA",
+    "rare": "CARTAS RARAS",
+    "decks": "DECKS COMPLETOS",
+    "packs": "PACOTES & BOOSTERS",
+    "coins": "MOEDAS",
+    "gems": "DIAMANTES",
+    "artifacts": "ARTEFATOS"
+  },
+  "banners": [
+    "/cards/03_toxico.png",
+    "/cards/04_obsidiana.png",
+    "/cards/05_gelo.png"
+  ],
+  "dailyPool": [
+    {
+      "card": "03 toxico",
+      "price": 50
+    },
+    {
+      "card": "Trio de Ladr es Slimes no Be",
+      "price": 75
+    },
+    {
+      "card": "10 lava",
+      "price": 100
+    },
+    {
+      "card": "04 obsidiana",
+      "price": 125
+    },
+    {
+      "card": "05 gelo",
+      "price": 150
+    },
+    {
+      "card": "06 areia",
+      "price": 175
+    },
+    {
+      "card": "11 vento",
+      "price": 200
+    },
+    {
+      "card": "12 relampago",
+      "price": 225
+    },
+    {
+      "card": "07 mercurio",
+      "price": 250
+    },
+    {
+      "card": "08 fungo",
+      "price": 275
+    },
+    {
+      "card": "13 lunar",
+      "price": 300
+    },
+    {
+      "card": "20 eclipse",
+      "price": 325
+    },
+    {
+      "card": "19 musgo",
+      "price": 350
+    },
+    {
+      "card": "14 raizes",
+      "price": 375
+    },
+    {
+      "card": "18 sal",
+      "price": 400
+    },
+    {
+      "card": "17 fumaca",
+      "price": 425
+    },
+    {
+      "card": "F ria do slime de basalto 1",
+      "price": 450
+    },
+    {
+      "card": "Cavaleiro slime prateado blo",
+      "price": 475
+    }
+  ],
+  "rare": [
+    {
+      "card": "Slime obsidiana escala torre",
+      "price": 3
+    },
+    {
+      "card": "Slime ninja roxo desliza sob",
+      "price": 5
+    },
+    {
+      "card": "Slime lavanda tocando instru",
+      "price": 7
+    },
+    {
+      "card": "Slime violeta lan a espiral ",
+      "price": 9
+    },
+    {
+      "card": "Slime vulc nico martela a bi",
+      "price": 11
+    },
+    {
+      "card": "Slime Zen no Santu rio Flore",
+      "price": 13
+    }
+  ],
+  "decks": [
+    {
+      "id": "deck_teste_slime",
+      "name": "Deck Slime Inicial",
+      "cards": [
+        "03 toxico",
+        "Trio de Ladr es Slimes no Be",
+        "10 lava",
+        "04 obsidiana",
+        "05 gelo",
+        "06 areia",
+        "11 vento",
+        "12 relampago",
+        "07 mercurio",
+        "08 fungo",
+        "13 lunar",
+        "20 eclipse"
+      ],
+      "currency": "gold",
+      "price": 800,
+      "image": "",
+      "desc": "12 slimes para começar a jornada."
+    },
+    {
+      "id": "deck_teste_fogo",
+      "name": "Deck Fogo Selvagem",
+      "price": 1200,
+      "currency": "gold",
+      "desc": "Um deck temático completo para dominar a arena.",
+      "image": "",
+      "cards": [
+        "19 musgo",
+        "14 raizes",
+        "18 sal",
+        "17 fumaca",
+        "F ria do slime de basalto 1",
+        "Cavaleiro slime prateado blo",
+        "15 quartzo",
+        "Guardi o mbar das ampulhetas",
+        "Slime de cobre na engrenagem",
+        "Slime coral invoca drag o de",
+        "Slime colosso arranca coluna",
+        "16 abissal"
+      ]
+    },
+    {
+      "id": "deck_teste_gelo",
+      "name": "Deck Gelo Eterno",
+      "price": 1200,
+      "currency": "gold",
+      "desc": "Um deck temático completo para dominar a arena.",
+      "image": "",
+      "cards": [
+        "Slime alquimista desviando d",
+        "Slime de Fogo em Investida E",
+        "Slime ametista lan a fragmen",
+        "Slime de vento soprando folh",
+        "Slime explorador deslizando ",
+        "Slime astronauta no campo de",
+        "Slime rosa invertido entre c",
+        "Slime pirata ndigo sob a tem",
+        "Slime oce nico surfando na c",
+        "Slime cido saltando no esgot",
+        "Slime Zen no Santu rio Flore",
+        "Slime vulc nico martela a bi"
+      ]
+    }
+  ],
+  "coinPacks": [
+    {
+      "gold": 1000,
+      "price": 10,
+      "image": "/cards/pack_coins_1.png"
+    },
+    {
+      "gold": 5000,
+      "price": 45,
+      "image": "/cards/pack_coins_3.png"
+    },
+    {
+      "gold": 10000,
+      "price": 80,
+      "image": "/cards/pack_coins_2.png"
+    }
+  ],
+  "gemPacks": [
+    {
+      "gems": 100,
+      "price": "R$ 4,90",
+      "image": "/cards/pack_gems_4.png"
+    },
+    {
+      "gems": 500,
+      "price": "R$ 19,90",
+      "image": "/cards/pack_gems_5.png"
+    },
+    {
+      "gems": 1200,
+      "price": "R$ 39,90",
+      "image": "/cards/pack_gems_6.png"
+    }
+  ],
+  "artifacts": [
+    {
+      "price": 8,
+      "currency": "gems",
+      "id": "ocultacao"
+    },
+    {
+      "price": 12,
+      "currency": "gems",
+      "id": "paralisia"
+    },
+    {
+      "price": 10,
+      "currency": "gems",
+      "id": "escudo"
+    },
+    {
+      "price": 6,
+      "currency": "gems",
+      "id": "sabedoria"
+    },
+    {
+      "price": 15,
+      "currency": "gems",
+      "id": "veneno"
+    },
+    {
+      "price": 20,
+      "currency": "gems",
+      "id": "queimadura"
+    },
+    {
+      "price": 18,
+      "currency": "gems",
+      "id": "drenar"
+    },
+    {
+      "price": 25,
+      "currency": "gems",
+      "id": "nuke"
+    },
+    {
+      "price": 14,
+      "currency": "gems",
+      "id": "golpe"
+    },
+    {
+      "price": 9,
+      "currency": "gems",
+      "id": "poder_divino"
+    }
+  ],
+  "packs": [
+    {
+      "id": "booster_starter",
+      "name": "Booster Iniciante",
+      "desc": "Pacote básico com 3 cartas. Ideal para reforçar seu deck com novas criaturas.",
+      "price": 0,
+      "currency": "gold",
+      "cardsCount": 3,
+      "mode": "random",
+      "rates": {
+        "common": 80,
+        "rare": 18,
+        "legendary": 2
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/Batalha_dos_slimes_fant_sticos.png",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png"
+    },
+    {
+      "id": "booster_winter",
+      "name": "Booster Lendas do Inverno",
+      "desc": "Pacote com 5 cartas místicas e alta chance de raras e lendárias.",
+      "price": 0,
+      "currency": "gold",
+      "cardsCount": 5,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 30,
+        "legendary": 10
+      },
+      "theme": "winter",
+      "customBack": "gold",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true
+    },
+    {
+      "id": "booster_special_elemental",
+      "name": "Pack Especial Elemental",
+      "desc": "Edição especial com cartas elementais selecionadas de veneno, gelo e lava.",
+      "price": 0,
+      "currency": "gems",
+      "cardsCount": 3,
+      "mode": "special",
+      "fixedCards": [
+        "03 toxico",
+        "05 gelo",
+        "10 lava"
+      ],
+      "theme": "mewtwo",
+      "customBack": "black",
+      "rates": {
+        "common": 70,
+        "rare": 25,
+        "legendary": 5
+      },
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true
+    }
+  ],
+  "sectionOrder": [
+    "banners",
+    "daily",
+    "rare",
+    "decks",
+    "packs",
+    "packs_split",
+    "coins",
+    "gems",
+    "artifacts"
+  ],
+  "sectionVisibility": {
+    "banners": true,
+    "daily": true,
+    "rare": true,
+    "decks": true,
+    "packs": true,
+    "packs_split": true,
+    "coins": true,
+    "gems": true,
+    "artifacts": true
+  },
+  "deckLayoutMode": "carousel",
+  "boosterDisplayMode": "carousel"
+}

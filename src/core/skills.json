@@ -1,0 +1,116 @@
+[
+    {
+        "id": "ocultacao",
+        "name": "Ocultação das Sombras",
+        "icon": "👁️",
+        "image": "/cards/art_ocultacao.png",
+        "effect": "flip",
+        "category": "dark",
+        "group": "debuff",
+        "description": "Vira uma carta inimiga para baixo. Revelada somente ao ser atacada.",
+        "flavorText": "\"Aquilo que não se vê não pode se defender.\""
+    },
+    {
+        "id": "paralisia",
+        "name": "Trovão Paralisante",
+        "icon": "⚡",
+        "image": "/cards/art_paralisia.png",
+        "effect": "stun",
+        "category": "arcane",
+        "group": "debuff",
+        "description": "Paralisa uma carta inimiga por 1 turno. Não pode atacar.",
+        "flavorText": "\"A tempestade não avisa. Ela simplesmente atinge.\""
+    },
+    {
+        "id": "escudo",
+        "name": "Escudo de Cristal",
+        "icon": "🛡️",
+        "image": "/cards/art_escudo.png",
+        "effect": "shield",
+        "category": "tactical",
+        "group": "defensive",
+        "description": "Protege uma carta aliada contra o próximo ataque.",
+        "flavorText": "\"Nem toda batalha é vencida com a espada.\""
+    },
+    {
+        "id": "sabedoria",
+        "name": "Sabedoria Ancestral",
+        "icon": "📖",
+        "image": "/cards/art_sabedoria.png",
+        "effect": "draw",
+        "category": "tactical",
+        "group": "defensive",
+        "description": "Compra 2 cartas adicionais do deck.",
+        "flavorText": "\"O conhecimento é a arma mais afiada de todas.\""
+    },
+    {
+        "id": "veneno",
+        "name": "Névoa Venenosa",
+        "icon": "☠️",
+        "image": "/cards/art_veneno.png",
+        "effect": "poison",
+        "category": "dark",
+        "group": "debuff",
+        "description": "Envenena uma carta inimiga: −50 PV por turno por 3 turnos.",
+        "flavorText": "\"Lento, silencioso e inevitável.\"",
+        "power": 50
+    },
+    {
+        "id": "queimadura",
+        "name": "Chama Eterna",
+        "icon": "🔥",
+        "image": "/cards/art_queimadura.png",
+        "effect": "burn",
+        "category": "arcane",
+        "group": "offensive",
+        "description": "Causa 200 de dano imediato a uma carta inimiga.",
+        "flavorText": "\"O fogo não discrimina. Ele consome tudo.\"",
+        "power": 200
+    },
+    {
+        "id": "drenar",
+        "name": "Roubo de Alma",
+        "icon": "💜",
+        "image": "/cards/art_drenar.png",
+        "effect": "drain",
+        "category": "dark",
+        "group": "support",
+        "description": "Drena 150 PV de uma carta inimiga e adiciona ao seu HP.",
+        "flavorText": "\"Vivo da tua fraqueza.\"",
+        "power": 150
+    },
+    {
+        "id": "nuke",
+        "name": "Julgamento Final",
+        "icon": "💥",
+        "image": "/cards/art_nuke.png",
+        "effect": "nuke",
+        "category": "arcane",
+        "group": "offensive",
+        "description": "Destrói completamente uma carta inimiga, independente de PV.",
+        "flavorText": "\"Não existe defesa para o apocalipse.\""
+    },
+    {
+        "id": "golpe",
+        "name": "Golpe Marcial",
+        "icon": "👊",
+        "image": "/cards/art_golpe.png",
+        "effect": "burn",
+        "category": "martial",
+        "group": "offensive",
+        "description": "Causa 150 de dano ignorando escudo.",
+        "flavorText": "\"A força bruta supera toda magia.\"",
+        "power": 150
+    },
+    {
+        "id": "poder_divino",
+        "name": "Poder Divino",
+        "icon": "✨",
+        "image": "/cards/art_poder_divino.png",
+        "effect": "divine",
+        "category": "arcane",
+        "group": "support",
+        "description": "Concede 2 ações neste turno.",
+        "flavorText": "\"A vontade dos deuses move mundos.\""
+    }
+]

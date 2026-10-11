@@ -1,0 +1,135 @@
+{
+  "library": [
+    {
+      "url": "/sounds/battle_2.mp3",
+      "name": "battle_2.mp3"
+    },
+    {
+      "url": "/sounds/mixkit-apocalyptic-stomp-impact-3057.wav",
+      "name": "mixkit-apocalyptic-stomp-impact-3057.wav"
+    },
+    {
+      "url": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+      "name": "mixkit-axe-hits-to-a-plate-2774.wav"
+    },
+    {
+      "url": "/sounds/mixkit-bomb-explosion-in-battle-2800.wav",
+      "name": "mixkit-bomb-explosion-in-battle-2800.wav"
+    },
+    {
+      "url": "/sounds/mixkit-cartoon-laugh-voice-2882.wav",
+      "name": "mixkit-cartoon-laugh-voice-2882.wav"
+    },
+    {
+      "url": "/sounds/mixkit-cartoon-toy-whistle-616.wav",
+      "name": "mixkit-cartoon-toy-whistle-616.wav"
+    },
+    {
+      "url": "/sounds/mixkit-coins-handling-1939.wav",
+      "name": "mixkit-coins-handling-1939.wav"
+    },
+    {
+      "url": "/sounds/mixkit-fast-transitions-swoosh-3115.wav",
+      "name": "mixkit-fast-transitions-swoosh-3115.wav"
+    },
+    {
+      "url": "/sounds/mixkit-funny-squeaky-toy-hits-2813.wav",
+      "name": "mixkit-funny-squeaky-toy-hits-2813.wav"
+    },
+    {
+      "url": "/sounds/mixkit-hard-pop-click-2364.wav",
+      "name": "mixkit-hard-pop-click-2364.wav"
+    },
+    {
+      "url": "/sounds/mixkit-horror-impact-773.wav",
+      "name": "mixkit-horror-impact-773.wav"
+    },
+    {
+      "url": "/sounds/mixkit-laughing-cartoon-creature-414.wav",
+      "name": "mixkit-laughing-cartoon-creature-414.wav"
+    },
+    {
+      "url": "/sounds/mixkit-long-pop-2358.wav",
+      "name": "mixkit-long-pop-2358.wav"
+    },
+    {
+      "url": "/sounds/mixkit-quick-metal-transition-sweep-2639.wav",
+      "name": "mixkit-quick-metal-transition-sweep-2639.wav"
+    },
+    {
+      "url": "/sounds/mixkit-quick-zoom-impact-772.wav",
+      "name": "mixkit-quick-zoom-impact-772.wav"
+    },
+    {
+      "url": "/sounds/mixkit-sad-game-over-trombone-471.wav",
+      "name": "mixkit-sad-game-over-trombone-471.wav"
+    },
+    {
+      "url": "/sounds/Untitled.mp3",
+      "name": "Untitled.mp3"
+    },
+    {
+      "url": "/sounds/Cozy_RPG_Ambience__1_.mp3",
+      "name": "Cozy RPG Ambience (1)"
+    }
+  ],
+  "actions": {
+    "atk_basico_1": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+    "atk_basico_2": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+    "atk_basico_3": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+    "atk_especial": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+    "parry_sucesso": "",
+    "parry_falha": "",
+    "carta_sacada": "/sounds/mixkit-horror-impact-773.wav",
+    "carta_na_mao": "/sounds/mixkit-horror-impact-773.wav",
+    "carta_invocada": "/sounds/mixkit-quick-metal-transition-sweep-2639.wav",
+    "carta_morta": "/sounds/Untitled.mp3",
+    "sacrificio": "/sounds/mixkit-apocalyptic-stomp-impact-3057.wav",
+    "skill_usada": "",
+    "fim_turno": "",
+    "inicio_turno": "/sounds/mixkit-quick-metal-transition-sweep-2639.wav",
+    "batalha_vitoria": "",
+    "batalha_derrota": "",
+    "batalha_desistencia": "",
+    "dano_direto": "",
+    "clique_lobby": "",
+    "clique_batalhar": "",
+    "clique_perfil": "",
+    "clique_configuracoes": "",
+    "clique_loja": "",
+    "clique_deck": "",
+    "clique_carta": "/sounds/mixkit-quick-zoom-impact-772.wav",
+    "clique_geral": "",
+    "moeda_coletar": "",
+    "nivel_up": "",
+    "parry_qte_start": ""
+  },
+  "screens": {
+    "lobby": "/sounds/Cozy_RPG_Ambience__1_.mp3",
+    "batalha": "/sounds/battle_2.mp3",
+    "difficulty": "",
+    "coin_flip": "/sounds/mixkit-apocalyptic-stomp-impact-3057.wav",
+    "arsenal": "",
+    "loja": "",
+    "perfil": "",
+    "configuracoes": "",
+    "deck_builder": "",
+    "vitoria": "",
+    "derrota": ""
+  },
+  "transitions": {
+    "lobby_to_difficulty": "",
+    "difficulty_to_coin_flip": "",
+    "coin_flip_to_batalha": "",
+    "batalha_to_vitoria": "",
+    "batalha_to_derrota": "",
+    "batalha_to_lobby": "",
+    "lobby_to_arsenal": "",
+    "lobby_to_loja": "",
+    "lobby_to_perfil": "",
+    "lobby_to_configuracoes": "",
+    "arsenal_to_lobby": "",
+    "loja_to_lobby": "",
+    "perfil_to_lobby": ""
+  }
+}

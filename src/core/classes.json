@@ -1,0 +1,12 @@
+[
+  { "id": "tank", "name": "Tank", "icon": "🛡️", "color": "#95a5a6" },
+  { "id": "suporte", "name": "Suporte", "icon": "💚", "color": "#2ecc71" },
+  { "id": "atirador", "name": "Atirador", "icon": "🏹", "color": "#f1c40f" },
+  { "id": "assassino", "name": "Assassino", "icon": "🔪", "color": "#e74c3c" },
+  { "id": "mago", "name": "Mago", "icon": "✨", "color": "#9b59b6" },
+  { "id": "elementar", "name": "Elementar", "icon": "🔥", "color": "#e67e22" },
+  { "id": "ilusionista", "name": "Ilusionista", "icon": "🔮", "color": "#3498db" },
+  { "id": "guerreiro", "name": "Guerreiro", "icon": "⚔️", "color": "#d35400" },
+  { "id": "criatura", "name": "Criatura", "icon": "🐾", "color": "#27ae60" },
+  { "id": "monstro", "name": "Monstro", "icon": "👹", "color": "#c0392b" }
+]

@@ -1,0 +1,23 @@
+# Deps / build
+node_modules/
+dist/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Vercel
+.vercel/
+
+# Env
+.env
+.env.*
+!.env.example

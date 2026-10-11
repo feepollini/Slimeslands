@@ -1,0 +1,12 @@
+[
+  {
+    "id": "item_alpha",
+    "name": "Pacote Iniciante",
+    "description": "Contém 5 cartas variadas para começar sua jornada.",
+    "price": 500,
+    "currency": "gold",
+    "icon": "📦",
+    "type": "pack",
+    "itemId": "starter_pack"
+  }
+]

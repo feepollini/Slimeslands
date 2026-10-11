@@ -1,0 +1,30 @@
+{
+    "common": {
+        "label": "Comum",
+        "icon": "⬜",
+        "color": "#aaaaaa",
+        "atkBonus": 1.0,
+        "pvBonus": 1.0
+    },
+    "rare": {
+        "label": "Raro",
+        "icon": "🔷",
+        "color": "#4da6ff",
+        "atkBonus": 1.05,
+        "pvBonus": 1.05
+    },
+    "epic": {
+        "label": "Épico",
+        "icon": "🔮",
+        "color": "#b44eff",
+        "atkBonus": 1.12,
+        "pvBonus": 1.12
+    },
+    "legendary": {
+        "label": "Lendário",
+        "icon": "⭐",
+        "color": "#ffd700",
+        "atkBonus": 1.2,
+        "pvBonus": 1.2
+    }
+}

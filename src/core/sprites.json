@@ -1,0 +1,242 @@
+{
+  "packs": [
+    {
+      "id": "#pk-1775763130461",
+      "name": "teste",
+      "isPreset": true,
+      "actions": [
+        {
+          "id": "#pk-1775763130461-a1",
+          "name": "IDLE_STATIC",
+          "directions": {
+            "up": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/fc875af6-1ec2-4a3c-a934-085fe5476fad",
+              "videoUrl": null
+            },
+            "down": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/74632965-2df6-46d7-903b-a4ad03050279",
+              "videoUrl": null
+            },
+            "left": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/5802d8c8-ca9f-4979-883d-bc54ff51a551",
+              "videoUrl": null
+            },
+            "right": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/249ded17-0b50-4284-b1e0-426dc32571c6",
+              "videoUrl": null
+            }
+          }
+        },
+        {
+          "id": "#pk-1775763130461-a2",
+          "name": "MOVE_WALK",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        },
+        {
+          "id": "#pk-1775763130461-a3",
+          "name": "MOVE_RUN",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        },
+        {
+          "id": "#pk-1775763130461-a4",
+          "name": "INTERACT_UP",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "#pk-1775764460380",
+      "name": "test",
+      "isPreset": true,
+      "actions": [
+        {
+          "id": "#pk-1775764460380-a1",
+          "name": "IDLE_STATIC",
+          "directions": {
+            "up": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/531556b7-9a18-44a3-97f5-4da94a38ee42",
+              "videoUrl": null
+            },
+            "down": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/2b421335-0952-4611-9c06-d62f650d35cf",
+              "videoUrl": null
+            },
+            "left": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/685e3eae-b577-4c04-a967-255901810de8",
+              "videoUrl": null
+            },
+            "right": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "blob:http://localhost:5173/accde59a-e6b6-47ef-be01-6829a1bdd54f",
+              "videoUrl": null
+            }
+          }
+        },
+        {
+          "id": "#pk-1775764460380-a2",
+          "name": "MOVE_WALK",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        },
+        {
+          "id": "#pk-1775764460380-a3",
+          "name": "MOVE_RUN",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        },
+        {
+          "id": "#pk-1775764460380-a4",
+          "name": "INTERACT_UP",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "#pk-1775765274211",
+      "name": "test",
+      "isPreset": true,
+      "actions": [
+        {
+          "id": "#pk-1775765274211-a1",
+          "name": "IDLE_STATIC",
+          "directions": {
+            "up": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766916773_A_portrait_of_a_High_Mother_Superior_commanding_an_breathing-idle_north.gif",
+              "videoUrl": null
+            },
+            "down": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766910590_A_portrait_of_a_High_Mother_Superior_commanding_an_breathing-idle_south.gif",
+              "videoUrl": null
+            },
+            "left": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766895085_A_portrait_of_a_High_Mother_Superior_commanding_an_breathing-idle_west.gif",
+              "videoUrl": null
+            },
+            "right": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766899217_A_portrait_of_a_High_Mother_Superior_commanding_an_breathing-idle_east.gif",
+              "videoUrl": null
+            }
+          }
+        },
+        {
+          "id": "#pk-1775765274211-a2",
+          "name": "MOVE_WALK",
+          "directions": {
+            "up": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766867968_A_portrait_of_a_High_Mother_Superior_commanding_an_walk_north_(1).gif",
+              "videoUrl": null
+            },
+            "down": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766872051_A_portrait_of_a_High_Mother_Superior_commanding_an_walk_south_(1).gif",
+              "videoUrl": null
+            },
+            "left": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766876679_A_portrait_of_a_High_Mother_Superior_commanding_an_walk_west_(1).gif",
+              "videoUrl": null
+            },
+            "right": {
+              "type": "gif",
+              "frames": [],
+              "frameRate": 100,
+              "gifUrl": "/assets/sprites/imported_1775766880284_A_portrait_of_a_High_Mother_Superior_commanding_an_walk_east.gif",
+              "videoUrl": null
+            }
+          }
+        },
+        {
+          "id": "#pk-1775765274211-a3",
+          "name": "MOVE_RUN",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        },
+        {
+          "id": "#pk-1775765274211-a4",
+          "name": "INTERACT_UP",
+          "directions": {
+            "up": null,
+            "down": null,
+            "left": null,
+            "right": null
+          }
+        }
+      ]
+    }
+  ],
+  "gallery": []
+}

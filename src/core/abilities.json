@@ -1,0 +1,74 @@
+[
+  {
+    "id": "reflect",
+    "name": "Sangue por Sangue",
+    "icon": "🔁",
+    "description": "Reflete 50% do dano recebido de volta ao atacante, mesmo em morte.",
+    "triggerText": "🔁 REFLEXO!",
+    "color": "#ff6600"
+  },
+  {
+    "id": "phantom",
+    "name": "Sombra",
+    "icon": "👻",
+    "description": "Vira de costas no início do próximo turno aliado.",
+    "triggerText": "👻 SOMBRA",
+    "color": "#88aaff"
+  },
+  {
+    "id": "rivalry",
+    "name": "Rivalidade",
+    "icon": "⚔️",
+    "description": "Causa +40% de dano ao atacar uma carta de mesmo nome.",
+    "triggerText": "⚔️ RIVALIDADE!",
+    "color": "#ffd700"
+  },
+  {
+    "id": "resilience",
+    "name": "Último Fôlego",
+    "icon": "💪",
+    "description": "Sobrevive ao primeiro golpe mortal com 1 PV. Efeito único por batalha.",
+    "triggerText": "💪 SOBREVIVEU!",
+    "color": "#4cff88"
+  },
+  {
+    "id": "vampire",
+    "name": "Vampiro",
+    "icon": "🩸",
+    "description": "Cura o dono em 20% do dano causado a cada ataque.",
+    "triggerText": "🩸 DRENOU!",
+    "color": "#cc44aa"
+  },
+  {
+    "id": "deathblow",
+    "name": "Ira Final",
+    "icon": "💣",
+    "description": "Ao morrer, causa 50% do PV máximo a uma carta inimiga adjacente.",
+    "triggerText": "💣 IRA FINAL!",
+    "color": "#ff2200"
+  },
+  {
+    "id": "hit_kill",
+    "name": "Execução Sumária",
+    "icon": "⚔️",
+    "description": "Mata instantaneamente o alvo no ataque, ignorando defesa e PV.",
+    "triggerText": "☠️ HIT KILL!",
+    "color": "#b30000"
+  },
+  {
+    "id": "mass_flip",
+    "name": "Impacto Massivo",
+    "icon": "🌪️",
+    "description": "Ao ser lançada (ou início do turno), vira todas as cartas do oponente para baixo.",
+    "triggerText": "🌪️ MASS FLIP!",
+    "color": "#4444ff"
+  },
+  {
+    "id": "absorb_50",
+    "name": "Sanguessuga Crítica",
+    "icon": "🦇",
+    "description": "Drena 50% do PV do alvo atingido e adiciona à sua vida.",
+    "triggerText": "🦇 DRENOU 50%!",
+    "color": "#8a03c2"
+  }
+]

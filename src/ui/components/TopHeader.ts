@@ -65,6 +65,9 @@ export class TopHeader {
                             <span style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:linear-gradient(135deg, #a855f7, #6b21a8); border:1px solid #d8b4fe; box-shadow:0 0 6px rgba(168,85,247,0.7); font-family:'Outfit',sans-serif; font-weight:900; font-size:0.55rem; color:#fff; line-height:1;">E</span>
                             <span style="font-family:'Cinzel', serif; font-size:0.8rem; color:#f3e8ff; font-weight:700; text-shadow:-1px -1px 0 #2a0845, 1px -1px 0 #2a0845, -1px 1px 0 #2a0845, 1px 1px 0 #2a0845, 0 2px 0 rgba(0,0,0,0.6);">${enjinVal}</span>
                         </div>
+                        <div style="width:1px; height:14px; background:rgba(212,175,55,0.25);"></div>
+                        <!-- TELA CHEIA -->
+                        <button id="btn-fullscreen" title="Tela cheia" style="display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:8px; background:rgba(0,0,0,0.45); border:1px solid rgba(212,175,55,0.4); color:#ffe9a8; font-size:0.85rem; cursor:pointer; padding:0; flex-shrink:0;">⛶</button>
                     </div>
                 </div>
             </div>

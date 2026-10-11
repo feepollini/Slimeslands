@@ -162,6 +162,30 @@ export function openCardViewer(opts: OpenViewerOpts) {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) closeCardViewer();
   });
+
+  // Gesto de Swipe Touch no Mobile para passar cartas pro lado
+  let touchStartX = 0;
+  let touchStartY = 0;
+  overlay.addEventListener('touchstart', (e) => {
+    if (e.touches && e.touches[0]) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+  overlay.addEventListener('touchend', (e) => {
+    if (e.changedTouches && e.changedTouches[0]) {
+      const diffX = e.changedTouches[0].clientX - touchStartX;
+      const diffY = e.changedTouches[0].clientY - touchStartY;
+      if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < 0) {
+          cardViewerNav(1); // Swipe para a esquerda -> próxima carta
+        } else {
+          cardViewerNav(-1); // Swipe para a direita -> carta anterior
+        }
+      }
+    }
+  }, { passive: true });
+
   document.addEventListener('keydown', onViewerKey);
 
   try {

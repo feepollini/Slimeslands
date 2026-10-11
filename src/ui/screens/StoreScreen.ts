@@ -28,8 +28,11 @@ export class StoreScreen {
   private boosterDisplayMode: 'carousel' | 'split' = 'carousel';
   private deckActiveIdx = 0;
 
+  private customTemplates: any[] = [];
+
   constructor(customData?: any) {
     const d: any = customData || storeData || {};
+    this.customTemplates = d.templates || [];
     this.boosterDisplayMode = (d.boosterDisplayMode === 'split') ? 'split' : 'carousel';
 
     this.data = {
@@ -54,6 +57,10 @@ export class StoreScreen {
   }
 
   private resolveCard(name: string): any {
+    if (this.customTemplates && this.customTemplates.length > 0) {
+      const found = this.customTemplates.find(c => c && c.name === name);
+      if (found) return found;
+    }
     return (CARD_TEMPLATES as any[]).find(c => c.name === name) || null;
   }
 
@@ -195,107 +202,51 @@ export class StoreScreen {
 
   private deckSectionsHtml(owned: { cards: string[]; decks: string[] }): string {
     if (!this.data.decks || this.data.decks.length === 0) return this.ghostRow();
-    const mode = this.data.deckLayoutMode || 'carousel';
-
-    if (mode === 'carousel') {
-      return this.renderDeckCarouselHtml(owned);
-    } else {
-      return this.renderDeckStandaloneHtml(owned);
-    }
+    return this.renderDeckStandaloneHtml(owned);
   }
 
-  // MODO 1: CARROSSEL UNIFICADO DE DECKS (NAVEGA ENTRE DECKS NA MESMA SEÇÃO)
-  private renderDeckCarouselHtml(owned: { cards: string[]; decks: string[] }): string {
-    const decks = this.data.decks || [];
-    if (this.deckActiveIdx < 0 || this.deckActiveIdx >= decks.length) {
-      this.deckActiveIdx = 0;
-    }
-    const deck = decks[this.deckActiveIdx] || decks[0];
-    const isOwned = owned.decks.includes(deck.id);
-    const arts = (deck.cards || []).slice(0, 7).map((n: string) => {
-      const c = this.resolveCard(n);
-      return c && c.image ? c.image : '';
-    });
-
-    return `
-      <div class="store-sec" style="display:flex; flex-direction:column; gap:14px; background:linear-gradient(180deg, rgba(46,28,64,0.92), rgba(16,10,26,0.92)); border:3px solid #7c3aed; border-radius:18px; padding:18px; box-shadow:0 8px 24px rgba(0,0,0,0.6), 0 0 20px rgba(124,58,237,0.3); position:relative; overflow:hidden;">
-        <!-- Seletor de Decks no Carrossel -->
-        ${decks.length > 1 ? `
-          <div style="display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:12px;">
-            ${decks.map((d: any, idx: number) => `
-              <button class="store-deck-tab-btn" data-idx="${idx}" style="padding:6px 14px; border-radius:999px; font-size:0.65rem; font-weight:950; cursor:pointer; transition:0.2s; ${idx === this.deckActiveIdx ? 'background:#ffd700; color:#000; border:2px solid #fff; box-shadow:0 0 10px rgba(255,215,0,0.6);' : 'background:rgba(0,0,0,0.5); color:#cbd5e1; border:1px solid rgba(255,255,255,0.2);'}">
-                🃏 ${this.esc(d.name)}
-              </button>
-            `).join('')}
-          </div>
-        ` : ''}
-
-        <!-- Conteúdo do Deck Ativo -->
-        <div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap; justify-content:center;">
-          <!-- Leque / Pilha de Cartas -->
-          <div class="store-view-deck" data-deck="${this.esc(deck.id)}" title="Clique para inspecionar todas as cartas" style="position:relative; width:160px; height:155px; flex-shrink:0; cursor:pointer;">
-            ${arts.map((a: string, i: number) => `
-              <div style="position:absolute; left:${i * 16}px; top:${i * 5}px; width:72px; height:102px; border-radius:10px; border:2px solid #ffd700; ${a ? `background:url('${a}') center/cover;` : 'background:rgba(255,255,255,0.06);'} box-shadow:0 6px 14px rgba(0,0,0,0.7); transform:rotate(${(i - 2) * 3}deg);"></div>
-            `).join('')}
-            ${(deck.cards || []).length > 7 ? `
-              <div style="position:absolute; right:4px; bottom:6px; background:rgba(0,0,0,0.85); border:1px solid #ffd700; border-radius:8px; color:#ffd700; font-size:0.65rem; font-weight:950; padding:3px 8px; z-index:10;">
-                +${(deck.cards || []).length - 7}
-              </div>
-            ` : ''}
-          </div>
-
-          <!-- Informações e Compra -->
-          <div style="flex:1; min-width:240px; display:flex; flex-direction:column; gap:8px;">
-            <div style="font-size:1.05rem; font-weight:950; color:#ffd76a; letter-spacing:1.5px; text-shadow:0 2px 4px #000;">
-              ${this.esc(deck.name).toUpperCase()}
-            </div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-              <span style="background:rgba(124,58,237,0.25); border:1px solid rgba(124,58,237,0.5); border-radius:999px; padding:2px 8px; font-size:0.58rem; color:#d8b4fe; font-weight:900;">
-                🃏 ${(deck.cards || []).length} CARTAS PRONTAS
-              </span>
-              <span style="font-size:0.6rem; color:#aaa;">Deck temático balanceado</span>
-            </div>
-            <div style="font-size:0.7rem; color:rgba(255,255,255,0.7); line-height:1.4; background:rgba(0,0,0,0.25); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
-              ${this.esc(deck.desc || 'Deck estratégico pronto para entrar em combate na arena.')}
-            </div>
-            <div style="margin-top:4px;">
-              ${this.buyBtn('deck', deck.id, isOwned, `${deck.currency === 'gems' ? '💎' : '🪙'} ${deck.price}`)}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // MODO 2: SECÇÕES INDEPENDENTES (CADA DECK EM SUA PRÓPRIA SECÇÃO DEDICADA)
+  // SECÇÕES INDEPENDENTES/SEPARADAS (CADA DECK EM SUA PRÓPRIA SECÇÃO DEDICADA)
   private renderDeckStandaloneHtml(owned: { cards: string[]; decks: string[] }): string {
     return this.data.decks.map((deck: any) => {
       const isOwned = owned.decks.includes(deck.id);
-      const arts = (deck.cards || []).slice(0, 5).map((n: string) => {
-        const c = this.resolveCard(n);
-        return c && c.image ? c.image : '';
-      });
+      const cards = deck.cards || [];
       return `
-        <div class="store-sec" style="display:flex; flex-direction:column; gap:10px; background:linear-gradient(180deg, rgba(58,42,21,0.92), rgba(20,13,6,0.92)); border:3px solid #0e0903; border-radius:14px; padding:14px; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
-          <div style="font-size:0.75rem; font-weight:950; color:#ffd76a; letter-spacing:2px; text-shadow:0 2px 0 #000; text-align:center;">
-            ${this.esc(deck.name).toUpperCase()}
+        <div class="store-sec" style="display:flex; flex-direction:column; gap:8px; background:linear-gradient(180deg, rgba(58,42,21,0.92), rgba(20,13,6,0.92)); border:3px solid #0e0903; border-radius:14px; padding:12px 14px; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
+          <!-- Cabeçalho do Deck -->
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:0.8rem; font-weight:950; color:#ffd76a; letter-spacing:1px; text-shadow:0 2px 0 #000;">
+              ${this.esc(deck.name).toUpperCase()}
+            </div>
+            <div style="font-size:0.6rem; color:#7ee7ff; font-weight:900;">
+              ${cards.length} ${t('store2.cards')}
+            </div>
           </div>
-          <div style="display:flex; gap:14px; align-items:center;">
-            <div class="store-view-deck" data-deck="${this.esc(deck.id)}" style="position:relative; width:132px; height:142px; flex-shrink:0; cursor:pointer;">
-              ${arts.map((a: string, i: number) => `
-                <div style="position:absolute; left:${i * 15}px; top:${i * 4}px; width:66px; height:94px; border-radius:8px; border:2px solid #d4af37; ${a ? `background:url('${a}') center/cover;` : 'background:rgba(255,255,255,0.06);'} box-shadow:0 4px 10px rgba(0,0,0,0.6);"></div>
-              `).join('')}
-              ${(deck.cards || []).length > 5 ? `
-                <div style="position:absolute; right:0; bottom:0; background:rgba(0,0,0,0.75); border:1px solid #d4af37; border-radius:8px; color:#ffd76a; font-size:0.6rem; font-weight:950; padding:2px 7px;">
-                  +${(deck.cards || []).length - 5}
-                </div>
-              ` : ''}
+
+          <div style="font-size:0.62rem; color:rgba(255,255,255,0.7); line-height:1.35;">${this.esc(deck.desc || '')}</div>
+
+          <!-- Trilho Deslizável com Todas as Cartas do Deck (Deslize para o lado / Toque para ver) -->
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.56rem; font-weight:900; color:#ffd700; letter-spacing:0.5px;">CARTAS DO DECK (DESLIZE ‹ ›):</span>
+              <span class="store-view-deck" data-deck="${this.esc(deck.id)}" style="font-size:0.56rem; color:#7ee7ff; cursor:pointer; font-weight:900;">🔍 Ver Todas em Tela Cheia</span>
             </div>
-            <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:7px;">
-              <div style="font-size:0.62rem; color:rgba(255,255,255,0.65); line-height:1.35;">${this.esc(deck.desc || '')}</div>
-              <div style="font-size:0.6rem; color:#7ee7ff; font-weight:900;">${t('store2.deck')} · ${(deck.cards || []).length} ${t('store2.cards')}</div>
-              <div>${this.buyBtn('deck', deck.id, isOwned, `${deck.currency === 'gems' ? '💎' : '🪙'} ${deck.price}`)}</div>
+            <div class="store-deck-cards-strip" style="display:flex; gap:8px; overflow-x:auto; padding:6px 2px; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x;">
+              ${cards.map((n: string, ci: number) => {
+                const c = this.resolveCard(n);
+                const art = c && c.image ? `background-image:url('${c.image}');` : 'background:rgba(255,255,255,0.06);';
+                return `
+                  <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:88px; border-radius:6px; border:2px solid #d4af37; ${art} background-size:cover; background-position:center; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
+                    <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.85); font-size:0.48rem; font-weight:900; color:#ffe9a8; text-align:center; padding:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                      ${this.esc(n)}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
             </div>
+          </div>
+
+          <div style="margin-top:2px;">
+            ${this.buyBtn('deck', deck.id, isOwned, `${deck.currency === 'gems' ? '💎' : '🪙'} ${deck.price}`)}
           </div>
         </div>
       `;
@@ -395,15 +346,25 @@ export class StoreScreen {
     `;
   }
 
-  private renderBoosterRatesHtml(pack: any): string {
+  private renderBoosterRatesHtml(pack: any, compact: boolean = false): string {
     if (pack.mode === 'special') {
       return `
-        <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:4px; padding:3px 10px; font-size:0.62rem; color:#d8b4fe; font-weight:900; letter-spacing:0.5px;">
+        <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:4px; padding:${compact ? '2px 6px' : '3px 10px'}; font-size:${compact ? '0.55rem' : '0.62rem'}; color:#d8b4fe; font-weight:900; letter-spacing:0.5px;">
           ⭐ POOL ESPECIAL (${(pack.fixedCards || []).length} CARTAS)
         </span>
       `;
     }
     const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
+    if (compact) {
+      return `
+        <div style="display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-start; align-items:center;">
+          <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
+          <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
+          <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
+          <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 3}</span>
+        </div>
+      `;
+    }
     return `
       <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; align-items:center;">
         <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
@@ -775,56 +736,56 @@ export class StoreScreen {
 
     return `
       <!-- CABEÇALHO DA SECÇÃO MÓDULO 2 (SPLIT) -->
-      <div style="margin:22px 16px 8px 16px;">
+      <div style="margin:20px 10px 6px 10px;">
         ${this.secTitle(this.title('packs_split', 'DESTAQUES ESPECIAIS (SPLIT)'))}
       </div>
 
-      <div id="store-booster-split-body" style="display:flex; flex-direction:row; align-items:center; justify-content:center; gap:14px; width:100%; padding:4px 16px 16px 16px; box-sizing:border-box;">
-        <!-- Lado Esquerdo: Booster Alongado com Quinas Rígidas -->
+      <div id="store-booster-split-body" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:10px; width:100%; max-width:100%; padding:4px 10px 14px 10px; box-sizing:border-box; overflow-x:hidden;">
+        <!-- Lado Esquerdo: Booster Alongado Proporcional ao Mobile -->
         <div id="booster-split-card-pouch" style="flex-shrink:0;">
-          ${this.renderBoosterPouchHtml(activePack, true, '140px')}
+          ${this.renderBoosterPouchHtml(activePack, true, '110px')}
         </div>
 
         <!-- Lado Direito: Círculos no topo, Texto no meio, Botões embaixo -->
-        <div style="flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;">
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; overflow:hidden;">
           <!-- 1. ACIMA: Seletores circulares de packs -->
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
             ${packs.map((p: any, i: number) => {
               const isActive = i === this.boosterSplitIdx;
               const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
               return `
-                <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:34px; height:34px; border-radius:50%; border:${isActive ? '2.5px solid #38bdf8' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.12)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 12px rgba(56,189,248,0.7)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
+                <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:28px; height:28px; border-radius:50%; border:${isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.1)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 10px rgba(56,189,248,0.7)' : '0 2px 4px rgba(0,0,0,0.4)'}; transition:all 0.15s ease; flex-shrink:0;">
                   ${p.customFront ? `
                     <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
                   ` : `
-                    <span style="font-size:1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
+                    <span style="font-size:0.85rem; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
                   `}
                 </button>
               `;
             }).join('')}
           </div>
 
-          <!-- 2. MEIO: Título e Descrição (texto limpo, sem caixa de fundo) -->
-          <div id="booster-split-info-area" style="display:flex; flex-direction:column; gap:4px;">
-            <div style="font-size:1.05rem; font-weight:950; letter-spacing:1px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4); line-height:1.2;">
+          <!-- 2. MEIO: Título e Descrição (texto limpo, sem estourar laterais) -->
+          <div id="booster-split-info-area" style="display:flex; flex-direction:column; gap:3px; min-width:0; overflow:hidden;">
+            <div style="font-size:0.85rem; font-weight:950; letter-spacing:0.5px; color:#ffd76a; text-shadow:0 0 8px rgba(255,215,0,0.4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
               ${this.esc(activePack.name).toUpperCase()}
             </div>
-            ${this.renderBoosterRatesHtml(activePack)}
-            <div style="font-size:0.68rem; color:rgba(255,255,255,0.7); line-height:1.35; margin-top:2px;">
+            ${this.renderBoosterRatesHtml(activePack, true)}
+            <div style="font-size:0.6rem; color:rgba(255,255,255,0.7); line-height:1.25; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis;">
               ${this.esc(activePack.desc || '')}
             </div>
           </div>
 
-          <!-- 3. EMBAIXO: Botão circular quantidade à esquerda + Cápsula à direita -->
-          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-            <button id="btn-booster-split-qty" title="Alternar quantidade" style="width:40px; height:40px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.8rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(255,215,0,0.3); flex-shrink:0;">
+          <!-- 3. EMBAIXO: Botão circular quantidade + Cápsula de compra sem estourar tela -->
+          <div style="display:flex; align-items:center; gap:6px; margin-top:2px; width:100%; min-width:0;">
+            <button id="btn-booster-split-qty" title="Alternar quantidade" style="width:32px; height:32px; border-radius:50%; border:1.5px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.75rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(255,215,0,0.3); flex-shrink:0;">
               x${this.boosterSplitQty}
             </button>
 
-            <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:40px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.7rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 14px rgba(0,180,216,0.4); white-space:nowrap; padding:0 12px;">
-              <span>✨ ABRIR EM 3D</span>
-              <span style="opacity:0.6;">·</span>
-              <span style="color:#ffe066; font-weight:950;">${priceText}</span>
+            <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:34px; border-radius:999px; border:1.5px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.65rem; letter-spacing:0.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 0 10px rgba(0,180,216,0.35); white-space:nowrap; padding:0 8px; overflow:hidden;">
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">✨ ABRIR</span>
+              <span style="opacity:0.5;">·</span>
+              <span style="color:#ffe066; font-weight:950; flex-shrink:0;">${priceText}</span>
             </button>
           </div>
         </div>
@@ -1028,32 +989,13 @@ export class StoreScreen {
   private renderDynamicSectionsHtml(owned: any): string {
     const order = this.getSectionOrder();
     const rendered: string[] = [];
-    order.forEach(key => {
+    order.forEach((key, idx) => {
       const html = this.renderSectionByKey(key, owned);
       if (html && html.trim()) {
-        rendered.push(`<div id="sec-${key}">${html}</div>`);
+        rendered.push(`<div id="sec-${key}-${idx}" class="sec-${key} store-dynamic-sec" data-module-key="${key}" data-order-idx="${idx}" style="width:100%; max-width:100%; overflow-x:hidden; box-sizing:border-box;">${html}</div>`);
       }
     });
     return rendered.join('');
-  }
-
-  private bindDeckTabs(container: HTMLElement) {
-    container.querySelectorAll('.store-deck-tab-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = parseInt((btn as HTMLElement).dataset.idx || '0');
-        if (!isNaN(idx)) {
-          this.deckActiveIdx = idx;
-          const wrap = container.querySelector('#store-decks-wrapper');
-          if (wrap) {
-            wrap.innerHTML = this.deckSectionsHtml(this.getOwned());
-            this.bindDeckTabs(container);
-            this.bindBuyButtons(container);
-            this.bindViewTaps(container);
-          }
-        }
-      });
-    });
   }
 
   private renderCategoryPillsHtml(): string {
@@ -1069,7 +1011,15 @@ export class StoreScreen {
       artifacts: { label: '✨ Artefatos', color: '#f472b6', border: 'rgba(244,114,182,0.3)', bg: 'rgba(244,114,182,0.1)' },
     };
 
-    const activeSections = order.filter(k => k !== 'banners' && this.isSectionVisible(k) && pillsMeta[k]);
+    const seen = new Set<string>();
+    const activeSections: string[] = [];
+    order.forEach(k => {
+      if (k !== 'banners' && this.isSectionVisible(k) && pillsMeta[k] && !seen.has(k)) {
+        seen.add(k);
+        activeSections.push(k);
+      }
+    });
+
     return activeSections.map(k => {
       const p = pillsMeta[k];
       return `<button class="store-cat-pill" data-target="${k}" style="padding:6px 14px; border-radius:999px; font-size:0.68rem; font-weight:900; letter-spacing:0.5px; border:1px solid ${p.border}; background:${p.bg}; color:${p.color}; cursor:pointer; white-space:nowrap; transition:0.2s;">${p.label}</button>`;
@@ -1081,7 +1031,7 @@ export class StoreScreen {
     const bal = ProgressionManager.getPlayerData();
 
     container.innerHTML = `
-    <div class="store-screen" style="flex:1; overflow-y:auto; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '10px'}; padding-bottom:110px;">
+    <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '10px'}; padding-bottom:110px;">
       <!-- SALDO -->
       <div class="store-sec" style="display:flex; gap:10px; justify-content:center; padding:14px 16px 8px 16px;">
         <div style="display:flex; align-items:center; gap:8px; background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #0e0903; border-radius:12px; padding:7px 16px; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35);">
@@ -1161,12 +1111,7 @@ export class StoreScreen {
     container.querySelectorAll('.store-cat-pill').forEach(btn => {
       btn.addEventListener('click', () => {
         const target = (btn as HTMLElement).dataset.target;
-        let targetEl = container.querySelector('#sec-' + target);
-        if (!targetEl && target === 'packs') {
-          targetEl = container.querySelector('#store-boosters-wrapper');
-        } else if (!targetEl && target === 'packs_split') {
-          targetEl = container.querySelector('#store-boosters-split-wrapper');
-        }
+        const targetEl = container.querySelector('.sec-' + target) || container.querySelector('[data-module-key="' + target + '"]');
         if (targetEl) {
           targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -1274,7 +1219,6 @@ export class StoreScreen {
 
     this.bindBoosterCarousel(container);
     this.bindBoosterSplit(container);
-    this.bindDeckTabs(container);
   }
 
   private openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
@@ -1412,8 +1356,15 @@ export class StoreScreen {
     const offer = pool.find((o: any) => o.card === cardName);
     if (!offer) return;
     const owned = this.getOwned().cards.includes(cardName);
+
+    // Lista de todas as cartas da seção permitindo navegar/passar para o lado
+    const cardsList = pool.map((o: any) => this.resolveCard(o.card) || { name: o.card, image: '' });
+    const cardIdx = pool.findIndex((o: any) => o.card === cardName);
+
     openCardViewer({
       card: this.resolveCard(cardName) || { name: cardName, image: '' },
+      list: cardsList.length > 0 ? cardsList : undefined,
+      index: Math.max(0, cardIdx),
       priceHtml: `<span style="color:${currency === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${currency === 'gems' ? '💎' : '🪙'} ${offer.price}</span>`,
       actionLabel: owned ? t('store2.owned') : t('store2.buy'),
       actionDisabled: owned,
@@ -1428,16 +1379,18 @@ export class StoreScreen {
     });
   }
 
-  private openDeckViewerFor(container: HTMLElement, deckId: string) {
+  private openDeckViewerFor(container: HTMLElement, deckId: string, initialIdx: number = 0) {
     const deck = this.data.decks.find((x: any) => x.id === deckId);
     if (!deck) return;
     const cards = (deck.cards || []).map((n: string) => this.resolveCard(n) || { name: n, image: '' });
     const owned = this.getOwned().decks.includes(deckId);
     const cur = deck.currency === 'gems' ? 'gems' : 'gold';
+    const startIdx = Math.max(0, Math.min(cards.length - 1, initialIdx));
+
     openCardViewer({
-      card: cards[0] || { name: deck.name, image: deck.image || '' },
+      card: cards[startIdx] || { name: deck.name, image: deck.image || '' },
       list: cards.length > 0 ? cards : undefined,
-      index: 0,
+      index: startIdx,
       priceHtml: `<div style="text-align:center;"><div style="font-size:0.7rem; font-weight:950; color:#ffd76a; letter-spacing:1px;">${this.esc(deck.name).toUpperCase()}</div><div style="color:${cur === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${cur === 'gems' ? '💎' : '🪙'} ${deck.price}</div></div>`,
       actionLabel: owned ? t('store2.owned') : t('store2.buy'),
       actionDisabled: owned,
@@ -1467,15 +1420,28 @@ export class StoreScreen {
         this.openCardViewerFor(container, h.dataset.viewName || '', h.dataset.viewCur || 'gold');
       });
     });
+
     container.querySelectorAll('.store-view-deck').forEach(el => {
       const h = el as HTMLElement;
       if (h.dataset.viewBound) return;
       h.dataset.viewBound = '1';
       h.addEventListener('click', () => {
-        this.openDeckViewerFor(container, h.dataset.deck || '');
+        this.openDeckViewerFor(container, h.dataset.deck || '', 0);
+      });
+    });
+
+    container.querySelectorAll('.store-view-deck-card').forEach(el => {
+      const h = el as HTMLElement;
+      if (h.dataset.viewBound) return;
+      h.dataset.viewBound = '1';
+      h.addEventListener('click', () => {
+        const deckId = h.dataset.deckId || h.dataset.deck || '';
+        const idx = parseInt(h.dataset.cardIdx || '0');
+        this.openDeckViewerFor(container, deckId, idx);
       });
     });
   }
+
   private bindBuyButtons(container: HTMLElement) {
     container.querySelectorAll('.store-buy[data-kind]').forEach(btn => {
       btn.addEventListener('click', () => {

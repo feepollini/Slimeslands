@@ -16,6 +16,14 @@ import SCENARIOS from './core/scenarios.json';
 import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
 import { SoundManager } from './ui/utils/SoundManager';
 
+// Tela cheia do lobby (Fullscreen API; onde não há suporte o botão se esconde)
+function toggleLobbyFullscreen() {
+    try {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else document.documentElement.requestFullscreen().catch(() => {});
+    } catch { /* sem suporte: ignora */ }
+}
+
 class HubApp {
   private container: HTMLElement;
   private menu: MenuScreen;
@@ -133,11 +141,28 @@ class HubApp {
       this.switchTab('settings');
     });
 
-    const profileBtn = document.getElementById('btn-profile');
-    profileBtn?.addEventListener('click', () => {
-      SoundManager.playAction('clique_perfil');
-      this.switchTab('profile');
-    });
+        const profileBtn = document.getElementById('btn-profile');
+        profileBtn?.addEventListener('click', () => {
+            SoundManager.playAction('clique_perfil');
+            this.switchTab('profile');
+        });
+
+        // Botão tela cheia (canto do lobby, junto das moedas)
+        const fsBtn = document.getElementById('btn-fullscreen') as HTMLElement | null;
+        if (fsBtn && !document.fullscreenEnabled) fsBtn.style.display = 'none';
+        fsBtn?.addEventListener('click', () => {
+            SoundManager.playAction('clique_geral', 0.5);
+            toggleLobbyFullscreen();
+        });
+        document.addEventListener('fullscreenchange', () => {
+            const b = document.getElementById('btn-fullscreen') as HTMLElement | null;
+            if (b) {
+                const on = !!document.fullscreenElement;
+                b.style.borderColor = on ? '#ffd700' : 'rgba(212,175,55,0.4)';
+                b.style.boxShadow = on ? '0 0 10px rgba(255,215,0,0.6)' : 'none';
+                b.title = on ? 'Sair da tela cheia' : 'Tela cheia';
+            }
+        });
 
     this.bottomNav.bind();
   }

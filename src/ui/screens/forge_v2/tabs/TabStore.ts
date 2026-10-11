@@ -117,7 +117,7 @@ export function normalizeStoreData(input: any): StoreData {
     }
     if (!input.sectionVisibility) input.sectionVisibility = {};
     if (input.sectionVisibility.packs_split === undefined) input.sectionVisibility.packs_split = true;
-    if (!input.deckLayoutMode) input.deckLayoutMode = 'carousel';
+    input.deckLayoutMode = 'standalone'; // Decks tem apenas um modo: o separado
     if (!input.boosterDisplayMode) input.boosterDisplayMode = 'carousel';
     return input as StoreData;
   }
@@ -133,7 +133,7 @@ export function normalizeStoreData(input: any): StoreData {
     artifacts: [],
     sectionOrder: [...DEFAULT_SECTION_ORDER],
     sectionVisibility: {},
-    deckLayoutMode: 'carousel',
+    deckLayoutMode: 'standalone',
     boosterDisplayMode: 'carousel'
   };
 }
@@ -147,8 +147,9 @@ export class TabStore {
   private saveJson: (endpoint: string, data: any) => Promise<boolean>;
   private openMediaPicker: (onSelect: (url: string) => void) => void;
 
-  // Módulo ativo atualmente selecionado na Coluna 1 para edição na Coluna 2
+  // Módulo ativo e índice na ordem da vitrine para centralização e edição simultânea
   private static activeModuleKey: string = 'packs';
+  private static activeOrderIdx: number = 0;
 
   constructor(state: any, callbacks: any, core: any) {
     this.data = normalizeStoreData(state.storeItems);
@@ -158,6 +159,16 @@ export class TabStore {
     this.showToast = callbacks.showToast;
     this.openMediaPicker = callbacks.openMediaPicker;
     this.saveJson = core.saveJson.bind(core);
+
+    // Garante que o módulo ativo e o índice da vitrine estejam sempre em sincronia
+    const currentOrder = this.data.sectionOrder || DEFAULT_SECTION_ORDER;
+    if (!currentOrder.includes(TabStore.activeModuleKey)) {
+      TabStore.activeModuleKey = currentOrder[0] || 'banners';
+      TabStore.activeOrderIdx = 0;
+    } else if (currentOrder[TabStore.activeOrderIdx] !== TabStore.activeModuleKey) {
+      const foundIdx = currentOrder.indexOf(TabStore.activeModuleKey);
+      if (foundIdx !== -1) TabStore.activeOrderIdx = foundIdx;
+    }
   }
 
   private esc(s: string): string {
@@ -191,7 +202,7 @@ export class TabStore {
             </div>
             <div>
               <div style="font-size:0.95rem; font-weight:950; letter-spacing:1px; color:#ffd700;">LOJA & OFERTAS</div>
-              <div style="font-size:0.62rem; color:#888;">Vitrine modular em 3 painéis: Ordem dos Módulos · Configuração do Módulo Clicado · Preview ao Vivo</div>
+              <div style="font-size:0.62rem; color:#888;">Gestão modular em 3 painéis lado a lado · Suporte a repetição de módulos · Centralização ao vivo</div>
             </div>
           </div>
 
@@ -215,7 +226,7 @@ export class TabStore {
           <!-- ============================================================== -->
           <!-- COLUNA 2 (CENTRO): MENU DO MÓDULO CLICADO (FORA DE CONTAINER)  -->
           <!-- ============================================================== -->
-          <div style="flex:1; min-width:380px; border-right:1px solid rgba(255,255,255,0.1); background:#0e1019; display:flex; flex-direction:column; overflow:hidden;">
+          <div id="col2-editor-panel" style="flex:1; min-width:380px; border-right:1px solid rgba(255,255,255,0.1); background:#0e1019; display:flex; flex-direction:column; overflow:hidden;">
             ${this.renderColumn2EditorHtml()}
           </div>
 
@@ -232,13 +243,11 @@ export class TabStore {
   }
 
   // =========================================================================
-  // COLUNA 1: MÓDULOS DA VITRINE (TOTALMENTE ABERTO, FORA DE CONTAINER RETRÁTIL)
+  // COLUNA 1: MÓDULOS DA VITRINE (TOTALMENTE ABERTO, SUPORTA REPETIÇÃO)
   // =========================================================================
   private renderColumn1ModulesHtml(): string {
     const d = this.data;
     const currentOrder = d.sectionOrder || [...DEFAULT_SECTION_ORDER];
-    const allAvailableKeys = Object.keys(SECTION_METADATA);
-    const inactiveKeys = allAvailableKeys.filter(k => !currentOrder.includes(k));
 
     return `
       <!-- Cabeçalho Fixo da Coluna 1 -->
@@ -253,18 +262,18 @@ export class TabStore {
       </div>
 
       <div style="padding:8px 12px; background:rgba(255,215,0,0.03); border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.6rem; color:#888; line-height:1.3;">
-        Clique no módulo para editar ao lado. Use ▲/▼ para ordenar na vitrine.
+        Clique no módulo para editar ao lado e centralizar no preview. Você pode repetir qualquer módulo na vitrine.
       </div>
 
-      <!-- Lista Rolável dos Módulos -->
+      <!-- Lista Rolável dos Módulos (com suporte a instâncias repetidas) -->
       <div style="flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px;">
         ${currentOrder.map((key, idx) => {
           const meta = SECTION_METADATA[key] || { label: key, icon: '📌', desc: '' };
           const isVisible = d.sectionVisibility?.[key] !== false;
-          const isSelected = TabStore.activeModuleKey === key;
+          const isSelected = TabStore.activeOrderIdx === idx;
 
           return `
-            <div class="store-module-item" data-key="${key}" style="background:${isSelected ? 'linear-gradient(90deg, rgba(255,215,0,0.18), rgba(255,122,0,0.12))' : 'rgba(0,0,0,0.35)'}; border:1.5px solid ${isSelected ? '#ffd700' : (isVisible ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)')}; border-radius:10px; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; transition:0.15s; box-shadow:${isSelected ? '0 0 12px rgba(255,215,0,0.25)' : 'none'}; ${isVisible ? '' : 'opacity:0.5;'}">
+            <div class="store-module-item" data-key="${key}" data-idx="${idx}" style="background:${isSelected ? 'linear-gradient(90deg, rgba(255,215,0,0.18), rgba(255,122,0,0.12))' : 'rgba(0,0,0,0.35)'}; border:1.5px solid ${isSelected ? '#ffd700' : (isVisible ? 'rgba(255,255,255,0.08)' : 'rgba(239,68,68,0.3)')}; border-radius:10px; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; transition:0.15s; box-shadow:${isSelected ? '0 0 12px rgba(255,215,0,0.25)' : 'none'}; ${isVisible ? '' : 'opacity:0.5;'}">
               
               <!-- Info Esquerda -->
               <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
@@ -288,41 +297,24 @@ export class TabStore {
               <div style="display:flex; align-items:center; gap:3px; flex-shrink:0;">
                 <button class="btn-sec-move-up editor-btn-secondary" data-idx="${idx}" style="font-size:0.6rem; padding:3px 6px; ${idx === 0 ? 'opacity:0.2; pointer-events:none;' : ''}" title="Subir">▲</button>
                 <button class="btn-sec-move-down editor-btn-secondary" data-idx="${idx}" style="font-size:0.6rem; padding:3px 6px; ${idx === currentOrder.length - 1 ? 'opacity:0.2; pointer-events:none;' : ''}" title="Descer">▼</button>
-                <button class="btn-sec-toggle-vis editor-btn-secondary" data-key="${key}" style="font-size:0.6rem; padding:3px 6px; ${isVisible ? 'color:#4ade80;' : 'color:#ef4444;'}" title="Alternar visibilidade">${isVisible ? '👁️' : '🚫'}</button>
-                <button class="btn-sec-remove editor-btn-secondary" data-key="${key}" style="font-size:0.6rem; padding:3px 6px; color:#ef4444;" title="Tirar da vitrine">🗑️</button>
+                <button class="btn-sec-toggle-vis editor-btn-secondary" data-key="${key}" data-idx="${idx}" style="font-size:0.6rem; padding:3px 6px; ${isVisible ? 'color:#4ade80;' : 'color:#ef4444;'}" title="Alternar visibilidade">${isVisible ? '👁️' : '🚫'}</button>
+                <button class="btn-sec-remove editor-btn-secondary" data-idx="${idx}" style="font-size:0.6rem; padding:3px 6px; color:#ef4444;" title="Tirar esta instância da vitrine">🗑️</button>
               </div>
             </div>
           `;
         }).join('')}
 
-        <!-- Bloco Adicionar Novo Módulo -->
+        <!-- Bloco Adicionar Módulo à Vitrine (permite repetir qualquer módulo) -->
         <div style="margin-top:8px; padding:10px; background:rgba(0,0,0,0.3); border:1px dashed rgba(255,255,255,0.15); border-radius:10px; display:flex; flex-direction:column; gap:6px;">
           <div style="font-size:0.62rem; font-weight:900; color:#4ade80; display:flex; align-items:center; gap:4px;">
-            <span>➕</span> ADICIONAR MÓDULO À VITRINE
+            <span>➕</span> ADICIONAR MÓDULO À VITRINE (PERMITE REPETIR)
           </div>
-          ${inactiveKeys.length > 0 ? `
-            <div style="display:flex; gap:4px;">
-              <select id="select-add-module" class="editor-input" style="flex:1; font-size:0.65rem; padding:4px 6px;">
-                ${inactiveKeys.map(k => `<option value="${k}">${SECTION_METADATA[k]?.icon || '📌'} ${SECTION_METADATA[k]?.label || k}</option>`).join('')}
-              </select>
-              <button id="btn-add-module" class="editor-btn-secondary" style="font-size:0.62rem; font-weight:900; color:#4ade80; border-color:rgba(74,222,128,0.4); padding:4px 8px; white-space:nowrap;">
-                + ADICIONAR
-              </button>
-            </div>
-          ` : `
-            <div style="font-size:0.58rem; color:#888;">Todos os módulos disponíveis já estão na vitrine.</div>
-          `}
-        </div>
-
-        <!-- Opção Rápida de Decks -->
-        <div style="margin-top:4px; padding:8px 10px; background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.2); border-radius:10px; display:flex; flex-direction:column; gap:4px;">
-          <span style="font-size:0.6rem; font-weight:900; color:#d8b4fe;">🃏 Layout dos Decks na Loja:</span>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
-            <button id="btn-set-deck-mode-carousel" class="editor-btn-secondary" style="font-size:0.58rem; padding:4px 2px; ${d.deckLayoutMode === 'carousel' ? 'background:rgba(255,215,0,0.2); color:#ffd700; border-color:#ffd700;' : 'color:#888;'}">
-              🎠 Carrossel
-            </button>
-            <button id="btn-set-deck-mode-standalone" class="editor-btn-secondary" style="font-size:0.58rem; padding:4px 2px; ${d.deckLayoutMode === 'standalone' ? 'background:rgba(168,85,247,0.2); color:#d8b4fe; border-color:#a855f7;' : 'color:#888;'}">
-              ⭐ Separados
+          <div style="display:flex; gap:4px;">
+            <select id="select-add-module" class="editor-input" style="flex:1; font-size:0.65rem; padding:4px 6px;">
+              ${Object.keys(SECTION_METADATA).map(k => `<option value="${k}">${SECTION_METADATA[k]?.icon || '📌'} ${SECTION_METADATA[k]?.label || k}</option>`).join('')}
+            </select>
+            <button id="btn-add-module" class="editor-btn-secondary" style="font-size:0.62rem; font-weight:900; color:#4ade80; border-color:rgba(74,222,128,0.4); padding:4px 8px; white-space:nowrap;">
+              + ADICIONAR
             </button>
           </div>
         </div>
@@ -338,7 +330,6 @@ export class TabStore {
     const meta = SECTION_METADATA[key] || { label: key, icon: '📌', desc: '' };
     const currentOrder = this.data.sectionOrder || [];
     const isInVitrine = currentOrder.includes(key);
-    const vitrinePos = isInVitrine ? currentOrder.indexOf(key) + 1 : null;
 
     return `
       <!-- Cabeçalho Fixo da Coluna 2 -->
@@ -350,14 +341,20 @@ export class TabStore {
               ${meta.label}
             </div>
             <div style="font-size:0.6rem; color:#888;">
-              ${isInVitrine ? `● Ativo na vitrine (Posição #${vitrinePos})` : `○ Fora da vitrine`}
+              ${isInVitrine ? `● Na vitrine (Instância #${TabStore.activeOrderIdx + 1})` : `○ Fora da vitrine`}
             </div>
           </div>
         </div>
 
-        <button class="btn-toggle-active-module-vitrine editor-btn-secondary" data-key="${key}" style="font-size:0.65rem; font-weight:900; padding:6px 12px; white-space:nowrap;">
-          ${isInVitrine ? '🗑️ Tirar da Vitrine' : '➕ Ativar na Vitrine'}
-        </button>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <!-- Botão para centralizar no preview -->
+          <button id="btn-center-preview" class="editor-btn-secondary" style="font-size:0.65rem; font-weight:900; padding:6px 10px; color:#ffd700; border-color:rgba(255,215,0,0.4);">
+            🎯 Centralizar no Preview
+          </button>
+          <button class="btn-toggle-active-module-vitrine editor-btn-secondary" data-key="${key}" style="font-size:0.65rem; font-weight:900; padding:6px 10px; white-space:nowrap;">
+            ${isInVitrine ? '🗑️ Tirar' : '➕ Ativar'}
+          </button>
+        </div>
       </div>
 
       <!-- Conteúdo Aberto e Rolável do Formulário do Módulo Selecionado -->
@@ -375,7 +372,8 @@ export class TabStore {
 
     switch (key) {
       // ---------------------------------------------------------------------
-      // MÓDULO 1: BOOSTERS CARROSSEL
+      // ---------------------------------------------------------------------
+      // MÓDULO 1: BOOSTERS CARROSSEL (APENAS ORGANIZAÇÃO DA VITRINE)
       // ---------------------------------------------------------------------
       case 'packs':
         return `
@@ -384,7 +382,9 @@ export class TabStore {
               <div style="font-size:0.95rem; font-weight:950; color:#ff7a00;">📦 BOOSTERS - MÓDULO 1 (CARROSSEL 3D)</div>
               <div style="font-size:0.65rem; color:#aaa;">Carrossel 3D horizontal com 3 boosters peeking e física elegante de deslize.</div>
             </div>
-            <button id="store-pack-add" class="editor-btn-primary" style="font-size:0.7rem; padding:6px 14px; background:#ff7a00; border-color:#ff7a00;">+ NOVO BOOSTER</button>
+            <button class="btn-go-packs-tab editor-btn-secondary" style="font-size:0.68rem; font-weight:900; padding:6px 14px; color:#ff7a00; border-color:#ff7a00;">
+              📦 ABRIR ABA BOOSTERS
+            </button>
           </div>
 
           <div style="display:flex; flex-direction:column; gap:4px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
@@ -392,72 +392,33 @@ export class TabStore {
             <input type="text" id="store-title-packs" class="editor-input" value="${this.esc((d.titles as any)?.packs || 'PACOTES & BOOSTERS (CARROSSEL)')}" style="font-size:0.72rem; font-weight:700;">
           </div>
 
-          <div style="display:flex; flex-direction:column; gap:12px;">
+          <!-- Informação e Navegação para o Editor Oficial de Boosters -->
+          <div style="background:rgba(255,122,0,0.08); border:1px solid rgba(255,122,0,0.25); border-radius:10px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <div style="font-size:0.68rem; color:#fbd38d; line-height:1.4;">
+              💡 <b>Os boosters são criados e configurados na Aba Boosters</b> (modelos 3D, taxas de cartas, capas e temas). Aqui na Loja você apenas organiza a vitrine e define quais aparecem.
+            </div>
+            <button class="btn-go-packs-tab editor-btn-primary" style="font-size:0.65rem; font-weight:900; padding:7px 14px; background:#ff7a00; border-color:#ff7a00; white-space:nowrap;">
+              ⚙️ EDITAR BOOSTERS 3D
+            </button>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:0.72rem; font-weight:900; color:#fff;">Boosters Cadastrados na Vitrine (${d.packs.length}):</div>
             ${d.packs.map((pack, i) => `
-              <div style="background:rgba(0,0,0,0.45); border:1px solid rgba(255,122,0,0.25); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <input type="text" class="editor-input store-pack-name" data-idx="${i}" value="${this.esc(pack.name)}" placeholder="Nome do Booster" style="flex:1; font-size:0.75rem; font-weight:900; color:#ffd700;">
-                  <button class="editor-btn-secondary store-pack-del" data-idx="${i}" style="font-size:0.65rem; padding:4px 8px; color:#ef4444; margin-left:6px;" title="Remover Booster">✕</button>
-                </div>
-
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <div style="flex:1; display:flex; align-items:center; gap:4px;">
-                    <input type="number" class="editor-input store-pack-price" data-idx="${i}" value="${pack.price}" min="0" style="flex:1; font-size:0.68rem;" title="Preço">
-                    <select class="editor-input store-pack-cur" data-idx="${i}" style="width:75px; font-size:0.65rem;">
-                      <option value="gold" ${pack.currency !== 'gems' ? 'selected' : ''}>🪙 Ouro</option>
-                      <option value="gems" ${pack.currency === 'gems' ? 'selected' : ''}>💎 Gemas</option>
-                    </select>
-                  </div>
-                  <div style="flex:1; display:flex; align-items:center; gap:4px;">
-                    <span style="font-size:0.62rem; color:#aaa;">Cartas:</span>
-                    <input type="number" class="editor-input store-pack-count" data-idx="${i}" value="${pack.cardsCount || 3}" min="1" max="10" style="width:50px; font-size:0.68rem;" title="Qtd de cartas">
+              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+                  <div style="width:26px; height:38px; border-radius:2px; border:1px solid #ffd700; ${pack.customFront ? `background:url('${pack.customFront}') center/cover;` : 'background:#222;'} flex-shrink:0;"></div>
+                  <div style="display:flex; flex-direction:column; min-width:0;">
+                    <span style="font-size:0.75rem; font-weight:900; color:#ffd700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(pack.name)}</span>
+                    <span style="font-size:0.6rem; color:#aaa;">Preço: ${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 3} cartas</span>
                   </div>
                 </div>
 
-                <textarea class="editor-input store-pack-desc" data-idx="${i}" rows="2" style="font-size:0.65rem;" placeholder="Descrição do booster...">${this.esc(pack.desc || '')}</textarea>
-
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <span style="font-size:0.62rem; color:#aaa;">Tema:</span>
-                  <select class="editor-input store-pack-theme" data-idx="${i}" style="flex:1; font-size:0.65rem;">
-                    <option value="charizard" ${pack.theme === 'charizard' ? 'selected' : ''}>🔥 Fogo / Vermelho</option>
-                    <option value="pikachu" ${pack.theme === 'pikachu' ? 'selected' : ''}>⚡ Raio / Dourado</option>
-                    <option value="rayquaza" ${pack.theme === 'rayquaza' ? 'selected' : ''}>🌿 Natureza / Verde</option>
-                    <option value="mewtwo" ${pack.theme === 'mewtwo' ? 'selected' : ''}>🔮 Arcano / Roxo</option>
-                    <option value="winter" ${pack.theme === 'winter' ? 'selected' : ''}>❄️ Inverno / Azul</option>
-                  </select>
-                </div>
-
-                <!-- Capa Personalizada Rígida -->
-                <div style="display:flex; gap:6px; align-items:center; background:rgba(0,0,0,0.3); padding:6px; border-radius:6px;">
-                  <div style="width:28px; height:42px; border-radius:2px; border:1px solid #ffd700; ${pack.customFront ? `background:url('${pack.customFront}') center/cover;` : 'background:#222;'} flex-shrink:0;"></div>
-                  <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
-                    <span style="font-size:0.6rem; color:#ffd700; font-weight:800;">Capa Personalizada (Retângulo Rígido):</span>
-                    <div style="display:flex; gap:4px;">
-                      <button class="editor-btn-secondary store-pack-front-pick" data-idx="${i}" style="font-size:0.58rem; padding:2px 6px;">🖼️ Mídia</button>
-                      ${pack.customFront ? `<button class="editor-btn-secondary store-pack-front-clear" data-idx="${i}" style="font-size:0.58rem; padding:2px 6px; color:#ef4444;">✕ Limpar</button>` : ''}
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Taxas de Raridade -->
-                <div style="display:flex; gap:4px; align-items:center; background:rgba(0,0,0,0.3); padding:4px 6px; border-radius:6px;">
-                  <div style="flex:1; display:flex; align-items:center; gap:2px;">
-                    <span style="font-size:0.58rem; color:#aaa;">Comum %:</span>
-                    <input type="number" class="editor-input store-pack-rate-common" data-idx="${i}" value="${pack.rates?.common ?? 70}" min="0" max="100" style="width:40px; font-size:0.62rem; padding:2px;">
-                  </div>
-                  <div style="flex:1; display:flex; align-items:center; gap:2px;">
-                    <span style="font-size:0.58rem; color:#38bdf8;">Rara %:</span>
-                    <input type="number" class="editor-input store-pack-rate-rare" data-idx="${i}" value="${pack.rates?.rare ?? 25}" min="0" max="100" style="width:40px; font-size:0.62rem; padding:2px;">
-                  </div>
-                  <div style="flex:1; display:flex; align-items:center; gap:2px;">
-                    <span style="font-size:0.58rem; color:#fbbf24;">Lend %:</span>
-                    <input type="number" class="editor-input store-pack-rate-leg" data-idx="${i}" value="${pack.rates?.legendary ?? 5}" min="0" max="100" style="width:40px; font-size:0.62rem; padding:2px;">
-                  </div>
-                </div>
-
-                <label style="display:flex; align-items:center; gap:6px; font-size:0.65rem; color:#aaa; cursor:pointer;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.65rem; color:#aaa; cursor:pointer; flex-shrink:0;">
                   <input type="checkbox" class="store-pack-pub" data-idx="${i}" ${pack.published !== false ? 'checked' : ''}>
-                  <span>Exibir na Vitrine da Loja</span>
+                  <span style="color:${pack.published !== false ? '#4ade80' : '#ef4444'}; font-weight:800;">
+                    ${pack.published !== false ? '● Ativo na Loja' : '○ Oculto'}
+                  </span>
                 </label>
               </div>
             `).join('')}
@@ -465,15 +426,18 @@ export class TabStore {
         `;
 
       // ---------------------------------------------------------------------
-      // MÓDULO 2: BOOSTERS SPLIT LATERAL
+      // MÓDULO 2: BOOSTERS SPLIT LATERAL (APENAS ORGANIZAÇÃO DA VITRINE)
       // ---------------------------------------------------------------------
       case 'packs_split':
         return `
-          <div>
-            <div style="font-size:0.95rem; font-weight:950; color:#38bdf8;">🌓 BOOSTERS - MÓDULO 2 (SPLIT LATERAL)</div>
-            <div style="font-size:0.65rem; color:#aaa; margin-top:2px;">
-              Exibe o booster vertical rígido no lado esquerdo e seletores, detalhes e compra no lado direito.
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+              <div style="font-size:0.95rem; font-weight:950; color:#38bdf8;">🌓 BOOSTERS - MÓDULO 2 (SPLIT LATERAL)</div>
+              <div style="font-size:0.65rem; color:#aaa;">Exibe o booster em destaque à esquerda e detalhes de abertura à direita.</div>
             </div>
+            <button class="btn-go-packs-tab editor-btn-secondary" style="font-size:0.68rem; font-weight:900; padding:6px 14px; color:#38bdf8; border-color:#38bdf8;">
+              📦 ABRIR ABA BOOSTERS
+            </button>
           </div>
 
           <div style="display:flex; flex-direction:column; gap:4px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
@@ -481,23 +445,47 @@ export class TabStore {
             <input type="text" id="store-title-packs-split" class="editor-input" value="${this.esc((d.titles as any)?.packs_split || 'DESTAQUES ESPECIAIS (SPLIT)')}" style="font-size:0.72rem; font-weight:700;">
           </div>
 
-          <div style="background:rgba(0,0,0,0.4); border-radius:10px; border:1px solid rgba(255,255,255,0.08); padding:16px; display:flex; flex-direction:column; gap:10px;">
-            <div style="font-size:0.75rem; font-weight:900; color:#fff;">ℹ️ Booster Compartilhado:</div>
-            <div style="font-size:0.68rem; color:#aaa; line-height:1.4;">
-              O Módulo 2 projeta os mesmos boosters cadastrados no jogo com visual split horizontal. Para gerenciar capas, taxas, temas e novos boosters, clique em <b>Módulo 1</b> na coluna da esquerda.
+          <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:10px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:12px;">
+            <div style="font-size:0.68rem; color:#bae6fd; line-height:1.4;">
+              ℹ️ <b>Organização da Vitrine Split:</b> Este módulo projeta os mesmos boosters ativos cadastrados na <b>Aba Boosters</b>, utilizando uma apresentação com foco no modelo do pacote e ações imediatas.
             </div>
+            <button class="btn-go-packs-tab editor-btn-primary" style="font-size:0.65rem; font-weight:900; padding:7px 14px; background:#0284c7; border-color:#0284c7; white-space:nowrap;">
+              ⚙️ EDITAR BOOSTERS 3D
+            </button>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="font-size:0.72rem; font-weight:900; color:#fff;">Boosters na Vitrine Split (${d.packs.length}):</div>
+            ${d.packs.map((pack, i) => `
+              <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+                  <div style="width:26px; height:38px; border-radius:2px; border:1px solid #38bdf8; ${pack.customFront ? `background:url('${pack.customFront}') center/cover;` : 'background:#222;'} flex-shrink:0;"></div>
+                  <div style="display:flex; flex-direction:column; min-width:0;">
+                    <span style="font-size:0.75rem; font-weight:900; color:#38bdf8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(pack.name)}</span>
+                    <span style="font-size:0.6rem; color:#aaa;">${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 3} cartas</span>
+                  </div>
+                </div>
+
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.65rem; color:#aaa; cursor:pointer; flex-shrink:0;">
+                  <input type="checkbox" class="store-pack-pub" data-idx="${i}" ${pack.published !== false ? 'checked' : ''}>
+                  <span style="color:${pack.published !== false ? '#4ade80' : '#ef4444'}; font-weight:800;">
+                    ${pack.published !== false ? '● Ativo' : '○ Oculto'}
+                  </span>
+                </label>
+              </div>
+            `).join('')}
           </div>
         `;
 
       // ---------------------------------------------------------------------
-      // DECKS COMPLETOS
+      // DECKS COMPLETOS (APENAS MODO SEPARADO)
       // ---------------------------------------------------------------------
       case 'decks':
         return `
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <div>
               <div style="font-size:0.95rem; font-weight:950; color:#d8b4fe;">🃏 DECKS COMPLETOS (${d.decks.length})</div>
-              <div style="font-size:0.65rem; color:#aaa;">Decks pré-montados com lista de cartas inclusas.</div>
+              <div style="font-size:0.65rem; color:#aaa;">Cada deck é apresentado em sua própria seção dedicada e separada na loja.</div>
             </div>
             <button id="store-deck-add" class="editor-btn-primary" style="font-size:0.7rem; padding:6px 14px; background:#a855f7; border-color:#a855f7;">+ NOVO DECK</button>
           </div>
@@ -726,7 +714,7 @@ export class TabStore {
         <div style="display:flex; gap:4px;">
           <button id="btn-preview-add-gold" class="editor-btn-secondary" style="font-size:0.58rem; padding:3px 6px;" title="Adicionar 1.000 moedas para testar">+1k 🪙</button>
           <button id="btn-preview-add-gems" class="editor-btn-secondary" style="font-size:0.58rem; padding:3px 6px;" title="Adicionar 100 diamantes para testar">+100 💎</button>
-          <button id="btn-refresh-store-preview" class="editor-btn-secondary" style="font-size:0.58rem; padding:3px 6px;">🔄</button>
+          <button id="btn-refresh-store-preview" class="editor-btn-secondary" style="font-size:0.58rem; padding:3px 6px;" title="Atualizar Preview">🔄</button>
         </div>
       </div>
 
@@ -744,7 +732,7 @@ export class TabStore {
           </div>
 
           <!-- Container onde a StoreScreen roda diretamente -->
-          <div id="store-live-preview-content" style="flex:1; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden; background:#0b0d14;"></div>
+          <div id="store-live-preview-content" style="flex:1; min-height:0; height:100%; display:flex; flex-direction:column; overflow:hidden; background:#0b0d14; position:relative;"></div>
 
           <!-- Home Indicator Inferior -->
           <div style="width:100%; height:14px; background:#000; display:flex; align-items:center; justify-content:center; flex-shrink:0; z-index:40;">
@@ -757,9 +745,9 @@ export class TabStore {
   }
 
   // =========================================================================
-  // ATUALIZA O PREVIEW AO VIVO DA LOJA
+  // ATUALIZA E CENTRALIZA O PREVIEW AO VIVO DA LOJA
   // =========================================================================
-  private updateLivePreview(container: HTMLElement) {
+  private updateLivePreview(container: HTMLElement, highlightCenter: boolean = true) {
     const previewWrap = container.querySelector('#store-live-preview-content') as HTMLElement | null;
     if (!previewWrap) return;
 
@@ -767,9 +755,94 @@ export class TabStore {
     try {
       const liveStore = new StoreScreen(this.data);
       liveStore.render(previewWrap, { headerSpace: false });
+
+      // Permite clicar em qualquer seção da vitrine do celular para selecioná-la no editor
+      previewWrap.querySelectorAll('.store-dynamic-sec').forEach(sec => {
+        (sec as HTMLElement).style.cursor = 'pointer';
+        sec.addEventListener('click', (e) => {
+          if ((e.target as HTMLElement).closest('button, .store-dot, .store-view-card, .store-view-deck, input, select')) return;
+          const k = (sec as HTMLElement).dataset.moduleKey;
+          const idx = parseInt((sec as HTMLElement).dataset.orderIdx || '0');
+          if (k) {
+            TabStore.activeModuleKey = k;
+            TabStore.activeOrderIdx = idx;
+            this.reRender();
+          }
+        });
+      });
+
+      this.centerActiveModuleInPreview(container, highlightCenter);
     } catch (err) {
       console.warn('Erro ao atualizar preview ao vivo da loja:', err);
     }
+  }
+
+  // Centraliza no simulador de celular o módulo que está em edição com destaque visual
+  private centerActiveModuleInPreview(container: HTMLElement, highlight: boolean = true) {
+    const previewWrap = container.querySelector('#store-live-preview-content') as HTMLElement | null;
+    if (!previewWrap) return;
+
+    const executeScroll = () => {
+      // 1. Busca a instância exata que está em edição usando o índice da vitrine e a chave
+      let targetEl = previewWrap.querySelector(`[data-order-idx="${TabStore.activeOrderIdx}"][data-module-key="${TabStore.activeModuleKey}"]`) as HTMLElement | null;
+      if (!targetEl) {
+        targetEl = previewWrap.querySelector(`[data-order-idx="${TabStore.activeOrderIdx}"]`) as HTMLElement | null;
+      }
+      if (!targetEl) {
+        targetEl = previewWrap.querySelector(`[data-module-key="${TabStore.activeModuleKey}"]`) as HTMLElement | null;
+      }
+      if (!targetEl) {
+        targetEl = previewWrap.querySelector(`.sec-${TabStore.activeModuleKey}`) as HTMLElement | null;
+      }
+
+      if (!targetEl) return;
+
+      // 2. Identifica o elemento com overflow/scroll dentro do preview do smartphone
+      const storeScreen = previewWrap.querySelector('.store-screen') as HTMLElement | null;
+      const scroller = (storeScreen && (storeScreen.scrollHeight > storeScreen.clientHeight + 5))
+        ? storeScreen
+        : (previewWrap.scrollHeight > previewWrap.clientHeight + 5 ? previewWrap : (storeScreen || previewWrap));
+
+      if (scroller) {
+        const scrollerRect = scroller.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+
+        // Posição vertical relativa ao viewport interno do celular
+        const relativeTop = targetRect.top - scrollerRect.top;
+        // Centraliza verticalmente na moldura do smartphone com precisão
+        let targetScrollTop = scroller.scrollTop + relativeTop - ((scrollerRect.height - targetRect.height) / 2);
+
+        // Se a seção for muito alta (como listas verticais de boosters ou decks), posiciona o topo visível com folga agradável
+        if (targetRect.height > scrollerRect.height * 0.75) {
+          targetScrollTop = scroller.scrollTop + relativeTop - 20;
+        }
+
+        scroller.scrollTo({
+          top: Math.max(0, Math.round(targetScrollTop)),
+          behavior: 'smooth'
+        });
+      }
+
+      // 3. Efeito luminoso dourado pulsante marcando o módulo ativo em edição
+      if (highlight) {
+        targetEl.style.transition = 'outline 0.25s ease, box-shadow 0.25s ease';
+        targetEl.style.outline = '3px solid #ffd700';
+        targetEl.style.outlineOffset = '4px';
+        targetEl.style.borderRadius = '14px';
+        targetEl.style.boxShadow = '0 0 24px rgba(255,215,0,0.65)';
+
+        setTimeout(() => {
+          if (targetEl) {
+            targetEl.style.outline = 'none';
+            targetEl.style.boxShadow = 'none';
+          }
+        }, 1600);
+      }
+    };
+
+    // Executa em dois tempos para acomodar layout assíncrono e carregamento de fontes/imagens
+    setTimeout(executeScroll, 60);
+    setTimeout(executeScroll, 220);
   }
 
   // =========================================================================
@@ -786,17 +859,17 @@ export class TabStore {
     this.updateLivePreview(container);
 
     // -----------------------------------------------------------------------
-    // COLUNA 1: SELEÇÃO E GESTÃO DOS MÓDULOS DA VITRINE
+    // COLUNA 1: SELEÇÃO E GESTÃO DOS MÓDULOS DA VITRINE (SUPORTA REPETIÇÃO)
     // -----------------------------------------------------------------------
-    // Clicar em qualquer item da Coluna 1 ativa aquele módulo na Coluna 2
+    // Clicar em qualquer item da Coluna 1 ativa aquele módulo na Coluna 2 e centraliza no preview
     container.querySelectorAll('.store-module-item').forEach(item => {
       item.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).tagName === 'BUTTON') return;
         const key = (item as HTMLElement).dataset.key || '';
-        if (key && key !== TabStore.activeModuleKey) {
-          TabStore.activeModuleKey = key;
-          this.reRender();
-        }
+        const idx = parseInt((item as HTMLElement).dataset.idx || '0');
+        TabStore.activeModuleKey = key;
+        TabStore.activeOrderIdx = idx;
+        this.reRender();
       });
     });
 
@@ -808,6 +881,8 @@ export class TabStore {
         if (idx > 0 && d.sectionOrder) {
           const item = d.sectionOrder.splice(idx, 1)[0];
           d.sectionOrder.splice(idx - 1, 0, item);
+          TabStore.activeOrderIdx = idx - 1;
+          TabStore.activeModuleKey = item;
           this.reRender();
         }
       });
@@ -821,6 +896,8 @@ export class TabStore {
         if (d.sectionOrder && idx < d.sectionOrder.length - 1) {
           const item = d.sectionOrder.splice(idx, 1)[0];
           d.sectionOrder.splice(idx + 1, 0, item);
+          TabStore.activeOrderIdx = idx + 1;
+          TabStore.activeModuleKey = item;
           this.reRender();
         }
       });
@@ -839,35 +916,34 @@ export class TabStore {
       });
     });
 
-    // Remover da Vitrine 🗑️
+    // Remover esta instância da vitrine 🗑️ (usa o índice exato da instância)
     container.querySelectorAll('.btn-sec-remove').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const key = (btn as HTMLElement).dataset.key || '';
-        if (key && d.sectionOrder) {
-          const idx = d.sectionOrder.indexOf(key);
-          if (idx !== -1) {
-            d.sectionOrder.splice(idx, 1);
-            if (d.sectionVisibility) d.sectionVisibility[key] = false;
-            this.reRender();
-            this.showToast(`Módulo "${SECTION_METADATA[key]?.label || key}" removido da vitrine!`);
+        const idx = parseInt((btn as HTMLElement).dataset.idx || '0');
+        if (d.sectionOrder && idx >= 0 && idx < d.sectionOrder.length) {
+          const removedKey = d.sectionOrder.splice(idx, 1)[0];
+          if (TabStore.activeOrderIdx >= d.sectionOrder.length) {
+            TabStore.activeOrderIdx = Math.max(0, d.sectionOrder.length - 1);
           }
+          TabStore.activeModuleKey = d.sectionOrder[TabStore.activeOrderIdx] || 'packs';
+          this.reRender();
+          this.showToast(`Módulo "${SECTION_METADATA[removedKey]?.label || removedKey}" removido da vitrine!`);
         }
       });
     });
 
-    // Adicionar Módulo à Vitrine ➕
+    // Adicionar Módulo à Vitrine ➕ (permite repetir qualquer módulo)
     container.querySelector('#btn-add-module')?.addEventListener('click', () => {
       const select = container.querySelector('#select-add-module') as HTMLSelectElement | null;
       const key = select?.value;
       if (key) {
         if (!d.sectionOrder) d.sectionOrder = [];
-        if (!d.sectionOrder.includes(key)) {
-          d.sectionOrder.push(key);
-        }
+        d.sectionOrder.push(key);
+        TabStore.activeOrderIdx = d.sectionOrder.length - 1;
+        TabStore.activeModuleKey = key;
         if (!d.sectionVisibility) d.sectionVisibility = {};
         d.sectionVisibility[key] = true;
-        TabStore.activeModuleKey = key;
         this.reRender();
         this.showToast(`Módulo "${SECTION_METADATA[key]?.label || key}" adicionado à vitrine!`);
       }
@@ -876,6 +952,8 @@ export class TabStore {
     // Restaurar Todos os Módulos Padrão 🔄
     container.querySelector('#btn-restore-default-modules')?.addEventListener('click', () => {
       d.sectionOrder = [...DEFAULT_SECTION_ORDER];
+      TabStore.activeOrderIdx = 0;
+      TabStore.activeModuleKey = DEFAULT_SECTION_ORDER[0];
       if (!d.sectionVisibility) d.sectionVisibility = {};
       DEFAULT_SECTION_ORDER.forEach(k => {
         d.sectionVisibility![k] = true;
@@ -884,19 +962,20 @@ export class TabStore {
       this.showToast('Módulos restaurados para o padrão!');
     });
 
-    // Layout dos Decks
-    container.querySelector('#btn-set-deck-mode-carousel')?.addEventListener('click', () => {
-      d.deckLayoutMode = 'carousel';
-      this.reRender();
-    });
-    container.querySelector('#btn-set-deck-mode-standalone')?.addEventListener('click', () => {
-      d.deckLayoutMode = 'standalone';
-      this.reRender();
-    });
-
     // -----------------------------------------------------------------------
     // COLUNA 2: AÇÕES DO EDITOR DO MÓDULO CLICADO
     // -----------------------------------------------------------------------
+    // Botão Centralizar no Preview
+    container.querySelector('#btn-center-preview')?.addEventListener('click', () => {
+      this.centerActiveModuleInPreview(container, true);
+      this.showToast('Módulo centralizado no preview!');
+    });
+
+    // Ao focar em qualquer campo de edição na Coluna 2, garante que o preview centraliza a seção
+    container.querySelector('#col2-editor-panel')?.addEventListener('focusin', () => {
+      this.centerActiveModuleInPreview(container, false);
+    });
+
     // Botão de alternar o módulo atual na vitrine
     container.querySelectorAll('.btn-toggle-active-module-vitrine').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -906,11 +985,15 @@ export class TabStore {
         if (has) {
           const idx = d.sectionOrder.indexOf(key);
           d.sectionOrder.splice(idx, 1);
-          if (!d.sectionVisibility) d.sectionVisibility = {};
-          d.sectionVisibility[key] = false;
+          if (TabStore.activeOrderIdx >= d.sectionOrder.length) {
+            TabStore.activeOrderIdx = Math.max(0, d.sectionOrder.length - 1);
+          }
+          TabStore.activeModuleKey = d.sectionOrder[TabStore.activeOrderIdx] || 'packs';
           this.showToast(`Módulo removido da vitrine!`);
         } else {
           d.sectionOrder.push(key);
+          TabStore.activeOrderIdx = d.sectionOrder.length - 1;
+          TabStore.activeModuleKey = key;
           if (!d.sectionVisibility) d.sectionVisibility = {};
           d.sectionVisibility[key] = true;
           this.showToast(`Módulo ativado na vitrine!`);
@@ -936,121 +1019,15 @@ export class TabStore {
     bindTitleInput('#store-title-gems', 'gems');
     bindTitleInput('#store-title-artifacts', 'artifacts');
 
-    // Boosters / Pacotes
-    container.querySelector('#store-pack-add')?.addEventListener('click', () => {
-      d.packs.push({
-        id: 'booster_' + Date.now(),
-        name: 'Novo Booster',
-        desc: 'Pacote especial com 3 cartas.',
-        price: 100,
-        currency: 'gold',
-        cardsCount: 3,
-        mode: 'random',
-        rates: { common: 70, rare: 25, legendary: 5 },
-        theme: 'charizard',
-        published: true
-      });
-      this.reRender();
-    });
-
-    container.querySelectorAll('.store-pack-del').forEach(btn => {
+    // Boosters / Pacotes: Navegação para a Aba Boosters e Ativação na Vitrine
+    container.querySelectorAll('.btn-go-packs-tab').forEach(btn => {
       btn.addEventListener('click', () => {
-        const idx = parseInt((btn as HTMLElement).dataset.idx!);
-        d.packs.splice(idx, 1);
-        this.reRender();
-      });
-    });
-
-    container.querySelectorAll('.store-pack-name').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].name = (el as HTMLInputElement).value;
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-price').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].price = num((el as HTMLInputElement).value, 0);
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-cur').forEach(el => {
-      el.addEventListener('change', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].currency = (el as HTMLSelectElement).value;
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-count').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].cardsCount = num((el as HTMLInputElement).value, 3);
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-desc').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].desc = (el as HTMLTextAreaElement).value;
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-theme').forEach(el => {
-      el.addEventListener('change', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        d.packs[idx].theme = (el as HTMLSelectElement).value;
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-front-pick').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt((btn as HTMLElement).dataset.idx!);
-        this.openMediaPicker(url => {
-          d.packs[idx].customFront = url;
-          this.reRender();
-        });
-      });
-    });
-
-    container.querySelectorAll('.store-pack-front-clear').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = parseInt((btn as HTMLElement).dataset.idx!);
-        d.packs[idx].customFront = undefined;
-        this.reRender();
-      });
-    });
-
-    container.querySelectorAll('.store-pack-rate-common').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        if (!d.packs[idx].rates) d.packs[idx].rates = { common: 70, rare: 25, legendary: 5 };
-        d.packs[idx].rates!.common = num((el as HTMLInputElement).value, 70);
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-rate-rare').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        if (!d.packs[idx].rates) d.packs[idx].rates = { common: 70, rare: 25, legendary: 5 };
-        d.packs[idx].rates!.rare = num((el as HTMLInputElement).value, 25);
-        this.updateLivePreview(container);
-      });
-    });
-
-    container.querySelectorAll('.store-pack-rate-leg').forEach(el => {
-      el.addEventListener('input', () => {
-        const idx = parseInt((el as HTMLElement).dataset.idx!);
-        if (!d.packs[idx].rates) d.packs[idx].rates = { common: 70, rare: 25, legendary: 5 };
-        d.packs[idx].rates!.legendary = num((el as HTMLInputElement).value, 5);
-        this.updateLivePreview(container);
+        const packTabBtn = document.querySelector('.editor-tab[data-mode="packs"]') as HTMLElement | null;
+        if (packTabBtn) {
+          packTabBtn.click();
+        } else {
+          this.showToast('Acesse a aba Boosters no topo da Forja.');
+        }
       });
     });
 
@@ -1058,7 +1035,7 @@ export class TabStore {
       el.addEventListener('change', () => {
         const idx = parseInt((el as HTMLElement).dataset.idx!);
         d.packs[idx].published = (el as HTMLInputElement).checked;
-        this.updateLivePreview(container);
+        this.updateLivePreview(container, false);
       });
     });
 
@@ -1137,7 +1114,7 @@ export class TabStore {
       });
     });
 
-    // Decks
+    // Decks (Apenas modo separado)
     container.querySelector('#store-deck-add')?.addEventListener('click', () => {
       d.decks.push({ id: 'deck_' + Date.now(), name: 'Novo Deck', price: 500, currency: 'gold', desc: '', image: '', cards: [] });
       this.reRender();
@@ -1145,35 +1122,40 @@ export class TabStore {
 
     container.querySelectorAll('.store-deck-del').forEach(btn => {
       btn.addEventListener('click', () => {
-        d.decks.splice(parseInt((btn as HTMLElement).dataset.idx!), 1);
+        const idx = parseInt((btn as HTMLElement).dataset.idx!);
+        d.decks.splice(idx, 1);
         this.reRender();
       });
     });
 
     container.querySelectorAll('.store-deck-name').forEach(el => {
       el.addEventListener('input', () => {
-        d.decks[parseInt((el as HTMLElement).dataset.idx!)].name = (el as HTMLInputElement).value;
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        d.decks[idx].name = (el as HTMLInputElement).value;
         this.updateLivePreview(container);
       });
     });
 
     container.querySelectorAll('.store-deck-price').forEach(el => {
       el.addEventListener('input', () => {
-        d.decks[parseInt((el as HTMLElement).dataset.idx!)].price = num((el as HTMLInputElement).value, 0);
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        d.decks[idx].price = num((el as HTMLInputElement).value, 0);
         this.updateLivePreview(container);
       });
     });
 
     container.querySelectorAll('.store-deck-cur').forEach(el => {
       el.addEventListener('change', () => {
-        d.decks[parseInt((el as HTMLElement).dataset.idx!)].currency = (el as HTMLSelectElement).value;
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        d.decks[idx].currency = (el as HTMLSelectElement).value;
         this.updateLivePreview(container);
       });
     });
 
     container.querySelectorAll('.store-deck-desc').forEach(el => {
       el.addEventListener('input', () => {
-        d.decks[parseInt((el as HTMLElement).dataset.idx!)].desc = (el as HTMLTextAreaElement).value;
+        const idx = parseInt((el as HTMLElement).dataset.idx!);
+        d.decks[idx].desc = (el as HTMLTextAreaElement).value;
         this.updateLivePreview(container);
       });
     });

@@ -90,6 +90,7 @@ export class BoosterPackViewer {
       mewtwo: 'rgba(150,80,255,0.30)',
     };
     const tint = themeTint[themeKey] || 'rgba(120,120,180,0.22)';
+    const themeGlow = document.createElement('div');
     themeGlow.style.cssText = `
       position: absolute; inset: 0; pointer-events: none; z-index: 0;
       background:

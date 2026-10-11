@@ -41,7 +41,7 @@ export class StoreScreen {
       coinPacks: d.coinPacks || [],
       gemPacks: d.gemPacks || [],
       artifacts: (d.artifacts || []).filter((o: any) => o && o.id),
-      sectionOrder: d.sectionOrder || ['banners', 'daily', 'rare', 'decks', 'packs', 'coins', 'gems', 'artifacts'],
+      sectionOrder: d.sectionOrder || ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'],
       sectionVisibility: d.sectionVisibility || {},
       deckLayoutMode: d.deckLayoutMode || 'carousel',
       boosterDisplayMode: d.boosterDisplayMode || 'carousel'
@@ -137,31 +137,21 @@ export class StoreScreen {
     const inner = d.banners.length > 0 ? `
         <div id="store-banner-track" data-banner-track="top" style="display:flex; transition:transform 0.6s cubic-bezier(0.4,0,0.2,1);">
           ${d.banners.map((u: string) => `
-            <div style="min-width:100%; aspect-ratio:1080/270; background:url('${u}') center/cover, #111;"></div>`).join('')}
+            <div style="min-width:100%; aspect-ratio:1080/380; background:url('${u}') center/cover, #111;"></div>`).join('')}
         </div>
         ${d.banners.length > 1 ? `
         <div id="store-banner-dots" style="position:absolute; bottom:8px; left:0; right:0; display:flex; gap:6px; justify-content:center;">
           ${d.banners.map((_: string, i: number) => `
             <span class="store-dot" data-i="${i}" style="width:8px; height:8px; border-radius:50%; background:${i === 0 ? '#ffd700' : 'rgba(255,255,255,0.35)'}; cursor:pointer; box-shadow:0 1px 3px #000;"></span>`).join('')}
         </div>` : ''}` : `
-        <div style="aspect-ratio:1080/270; display:flex; align-items:center; justify-content:center; gap:8px; border-top:2px dashed rgba(255,255,255,0.25); border-bottom:2px dashed rgba(255,255,255,0.25); color:rgba(255,255,255,0.4); font-size:0.6rem; letter-spacing:2px; font-weight:900;">+ BANNERS · ${t('store2.empty')}</div>`;
+        <div style="aspect-ratio:1080/380; display:flex; align-items:center; justify-content:center; gap:8px; border-top:2px dashed rgba(255,255,255,0.25); border-bottom:2px dashed rgba(255,255,255,0.25); color:rgba(255,255,255,0.4); font-size:0.6rem; letter-spacing:2px; font-weight:900;">+ BANNERS · ${t('store2.empty')}</div>`;
     return `
       <div class="store-sec" style="margin:12px 0 0 0; border-radius:0; overflow:hidden; border-top:3px solid #0e0903; border-bottom:3px solid #0e0903; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(212,175,55,0.25); position:relative;">
         ${inner}
       </div>`;
   }
 
-  private bannerRepeatHtml(): string {
-    const d = this.data;
-    if (d.banners.length === 0) return '';
-    return `
-      <div class="store-sec" style="margin:14px 0 0 0; border-radius:0; overflow:hidden; border-top:3px solid #0e0903; border-bottom:3px solid #0e0903; position:relative;">
-        <div data-banner-track="r" style="display:flex; transition:transform 0.6s cubic-bezier(0.4,0,0.2,1);">
-          ${d.banners.map((u: string) => `
-            <div style="min-width:100%; aspect-ratio:1080/220; background:url('${u}') center/cover, #111;"></div>`).join('')}
-        </div>
-      </div>`;
-  }
+
 
   private dailyGridHtml(owned: { cards: string[]; decks: string[] }): string {
     if (this.data.dailyPool.length === 0) {
@@ -171,7 +161,7 @@ export class StoreScreen {
       this.cardCell(o, 'gold', owned.cards.includes(o.card), 'daily:' + o.card)).join('');
   }
 
-  private rareTilesHtml(owned: { cards: string[]; decks: string[] }): string[] {
+  private rareTilesHtml(owned: { cards: string[]; decks: string[] }): string {
     if (this.data.rare.length === 0) {
       return Array.from({ length: this.rarePageSize }).map(() => this.ghostCell());
     }
@@ -189,15 +179,10 @@ export class StoreScreen {
   }
 
   private getSectionOrder(): string[] {
-    const defaultOrder = ['banners', 'daily', 'rare', 'decks', 'packs', 'coins', 'gems', 'artifacts'];
-    if (Array.isArray(this.data.sectionOrder) && this.data.sectionOrder.length > 0) {
-      const order = [...this.data.sectionOrder];
-      defaultOrder.forEach(sec => {
-        if (!order.includes(sec)) order.push(sec);
-      });
-      return order;
+    if (Array.isArray(this.data.sectionOrder)) {
+      return [...this.data.sectionOrder];
     }
-    return defaultOrder;
+    return ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'];
   }
 
   private isSectionVisible(secKey: string): boolean {
@@ -999,7 +984,13 @@ export class StoreScreen {
       case 'packs':
         return `
           <div id="store-boosters-wrapper">
-            ${this.packBoosterModuleHtml()}
+            ${this.packBoosterCarouselSectionHtml()}
+          </div>
+        `;
+      case 'packs_split':
+        return `
+          <div id="store-boosters-split-wrapper">
+            ${this.packBoosterSplitSectionHtml()}
           </div>
         `;
       case 'coins':
@@ -1039,10 +1030,10 @@ export class StoreScreen {
     order.forEach(key => {
       const html = this.renderSectionByKey(key, owned);
       if (html && html.trim()) {
-        rendered.push(html);
+        rendered.push(`<div id="sec-${key}">${html}</div>`);
       }
     });
-    return rendered.join(this.bannerRepeatHtml());
+    return rendered.join('');
   }
 
   private bindDeckTabs(container: HTMLElement) {
@@ -1064,6 +1055,26 @@ export class StoreScreen {
     });
   }
 
+  private renderCategoryPillsHtml(): string {
+    const order = this.getSectionOrder();
+    const pillsMeta: Record<string, { label: string; color: string; border: string; bg: string }> = {
+      packs: { label: '📦 Boosters Carrossel', color: '#ff9838', border: 'rgba(255,122,0,0.4)', bg: 'rgba(255,122,0,0.15)' },
+      packs_split: { label: '🌓 Boosters Split', color: '#38bdf8', border: 'rgba(56,189,248,0.4)', bg: 'rgba(56,189,248,0.15)' },
+      decks: { label: '🃏 Decks', color: '#d8b4fe', border: 'rgba(168,85,247,0.3)', bg: 'rgba(168,85,247,0.1)' },
+      daily: { label: '☀️ Diárias', color: '#ffd700', border: 'rgba(255,215,0,0.3)', bg: 'rgba(255,215,0,0.1)' },
+      rare: { label: '💎 Raras', color: '#38bdf8', border: 'rgba(56,189,248,0.3)', bg: 'rgba(56,189,248,0.1)' },
+      coins: { label: '🪙 Moedas', color: '#4ade80', border: 'rgba(74,222,128,0.3)', bg: 'rgba(74,222,128,0.1)' },
+      gems: { label: '💎 Gemas', color: '#7ee7ff', border: 'rgba(56,189,248,0.3)', bg: 'rgba(56,189,248,0.1)' },
+      artifacts: { label: '✨ Artefatos', color: '#f472b6', border: 'rgba(244,114,182,0.3)', bg: 'rgba(244,114,182,0.1)' },
+    };
+
+    const activeSections = order.filter(k => k !== 'banners' && this.isSectionVisible(k) && pillsMeta[k]);
+    return activeSections.map(k => {
+      const p = pillsMeta[k];
+      return `<button class="store-cat-pill" data-target="${k}" style="padding:6px 14px; border-radius:999px; font-size:0.68rem; font-weight:900; letter-spacing:0.5px; border:1px solid ${p.border}; background:${p.bg}; color:${p.color}; cursor:pointer; white-space:nowrap; transition:0.2s;">${p.label}</button>`;
+    }).join('');
+  }
+
   public render(container: HTMLElement, opts?: { headerSpace?: boolean }) {
     const owned = this.getOwned();
     const bal = ProgressionManager.getPlayerData();
@@ -1071,7 +1082,7 @@ export class StoreScreen {
     container.innerHTML = `
     <div class="store-screen" style="flex:1; overflow-y:auto; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '10px'}; padding-bottom:110px;">
       <!-- SALDO -->
-      <div class="store-sec" style="display:flex; gap:10px; justify-content:center; padding:14px 16px 4px 16px;">
+      <div class="store-sec" style="display:flex; gap:10px; justify-content:center; padding:14px 16px 8px 16px;">
         <div style="display:flex; align-items:center; gap:8px; background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #0e0903; border-radius:12px; padding:7px 16px; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35);">
           <span style="font-size:1rem;">🪙</span>
           <span id="store-bal-gold" style="color:#ffe9a8; font-weight:950; font-size:0.85rem; text-shadow:0 2px 0 #000;">${bal.gold}</span>
@@ -1080,6 +1091,11 @@ export class StoreScreen {
           <span style="font-size:1rem;">💎</span>
           <span id="store-bal-gems" style="color:#7ee7ff; font-weight:950; font-size:0.85rem; text-shadow:0 2px 0 #000;">${bal.diamonds}</span>
         </div>
+      </div>
+
+      <!-- NAVEGAÇÃO RÁPIDA POR CATEGORIAS (STICKY GAMER PILLS) -->
+      <div id="store-category-bar" style="display:flex; gap:8px; overflow-x:auto; padding:10px 16px; scrollbar-width:none; -webkit-overflow-scrolling:touch; position:sticky; top:0; z-index:45; background:rgba(11,13,20,0.95); backdrop-filter:blur(10px); border-bottom:1px solid rgba(255,255,255,0.08);">
+        ${this.renderCategoryPillsHtml()}
       </div>
 
       <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
@@ -1140,7 +1156,23 @@ export class StoreScreen {
       { y: 26, opacity: 0 },
       { y: 0, opacity: 1, duration: 0.5, stagger: 0.06, ease: 'power2.out', clearProps: 'transform' });
 
-    // Banner sliders automáticos (topo + repetições entre seções)
+    // Navegação rápida por categorias (Scroll suave para a seção)
+    container.querySelectorAll('.store-cat-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = (btn as HTMLElement).dataset.target;
+        let targetEl = container.querySelector('#sec-' + target);
+        if (!targetEl && target === 'packs') {
+          targetEl = container.querySelector('#store-boosters-wrapper');
+        } else if (!targetEl && target === 'packs_split') {
+          targetEl = container.querySelector('#store-boosters-split-wrapper');
+        }
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Banner slider automático (apenas banner superior)
     container.querySelectorAll('[data-banner-track]').forEach(trackEl => {
       const track = trackEl as HTMLElement;
       const n = this.data.banners.length;
@@ -1151,4 +1183,353 @@ export class StoreScreen {
         bi = (i + n) % n;
         track.style.transform = `translateX(-${bi * 100}%)`;
         dots.forEach((dt, di) => { dt.style.background = di === bi ? '#ffd700' : 'rgba(255,255,255,0.35)'; });
+      };
+      dots.forEach(dt => dt.addEventListener('click', () => go(parseInt(dt.dataset.i || '0'))));
+      StoreScreen.activeTimers.push(window.setInterval(() => go(bi + 1), 4000));
+    });
+
+    // Countdown da virada diária
+    const cd = container.querySelector('#store-countdown') as HTMLElement | null;
+    if (cd) {
+      const tick = () => {
+        const end = new Date();
+        end.setHours(24, 0, 0, 0);
+        let s = Math.max(0, Math.floor((end.getTime() - Date.now()) / 1000));
+        const h = String(Math.floor(s / 3600)).padStart(2, '0');
+        const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+        const ss = String(s % 60).padStart(2, '0');
+        cd.textContent = `${t('store2.endsIn')} ${h}:${m}:${ss}`;
+      };
+      tick();
+      StoreScreen.activeTimers.push(window.setInterval(tick, 1000));
+    }
+
+    // Pager diárias (horizontal)
+    const paintDaily = () => {
+      const grid = container.querySelector('#store-daily-grid');
+      const pg = container.querySelector('#store-daily-page');
+      if (grid) {
+        const owned = this.getOwned();
+        grid.innerHTML = this.dailyGridHtml(owned);
+        this.bindBuyButtons(container);
+        this.bindViewTaps(container);
       }
+      if (pg) pg.textContent = `${this.dailyPage + 1} / 3`;
+    };
+    container.querySelector('#store-daily-prev')?.addEventListener('click', () => {
+      this.dailyPage = (this.dailyPage + 2) % 3;
+      paintDaily();
+    });
+    container.querySelector('#store-daily-next')?.addEventListener('click', () => {
+      this.dailyPage = (this.dailyPage + 1) % 3;
+      paintDaily();
+    });
+
+    // Carrosséis verticais: raras / decks / pacotes
+    const paintRareH = () => {
+      const grid = container.querySelector('#store-rare-grid');
+      const pg = container.querySelector('#store-rare-page');
+      if (grid) {
+        const owned = this.getOwned();
+        grid.innerHTML = this.rareSlice(owned);
+        this.bindBuyButtons(container);
+        this.bindViewTaps(container);
+      }
+      if (pg) pg.textContent = `${this.rarePage + 1} / ${this.rarePages()}`;
+    };
+    container.querySelector('#store-rare-prev')?.addEventListener('click', () => {
+      this.rarePage = (this.rarePage + this.rarePages() - 1) % this.rarePages();
+      paintRareH();
+    });
+    container.querySelector('#store-rare-next')?.addEventListener('click', () => {
+      this.rarePage = (this.rarePage + 1) % this.rarePages();
+      paintRareH();
+    });
+
+    // (decks: uma secção por deck, sem pager)
+
+    // packs: linha única com rolagem horizontal nativa (sem pager)
+
+    const paintArtH = () => {
+      const grid = container.querySelector('#store-art-grid');
+      const pg = container.querySelector('#store-art-page');
+      if (grid) {
+        grid.innerHTML = this.artSlice(this.getOwned());
+        this.bindBuyButtons(container);
+      }
+      if (pg) pg.textContent = `${this.artPage + 1} / ${this.artPages()}`;
+    };
+    container.querySelector('#store-art-prev')?.addEventListener('click', () => {
+      this.artPage = (this.artPage + this.artPages() - 1) % this.artPages();
+      paintArtH();
+    });
+    container.querySelector('#store-art-next')?.addEventListener('click', () => {
+      this.artPage = (this.artPage + 1) % this.artPages();
+      paintArtH();
+    });
+
+    this.bindBuyButtons(container);
+    this.bindViewTaps(container);
+
+    this.bindBoosterCarousel(container);
+    this.bindBoosterSplit(container);
+    this.bindDeckTabs(container);
+  }
+
+  private openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
+    const pack = this.data.packs.find((p: any) => p.id === packId);
+    if (!pack) return;
+
+    const cur = pack.currency === 'gems' ? 'gems' : 'gold';
+    const unitPrice = Number(pack.price) || 0;
+    const totalPrice = unitPrice * quantity;
+    if (totalPrice > 0 && !this.spend(container, cur, totalPrice)) return;
+
+    const cardsPerPack = Math.max(1, Math.min(15, pack.cardsCount || 3));
+    const totalCount = cardsPerPack * quantity;
+    const cards: any[] = [];
+
+    const getRarityKey = (t: any): 'common' | 'rare' | 'legendary' => {
+      const r = String(t?.preferredRarity || '').toLowerCase();
+      if (r.includes('leg') || r.includes('mit')) return 'legendary';
+      if (r.includes('rar') || r.includes('epi')) return 'rare';
+      return 'common';
+    };
+
+    if (pack.mode === 'special' && pack.fixedCards && pack.fixedCards.length > 0) {
+      for (let i = 0; i < totalCount; i++) {
+        const cardName = pack.fixedCards[i % pack.fixedCards.length];
+        const tmpl = this.resolveCard(cardName);
+        cards.push({
+          id: `card_${i}_${Date.now()}`,
+          name: tmpl?.name || cardName,
+          rarity: tmpl ? getRarityKey(tmpl) : 'rare',
+          atk: tmpl?.baseAtk ?? 3,
+          pv: tmpl?.basePv ?? 5,
+          image: tmpl?.image || ''
+        });
+      }
+    } else {
+      const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
+      const legRate = Number(rates.legendary) || 5;
+      const rareRate = Number(rates.rare) || 25;
+
+      const legPool = (pack.cardGroups?.legendary && pack.cardGroups.legendary.length > 0)
+        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.legendary!.includes(t.name))
+        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'legendary');
+      const rarePool = (pack.cardGroups?.rare && pack.cardGroups.rare.length > 0)
+        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.rare!.includes(t.name))
+        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'rare');
+      const comPool = (pack.cardGroups?.common && pack.cardGroups.common.length > 0)
+        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.common!.includes(t.name))
+        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'common');
+
+      for (let i = 0; i < totalCount; i++) {
+        const roll = Math.random() * 100;
+        let targetRarity: 'common' | 'rare' | 'legendary' = 'common';
+        let pool = comPool;
+
+        if (roll < legRate) {
+          targetRarity = 'legendary';
+          pool = legPool.length > 0 ? legPool : (rarePool.length > 0 ? rarePool : CARD_TEMPLATES as any[]);
+        } else if (roll < (legRate + rareRate)) {
+          targetRarity = 'rare';
+          pool = rarePool.length > 0 ? rarePool : CARD_TEMPLATES as any[];
+        } else {
+          targetRarity = 'common';
+          pool = comPool.length > 0 ? comPool : CARD_TEMPLATES as any[];
+        }
+
+        const fallback = CARD_TEMPLATES[Math.floor(Math.random() * CARD_TEMPLATES.length)];
+        const picked = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : fallback;
+
+        cards.push({
+          id: `card_${i}_${Date.now()}`,
+          name: picked?.name || `Criatura #${i + 1}`,
+          rarity: targetRarity,
+          atk: picked?.baseAtk ?? Math.floor(Math.random() * 6 + 1),
+          pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
+          image: picked?.image || ''
+        });
+      }
+    }
+
+    new BoosterPackViewer({
+      theme: pack.theme || 'charizard',
+      customTitle: quantity > 1 ? `${pack.name} (${quantity}x)` : pack.name,
+      customBack: pack.customBack || 'silver',
+      customFrontUrl: pack.customFront,
+      cards: cards,
+      onComplete: (revealedCards) => {
+        const owned = this.getOwned();
+        revealedCards.forEach(c => {
+          if (!owned.cards.includes(c.name)) {
+            owned.cards.push(c.name);
+            this.markCardOwned(container, c.name);
+          }
+        });
+        this.saveOwned(owned);
+        this.toast(container, `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas reveladas!`);
+      }
+    });
+  }
+
+  private purchaseCard(container: HTMLElement, cardName: string, currency: string): boolean {
+    const offer = [...this.data.dailyPool, ...this.data.rare].find((o: any) => o.card === cardName);
+    if (!offer) return false;
+    const owned = this.getOwned();
+    if (owned.cards.includes(cardName)) return false;
+    if (!this.spend(container, currency, offer.price)) return false;
+    owned.cards.push(cardName);
+    this.saveOwned(owned);
+    return true;
+  }
+
+  private markCardOwned(container: HTMLElement, cardName: string) {
+    container.querySelectorAll('.store-buy[data-kind^="card:"]').forEach(b => {
+      const id = (b as HTMLElement).dataset.id || '';
+      if (id.split(':').slice(1).join(':') === cardName) {
+        (b as HTMLButtonElement).disabled = true;
+        (b as HTMLButtonElement).style.opacity = '0.55';
+        b.textContent = t('store2.owned');
+      }
+    });
+  }
+
+  private markDeckOwned(container: HTMLElement, deckId: string) {
+    container.querySelectorAll('.store-buy[data-kind="deck"]').forEach(b => {
+      if ((b as HTMLElement).dataset.id === deckId) {
+        (b as HTMLButtonElement).disabled = true;
+        (b as HTMLButtonElement).style.opacity = '0.55';
+        b.textContent = t('store2.owned');
+      }
+    });
+  }
+
+  private openCardViewerFor(container: HTMLElement, cardName: string, currency: string) {
+    const pool = currency === 'gems' ? this.data.rare : this.data.dailyPool;
+    const offer = pool.find((o: any) => o.card === cardName);
+    if (!offer) return;
+    const owned = this.getOwned().cards.includes(cardName);
+    openCardViewer({
+      card: this.resolveCard(cardName) || { name: cardName, image: '' },
+      priceHtml: `<span style="color:${currency === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${currency === 'gems' ? '💎' : '🪙'} ${offer.price}</span>`,
+      actionLabel: owned ? t('store2.owned') : t('store2.buy'),
+      actionDisabled: owned,
+      onAction: () => {
+        if (this.purchaseCard(container, cardName, currency)) {
+          this.markCardOwned(container, cardName);
+          this.toast(container, `${cardName} ✓`);
+          return { close: false, label: t('store2.owned'), disabled: true };
+        }
+        return { close: false };
+      }
+    });
+  }
+
+  private openDeckViewerFor(container: HTMLElement, deckId: string) {
+    const deck = this.data.decks.find((x: any) => x.id === deckId);
+    if (!deck) return;
+    const cards = (deck.cards || []).map((n: string) => this.resolveCard(n) || { name: n, image: '' });
+    const owned = this.getOwned().decks.includes(deckId);
+    const cur = deck.currency === 'gems' ? 'gems' : 'gold';
+    openCardViewer({
+      card: cards[0] || { name: deck.name, image: deck.image || '' },
+      list: cards.length > 0 ? cards : undefined,
+      index: 0,
+      priceHtml: `<div style="text-align:center;"><div style="font-size:0.7rem; font-weight:950; color:#ffd76a; letter-spacing:1px;">${this.esc(deck.name).toUpperCase()}</div><div style="color:${cur === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${cur === 'gems' ? '💎' : '🪙'} ${deck.price}</div></div>`,
+      actionLabel: owned ? t('store2.owned') : t('store2.buy'),
+      actionDisabled: owned,
+      onAction: () => {
+        const dd = this.data.decks.find((x: any) => x.id === deckId);
+        if (!dd) return { close: false };
+        const ow = this.getOwned();
+        if (ow.decks.includes(deckId)) return { close: false };
+        if (!this.spend(container, cur, dd.price)) return { close: false };
+        ow.decks.push(deckId);
+        (dd.cards || []).forEach((n: string) => { if (!ow.cards.includes(n)) ow.cards.push(n); });
+        this.saveOwned(ow);
+        this.markDeckOwned(container, deckId);
+        (dd.cards || []).forEach((n: string) => this.markCardOwned(container, n));
+        this.toast(container, `${dd.name} ✓`);
+        return { close: false, label: t('store2.owned'), disabled: true };
+      }
+    });
+  }
+
+  private bindViewTaps(container: HTMLElement) {
+    container.querySelectorAll('.store-view-card').forEach(el => {
+      const h = el as HTMLElement;
+      if (h.dataset.viewBound) return;
+      h.dataset.viewBound = '1';
+      h.addEventListener('click', () => {
+        this.openCardViewerFor(container, h.dataset.viewName || '', h.dataset.viewCur || 'gold');
+      });
+    });
+    container.querySelectorAll('.store-view-deck').forEach(el => {
+      const h = el as HTMLElement;
+      if (h.dataset.viewBound) return;
+      h.dataset.viewBound = '1';
+      h.addEventListener('click', () => {
+        this.openDeckViewerFor(container, h.dataset.deck || '');
+      });
+    });
+  }
+  private bindBuyButtons(container: HTMLElement) {
+    container.querySelectorAll('.store-buy[data-kind]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const kind = (btn as HTMLElement).dataset.kind!;
+        const id = (btn as HTMLElement).dataset.id!;
+        if (kind === 'gems') {
+          this.toast(container, t('store2.soon'));
+          return;
+        }
+        if (kind === 'artifact') {
+          const artId = id.split(':').slice(1).join(':');
+          const offer = this.data.artifacts.find((o: any) => o.id === artId);
+          if (!offer) return;
+          const ow = this.getOwned();
+          if (ow.artifacts.includes(artId)) return;
+          if (!this.spend(container, offer.currency === 'gems' ? 'gems' : 'gold', offer.price)) return;
+          ow.artifacts.push(artId);
+          this.saveOwned(ow);
+          this.markArtifactOwned(container, artId);
+          this.toast(container, `${artId} ✓`);
+          return;
+        }
+        if (kind === 'coins') {
+          const pack = this.data.coinPacks[parseInt(id.split(':')[1])];
+          if (!pack) return;
+          if (!this.spend(container, 'gems', pack.price)) return;
+          const bal = ProgressionManager.getPlayerData();
+          bal.gold += pack.gold;
+          ProgressionManager.savePlayerData(bal);
+          this.refreshBalances(container);
+          this.toast(container, `+${pack.gold} 🪙`);
+          return;
+        }
+        if (kind === 'deck') {
+          const deck = this.data.decks.find((x: any) => x.id === id);
+          if (!deck) return;
+          const owned = this.getOwned();
+          if (owned.decks.includes(id)) return;
+          if (!this.spend(container, deck.currency === 'gems' ? 'gems' : 'gold', deck.price)) return;
+          owned.decks.push(id);
+          (deck.cards || []).forEach((n: string) => { if (!owned.cards.includes(n)) owned.cards.push(n); });
+          this.saveOwned(owned);
+          this.markDeckOwned(container, id);
+          (deck.cards || []).forEach((n: string) => this.markCardOwned(container, n));
+          this.toast(container, `${deck.name} ✓`);
+          return;
+        }
+        // card:gold | card:gems  (kind traz a moeda, id traz "sec:Nome")
+        const cur = (kind.split(':')[1] === 'gems') ? 'gems' : 'gold';
+        const cardName = id.split(':').slice(1).join(':');
+        if (this.purchaseCard(container, cardName, cur)) {
+          this.markCardOwned(container, cardName);
+          this.toast(container, `${cardName} ✓`);
+        }
+      });
+    });
+  }
+}

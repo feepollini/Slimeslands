@@ -4,6 +4,7 @@
     "rare": "CARTAS RARAS",
     "decks": "DECKS COMPLETOS",
     "packs": "PACOTES & BOOSTERS",
+    "packs_split": "DESTAQUES ESPECIAIS (SPLIT)",
     "coins": "MOEDAS",
     "gems": "DIAMANTES",
     "artifacts": "ARTEFATOS"
@@ -290,7 +291,7 @@
       },
       "published": true,
       "customFront": "/cards/Batalha_dos_slimes_fant_sticos.png",
-      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png"
+      "fixedCards": []
     },
     {
       "id": "booster_winter",

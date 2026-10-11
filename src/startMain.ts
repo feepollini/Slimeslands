@@ -123,9 +123,10 @@ class StartApp {
   private render() {
     this.container.innerHTML = `
       <div style="position:relative; width:100%; height:100%; overflow:hidden; background:#000;">
-        <!-- INTRO: emblema com fade in -> segura -> fade out -->
-        <div id="intro-stage" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; cursor:pointer; background:#000; opacity:0; transition:opacity 1.2s ease;">
-          <img id="intro-emblem" src="/images/emblem.png" alt="World of Slimes in War" style="width:min(78vw, 420px); height:auto; object-fit:contain; filter:drop-shadow(0 0 34px rgba(0,0,0,0.9));" />
+        <!-- INTRO: emblema com fade in -> enjin surge embaixo -> os dois saem juntos -->
+        <div id="intro-stage" style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; cursor:pointer; background:#000; opacity:0; transition:opacity 1.2s ease;">
+          <img id="intro-emblem" src="/images/emblem.png" alt="World of Slimes in War" style="width:min(72vw, 380px); height:auto; object-fit:contain; filter:drop-shadow(0 0 34px rgba(0,0,0,0.9));" />
+          <img id="intro-enjin" src="/images/enjin.svg" alt="Enjin" style="width:min(44vw, 210px); height:auto; object-fit:contain; opacity:0; transition:opacity 0.8s ease;" />
         </div>
 
         <!-- PRE-INTRO: creditos -->
@@ -153,16 +154,18 @@ class StartApp {
     });
   }
 
-  // Emblema: fade in (1.2s) -> segura -> fade out (0.8s) -> hub
+  // Emblema: fade in (1.2s) -> enjin surge embaixo -> os dois saem juntos -> hub
   private startEmblem() {
     const stage = document.getElementById('intro-stage') as HTMLElement | null;
+    const enjin = document.getElementById('intro-enjin') as HTMLElement | null;
     if (!stage) { this.enter(); return; }
     requestAnimationFrame(() => { stage.style.opacity = '1'; });
+    window.setTimeout(() => { if (enjin) enjin.style.opacity = '1'; }, 1400);
     window.setTimeout(() => {
       stage.style.transition = 'opacity 0.8s ease';
       stage.style.opacity = '0';
-    }, 2800);
-    window.setTimeout(() => this.enter(), 3700);
+    }, 3000);
+    window.setTimeout(() => this.enter(), 3900);
   }
 
   private enter() {

@@ -181,6 +181,7 @@ export class ForgeApp {
      };
 
      const callbacks = {
+        setMode: (mode: any) => { this.currentMode = mode; this.savePersistence(); this.renderTab(); },
         reRender: () => this.renderTab(),
         showToast: (m: string, c?: string) => this.showToast(m, c),
         openMediaPicker: (cb: (url: string) => void) => this.openMediaPicker(cb),

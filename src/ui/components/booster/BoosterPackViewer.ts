@@ -180,10 +180,12 @@ export class BoosterPackViewer {
             rarity: (c.rarity as any) || fallback.rarity,
             atk: (c as any).atk ?? (fallback as any).atk,
             pv: (c as any).pv ?? (fallback as any).pv,
+            mana: (c as any).mana ?? (c as any).manaCost ?? (fallback as any).mana,
+            stamina: (c as any).stamina ?? (c as any).staminaCost ?? (fallback as any).stamina,
             texture: fallback.texture
           };
           const art = (c as any).image;
-          if (art) artUrls.set(mapped, art);
+          if (art) { artUrls.set(mapped, art); mapped.imageUrl = art; }
           return mapped;
         });
       }
@@ -796,61 +798,17 @@ export class BoosterPackViewer {
 
     rebuildCardMeshes(cardsData);
 
-    // Desenha nome + atributos sobre a arte (faixa inferior), p/ a carta
-    // revelada mostrar as infos e não só a imagem.
-    const paintCardInfo = (tex: THREE.Texture, item: any): THREE.Texture => {
-      const img: any = (tex as any).image;
-      if (!img || !img.width || !img.height) return tex;
-      try {
-        const W = 512, H = Math.max(1, Math.round((W * img.height) / img.width));
-        const cv = document.createElement('canvas');
-        cv.width = W; cv.height = H;
-        const ctx = cv.getContext('2d');
-        if (!ctx) return tex;
-        ctx.drawImage(img, 0, 0, W, H);
-        const name = String(item?.name || '');
-        if (!name) return tex;
-        const atk = item?.atk ?? item?.damage;
-        const pv = item?.pv ?? item?.hp;
-        const stripH = 132, y0 = H - stripH;
-        const grad = ctx.createLinearGradient(0, y0, 0, H);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(0.35, 'rgba(0,0,0,0.82)');
-        grad.addColorStop(1, 'rgba(0,0,0,0.92)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, y0, W, stripH);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#ffd76a';
-        ctx.font = '900 40px Cinzel, serif';
-        ctx.shadowColor = '#000'; ctx.shadowOffsetY = 3;
-        const short = name.length > 26 ? name.slice(0, 25) + '…' : name;
-        ctx.fillText(short.toUpperCase(), W / 2, y0 + 52);
-        if (atk !== undefined || pv !== undefined) {
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '800 36px Outfit, sans-serif';
-          const parts: string[] = [];
-          if (atk !== undefined) parts.push(`\u2694 ${atk}`);
-          if (pv !== undefined) parts.push(`\u{1F49A} ${pv}`);
-          ctx.fillText(parts.join('    '), W / 2, y0 + 100);
-        }
-        const out = new THREE.CanvasTexture(cv);
-        out.colorSpace = THREE.SRGBColorSpace;
-        return out;
-      } catch { return tex; }
-    };
-
     // Troca a arte demo pela arte real de cada carta (assíncrono; se falhar, mantém a demo)
     if (artUrls.size > 0) {
       const artLoader = new THREE.TextureLoader();
       artUrls.forEach((url, cardItem) => {
         artLoader.load(url, (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
-          const infoTex = paintCardInfo(tex, cardItem);
-          cardItem.texture = infoTex;
+          cardItem.texture = tex;
           cardMeshes.forEach((g: any) => {
             if (g?.userData?.cardData === cardItem) {
               const mesh = g.children?.[0] as any;
-              if (mesh?.material?.map) { mesh.material.map = infoTex; mesh.material.needsUpdate = true; }
+              if (mesh?.material?.map) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
             }
           });
         }, undefined, () => { /* mantém a arte demo */ });
@@ -961,6 +919,7 @@ export class BoosterPackViewer {
 
       updateFloppyTopStrip(0, 0);
       bottomGridBar.style.display = 'none';
+      infoBar.style.display = 'none';
     };
 
     // Duas discretas cápsulas flutuantes no rodapé (barra escura arredondada)
@@ -1043,6 +1002,36 @@ export class BoosterPackViewer {
     bottomGridBar.appendChild(btnOpenAnother);
     bottomGridBar.appendChild(btnCollect);
     this.overlay.appendChild(bottomGridBar);
+
+    // Faixa de infos reais da carta revelada (mesmo formato da aba cartas da forja)
+    const infoBar = document.createElement('div');
+    infoBar.style.cssText = `
+      position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
+      display: none; align-items: center; gap: 10px; z-index: 100; pointer-events: none;
+      background: rgba(10, 8, 5, 0.88); border: 1px solid rgba(212, 175, 55, 0.4);
+      border-radius: 12px; padding: 8px 14px 8px 8px; max-width: 92vw;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+    `;
+    infoBar.innerHTML = `
+      <div id="bci-art" style="width:44px; height:44px; border-radius:8px; background-size:cover; background-position:center; background-color:#111; flex-shrink:0; border:1px solid rgba(255,255,255,0.15);"></div>
+      <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+        <div id="bci-name" style="font-family:'Cinzel',serif; font-size:0.72rem; font-weight:900; letter-spacing:1px; color:#ffe9a8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 0 #000;"></div>
+        <div id="bci-stats" style="font-size:0.68rem; font-weight:800; color:#fff;"></div>
+      </div>`;
+    this.overlay.appendChild(infoBar);
+    const showBoosterCardInfo = (item: any) => {
+      if (!item || !item.name) { infoBar.style.display = 'none'; return; }
+      const art = infoBar.querySelector('#bci-art') as HTMLElement | null;
+      const nameEl = infoBar.querySelector('#bci-name') as HTMLElement | null;
+      const statsEl = infoBar.querySelector('#bci-stats') as HTMLElement | null;
+      if (art) art.style.backgroundImage = item.imageUrl ? `url('${item.imageUrl}')` : 'none';
+      if (nameEl) nameEl.textContent = String(item.name).toUpperCase();
+      if (statsEl) {
+        const f = (v: any) => (v === undefined || v === null ? '?' : v);
+        statsEl.textContent = `⚔️${f(item.atk)} ❤️${f(item.pv)} · 💎${f(item.mana)} ⚡${f(item.stamina)}`;
+      }
+      infoBar.style.display = 'flex';
+    };
 
     const onPointerDown = (e: PointerEvent) => {
       isPointerDown = true;
@@ -1195,6 +1184,7 @@ export class BoosterPackViewer {
               }
               const clickedIdx = clickedMesh ? cardMeshes.indexOf(clickedMesh) : -1;
               if (clickedIdx >= 0) {
+                showBoosterCardInfo((cardMeshes[clickedIdx] as any)?.userData?.cardData);
                 if ((clickedMesh as any)?.userData?.isVideo) {
                   triggerVideoCinematic(clickedIdx);
                 } else {
@@ -1209,6 +1199,7 @@ export class BoosterPackViewer {
               stopVideoCinematic();
               isGridMode = true;
               bottomGridBar.style.display = 'flex';
+              showBoosterCardInfo((cardMeshes[totalCards - 1] as any)?.userData?.cardData);
               playHoloShimmerSound();
               playSparkleBurstSound();
               triggerSparkleFx();
@@ -1216,6 +1207,7 @@ export class BoosterPackViewer {
               stopVideoCinematic();
               revealedCount += 1;
               triggerCycleCard();
+              showBoosterCardInfo((cardMeshes[revealedCount] as any)?.userData?.cardData);
 
               if (revealedCount >= totalCards) {
                 playSparkleBurstSound();

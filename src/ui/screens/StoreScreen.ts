@@ -1299,6 +1299,8 @@ export class StoreScreen {
           rarity: tmpl ? getRarityKey(tmpl) : 'rare',
           atk: tmpl?.baseAtk ?? 3,
           pv: tmpl?.basePv ?? 5,
+          mana: tmpl?.manaCost ?? 1,
+          stamina: tmpl?.staminaCost ?? 1,
           image: tmpl?.image || ''
         });
       }
@@ -1337,11 +1339,13 @@ export class StoreScreen {
         const picked = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : fallback;
 
         cards.push({
-          id: `card_${i}_${Date.now()}`,
-          name: picked?.name || `Criatura #${i + 1}`,
+          id: `card_${y}_${Date.now()}`,
+          name: picked?.name || `Criatura #${y + 1}`,
           rarity: targetRarity,
           atk: picked?.baseAtk ?? Math.floor(Math.random() * 6 + 1),
           pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
+          mana: picked?.manaCost ?? 1,
+          stamina: picked?.staminaCost ?? 1,
           image: picked?.image || ''
         });
       }

@@ -817,9 +817,14 @@ export class TabPacks {
     const drawnCards: any[] = [];
 
     if (pack.mode === 'special' && pack.fixedCards && pack.fixedCards.length > 0) {
-      // Modo Temático: sorteia da lista curada
+      // Modo Temático: sorteia da lista curada (embaralhada p/ variar)
+      const bag = [...pack.fixedCards];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
       for (let i = 0; i < count; i++) {
-        const name = pack.fixedCards[i % pack.fixedCards.length];
+        const name = bag[i % bag.length];
         const tmpl = this.templates.find(t => t.name === name);
         drawnCards.push({
           id: `card_${i}_${Date.now()}`,
@@ -827,6 +832,8 @@ export class TabPacks {
           rarity: tmpl ? this.getRarityKey(tmpl) : 'rare',
           atk: tmpl?.baseAtk ?? 3,
           pv: tmpl?.basePv ?? 5,
+          mana: tmpl?.manaCost ?? 1,
+          stamina: tmpl?.staminaCost ?? 1,
           image: tmpl?.image || ''
         });
       }
@@ -863,6 +870,8 @@ export class TabPacks {
           rarity: rarity,
           atk: picked?.baseAtk ?? Math.floor(Math.random() * 6 + 1),
           pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
+          mana: picked?.manaCost ?? 1,
+          stamina: picked?.staminaCost ?? 1,
           image: picked?.image || ''
         });
       }

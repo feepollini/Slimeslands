@@ -166,18 +166,23 @@ export class BoosterPackViewer {
 
     const defaultNine = createBoosterNineCards();
     let initialCards = defaultNine;
+    // URL da arte real de cada carta (p/ trocar a arte demo após carregar)
+    const artUrls = new Map<any, string>();
     if (this.options.cards && this.options.cards.length > 0) {
       if (this.options.cards[0].texture) {
         initialCards = this.options.cards;
       } else {
         initialCards = this.options.cards.map((c, i) => {
           const fallback = defaultNine[i % defaultNine.length];
-          return {
+          const mapped: any = {
             ...fallback,
             name: c.name || fallback.name,
             rarity: (c.rarity as any) || fallback.rarity,
             texture: fallback.texture
           };
+          const art = (c as any).image;
+          if (art) artUrls.set(mapped, art);
+          return mapped;
         });
       }
     }
@@ -788,6 +793,23 @@ export class BoosterPackViewer {
     };
 
     rebuildCardMeshes(cardsData);
+
+    // Troca a arte demo pela arte real de cada carta (assíncrono; se falhar, mantém a demo)
+    if (artUrls.size > 0) {
+      const artLoader = new THREE.TextureLoader();
+      artUrls.forEach((url, cardItem) => {
+        artLoader.load(url, (tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          cardItem.texture = tex;
+          cardMeshes.forEach((g: any) => {
+            if (g?.userData?.cardData === cardItem) {
+              const mesh = g.children?.[0] as any;
+              if (mesh?.material?.map) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
+            }
+          });
+        }, undefined, () => { /* mantém a arte demo */ });
+      });
+    }
 
     const triggerSparkleFx = () => {
       sparkleTimer = 2.0;

@@ -275,7 +275,7 @@
       "desc": "Pacote básico com 3 cartas. Ideal para reforçar seu deck com novas criaturas.",
       "price": 0,
       "currency": "gold",
-      "cardsCount": 3,
+      "cardsCount": 9,
       "mode": "special",
       "rates": {
         "common": 80,

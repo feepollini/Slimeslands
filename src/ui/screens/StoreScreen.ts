@@ -1284,8 +1284,14 @@ export class StoreScreen {
     };
 
     if (pack.mode === 'special' && pack.fixedCards && pack.fixedCards.length > 0) {
+      // Embaralha a lista p/ cada abertura variar (ciclo sem repetir até esgotar)
+      const bag = [...pack.fixedCards];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
       for (let i = 0; i < totalCount; i++) {
-        const cardName = pack.fixedCards[i % pack.fixedCards.length];
+        const cardName = bag[i % bag.length];
         const tmpl = this.resolveCard(cardName);
         cards.push({
           id: `card_${i}_${Date.now()}`,
@@ -1358,7 +1364,7 @@ export class StoreScreen {
         });
         this.saveOwned(owned);
       this.toast(container, `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas reveladas!`);
-      });
+      }
     });
     } catch (err) {
       this.toast(container, 'Falha ao abrir: ' + String((err as Error)?.message || err).slice(0, 90), false);

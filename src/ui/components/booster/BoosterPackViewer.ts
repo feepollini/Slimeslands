@@ -178,6 +178,8 @@ export class BoosterPackViewer {
             ...fallback,
             name: c.name || fallback.name,
             rarity: (c.rarity as any) || fallback.rarity,
+            atk: (c as any).atk ?? (fallback as any).atk,
+            pv: (c as any).pv ?? (fallback as any).pv,
             texture: fallback.texture
           };
           const art = (c as any).image;
@@ -794,17 +796,61 @@ export class BoosterPackViewer {
 
     rebuildCardMeshes(cardsData);
 
+    // Desenha nome + atributos sobre a arte (faixa inferior), p/ a carta
+    // revelada mostrar as infos e não só a imagem.
+    const paintCardInfo = (tex: THREE.Texture, item: any): THREE.Texture => {
+      const img: any = (tex as any).image;
+      if (!img || !img.width || !img.height) return tex;
+      try {
+        const W = 512, H = Math.max(1, Math.round((W * img.height) / img.width));
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return tex;
+        ctx.drawImage(img, 0, 0, W, H);
+        const name = String(item?.name || '');
+        if (!name) return tex;
+        const atk = item?.atk ?? item?.damage;
+        const pv = item?.pv ?? item?.hp;
+        const stripH = 132, y0 = H - stripH;
+        const grad = ctx.createLinearGradient(0, y0, 0, H);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(0.35, 'rgba(0,0,0,0.82)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.92)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, y0, W, stripH);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffd76a';
+        ctx.font = '900 40px Cinzel, serif';
+        ctx.shadowColor = '#000'; ctx.shadowOffsetY = 3;
+        const short = name.length > 26 ? name.slice(0, 25) + '…' : name;
+        ctx.fillText(short.toUpperCase(), W / 2, y0 + 52);
+        if (atk !== undefined || pv !== undefined) {
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '800 36px Outfit, sans-serif';
+          const parts: string[] = [];
+          if (atk !== undefined) parts.push(`\u2694 ${atk}`);
+          if (pv !== undefined) parts.push(`\u{1F49A} ${pv}`);
+          ctx.fillText(parts.join('    '), W / 2, y0 + 100);
+        }
+        const out = new THREE.CanvasTexture(cv);
+        out.colorSpace = THREE.SRGBColorSpace;
+        return out;
+      } catch { return tex; }
+    };
+
     // Troca a arte demo pela arte real de cada carta (assíncrono; se falhar, mantém a demo)
     if (artUrls.size > 0) {
       const artLoader = new THREE.TextureLoader();
       artUrls.forEach((url, cardItem) => {
         artLoader.load(url, (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
-          cardItem.texture = tex;
+          const infoTex = paintCardInfo(tex, cardItem);
+          cardItem.texture = infoTex;
           cardMeshes.forEach((g: any) => {
             if (g?.userData?.cardData === cardItem) {
               const mesh = g.children?.[0] as any;
-              if (mesh?.material?.map) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
+              if (mesh?.material?.map) { mesh.material.map = infoTex; mesh.material.needsUpdate = true; }
             }
           });
         }, undefined, () => { /* mantém a arte demo */ });

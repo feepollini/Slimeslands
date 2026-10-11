@@ -21,7 +21,7 @@ export class TopHeader {
         const enjinVal = this.data.enjinCoin ?? 0;
 
         return `
-            <div class="menu-top-bar" id="top-header-component" style="position:absolute; top:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; padding:12px 18px 24px 18px; box-sizing:border-box; z-index:200; pointer-events:none; display:flex; justify-content:space-between; align-items:center; min-height:85px; background:linear-gradient(180deg, rgba(8,10,16,0.98) 0%, rgba(8,10,16,0.85) 55%, rgba(8,10,16,0.3) 80%, rgba(8,10,16,0) 100%); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);">
+            <div class="menu-top-bar" id="top-header-component" style="position:absolute; top:10px; left:50%; transform:translateX(-50%); width:100%; max-width:450px; padding:15px 20px; box-sizing:border-box; z-index:200; pointer-events:none; display:flex; justify-content:space-between; align-items:center; min-height:80px;">
                 
                 <!-- SEÇÃO DO PERFIL -->
                 <div style="display:flex; align-items:center; pointer-events:auto; flex-shrink:1; min-width:0;">

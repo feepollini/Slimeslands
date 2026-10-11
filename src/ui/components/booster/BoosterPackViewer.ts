@@ -868,32 +868,74 @@ export class BoosterPackViewer {
       bottomGridBar.style.display = 'none';
     };
 
-    // Barra de Ação no Modo Grid (idêntica ao projeto original)
+    // Barra de Ação no Modo Grid (Identidade Visual Legends of Winter)
     const bottomGridBar = document.createElement('div');
+    bottomGridBar.className = 'booster-grid-actions';
     bottomGridBar.style.cssText = `
       position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; gap: 8px; padding: 6px 10px;
-      background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px);
-      border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 999px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12); z-index: 100;
+      display: none; align-items: center; gap: 10px; padding: 7px 12px;
+      background: linear-gradient(180deg, rgba(38, 26, 14, 0.96) 0%, rgba(14, 9, 4, 0.98) 100%);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      border: 2px solid #0e0903; outline: 1.5px solid rgba(212, 175, 55, 0.45);
+      border-radius: 999px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 236, 190, 0.3);
+      z-index: 100;
     `;
 
     const btnOpenAnother = document.createElement('button');
     btnOpenAnother.innerHTML = `✨ Abrir outro pack`;
     btnOpenAnother.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 8px 18px;
-      background: #171717; color: #ffffff; border: none; border-radius: 999px;
-      font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; gap: 6px; padding: 9px 18px;
+      background: linear-gradient(180deg, #42321f 0%, #20160b 100%);
+      color: #ffe9a8; border: 2px solid #0e0903; border-radius: 999px;
+      font-family: 'Cinzel', serif, system-ui; font-size: 0.72rem; font-weight: 800;
+      letter-spacing: 0.6px; cursor: pointer; transition: all 0.15s ease;
+      box-shadow: 0 3px 0 rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 236, 190, 0.25);
+      text-shadow: 0 1px 2px #000;
     `;
+    btnOpenAnother.onmouseenter = () => {
+      btnOpenAnother.style.filter = 'brightness(1.15)';
+      btnOpenAnother.style.transform = 'translateY(-1px)';
+    };
+    btnOpenAnother.onmouseleave = () => {
+      btnOpenAnother.style.filter = 'none';
+      btnOpenAnother.style.transform = 'none';
+    };
+    btnOpenAnother.onmousedown = () => {
+      btnOpenAnother.style.transform = 'translateY(2px)';
+    };
+    btnOpenAnother.onmouseup = () => {
+      btnOpenAnother.style.transform = 'none';
+    };
     btnOpenAnother.onclick = () => resetToSealed();
 
     const btnCollect = document.createElement('button');
-    btnCollect.innerHTML = `Concluir & Coletar`;
+    btnCollect.innerHTML = `🏆 Concluir & Coletar`;
     btnCollect.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 8px 18px;
-      background: #2563eb; color: #ffffff; border: none; border-radius: 999px;
-      font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; gap: 6px; padding: 9px 22px;
+      background: linear-gradient(180deg, #ffe27a 0%, #ffd700 35%, #c78d12 78%, #8a5f06 100%);
+      color: #1a0f02; border: 2px solid #3a2505; border-radius: 999px;
+      font-family: 'Cinzel', serif, system-ui; font-size: 0.75rem; font-weight: 900;
+      letter-spacing: 0.8px; cursor: pointer; transition: all 0.15s ease;
+      box-shadow: 0 4px 0 rgba(0, 0, 0, 0.65), 0 0 18px rgba(212, 175, 55, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
     `;
+    btnCollect.onmouseenter = () => {
+      btnCollect.style.filter = 'brightness(1.12)';
+      btnCollect.style.boxShadow = '0 4px 0 rgba(0, 0, 0, 0.65), 0 0 24px rgba(212, 175, 55, 0.75), inset 0 2px 0 rgba(255, 255, 255, 0.65)';
+      btnCollect.style.transform = 'translateY(-1px)';
+    };
+    btnCollect.onmouseleave = () => {
+      btnCollect.style.filter = 'none';
+      btnCollect.style.boxShadow = '0 4px 0 rgba(0, 0, 0, 0.65), 0 0 18px rgba(212, 175, 55, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.55)';
+      btnCollect.style.transform = 'none';
+    };
+    btnCollect.onmousedown = () => {
+      btnCollect.style.transform = 'translateY(2px)';
+    };
+    btnCollect.onmouseup = () => {
+      btnCollect.style.transform = 'none';
+    };
     btnCollect.onclick = () => {
       if (this.options.onComplete) {
         this.options.onComplete(cardsData);

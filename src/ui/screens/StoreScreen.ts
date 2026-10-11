@@ -1048,11 +1048,18 @@ export class StoreScreen {
     const bal = ProgressionManager.getPlayerData();
 
     container.innerHTML = `
-    <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '0px'}; padding-bottom:110px;">
-      <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
-      ${this.renderDynamicSectionsHtml(owned)}
+    <div style="position:relative; width:100%; height:100%; flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;">
+      <!-- VINHETA EM DEGRADÊ NO TOPO DA LOJA (ATRÁS DO HEADER QUE RESTOU) -->
+      ${opts && opts.headerSpace ? `
+      <div id="store-top-vignette" style="position:absolute; top:0; left:0; right:0; height:110px; z-index:80; pointer-events:none; background:linear-gradient(180deg, rgba(8,10,16,0.95) 0%, rgba(8,10,16,0.85) 50%, rgba(8,10,16,0.3) 80%, transparent 100%); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);"></div>
+      ` : ''}
 
-      <div id="store-toast" style="position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #d4af37; border-radius:12px; color:#ffe9a8; font-size:0.7rem; font-weight:900; letter-spacing:2px; padding:12px 24px; opacity:0; pointer-events:none; z-index:5000; white-space:nowrap; box-shadow:0 6px 24px rgba(0,0,0,0.6);"></div>
+      <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '0px'}; padding-bottom:110px;">
+        <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
+        ${this.renderDynamicSectionsHtml(owned)}
+
+        <div id="store-toast" style="position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #d4af37; border-radius:12px; color:#ffe9a8; font-size:0.7rem; font-weight:900; letter-spacing:2px; padding:12px 24px; opacity:0; pointer-events:none; z-index:5000; white-space:nowrap; box-shadow:0 6px 24px rgba(0,0,0,0.6);"></div>
+      </div>
     </div>
     <style>
       .store-buy { transition: transform 0.12s ease, filter 0.12s ease; }

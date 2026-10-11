@@ -299,14 +299,11 @@ class HubApp {
     }
 
     const topHeader = document.getElementById('top-header-component');
-    const topVignette = document.getElementById('hub-top-vignette');
     if (topHeader) {
       if (this.currentTab === 'profile' || this.currentTab === 'settings') {
         topHeader.style.display = 'none';
-        if (topVignette) topVignette.style.display = 'none';
       } else {
         topHeader.style.display = 'flex';
-        if (topVignette) topVignette.style.display = 'block';
       }
     }
   }

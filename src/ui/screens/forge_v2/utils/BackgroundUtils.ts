@@ -4,6 +4,15 @@ export function isVideoUrl(url: string): boolean {
     return /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(url || '');
 }
 
+// Pôster estático do vídeo de fundo (primeiro frame): pinta na hora
+// enquanto o vídeo carrega. Convenção: /cards/X.mp4 -> /cards/posters/X.jpg
+export function posterFor(url: string): string {
+    if (typeof url === 'string' && url.startsWith('/cards/') && /\.mp4$/i.test(url)) {
+        return url.replace('/cards/', '/cards/posters/').replace(/\.mp4$/i, '.jpg');
+    }
+    return '';
+}
+
 function syncScenarioVideo(el: HTMLElement, suffix: string, videoUrl: string) {
     const SCN_VIDEO_FADE = 0.9; // segundos de blend antes do fim: sem corte seco, parece infinito
 
@@ -108,6 +117,8 @@ function syncScenarioVideo(el: HTMLElement, suffix: string, videoUrl: string) {
         b.style.opacity = '0';
         a.style.opacity = '0';
         a.src = videoUrl;
+        const vPoster = posterFor(videoUrl);
+        if (vPoster) a.poster = vPoster;
         a.currentTime = 0;
         try { a.play().catch(() => {}); } catch (e) { console.warn('Video autoplay bloqueado', e); }
         const show = () => { a.style.opacity = '1'; };
@@ -212,9 +223,14 @@ export function applyScenarioBackground(bgVal: string) {
                         blends.push(bgObj.gradBlend || 'normal');
                         sizes.push('cover'); // Gradient should usually cover
                     } else if (l === 'img' && bgObj.url && allowImage) {
-                        bgImgs.push(`url('${bgObj.url}')`);
-                        blends.push('normal');
-                        sizes.push('cover');
+                        // Video vai no <video>; no CSS usa o poster (ou nada)
+                        // p/ nao baixar o mp4 2x (uma vez como "imagem", que falha).
+                        const imgSrc = bgIsVideo ? posterFor(bgObj.url) : bgObj.url;
+                        if (imgSrc) {
+                            bgImgs.push(`url('${imgSrc}')`);
+                            blends.push('normal');
+                            sizes.push('cover');
+                        }
                     }
                 });
 

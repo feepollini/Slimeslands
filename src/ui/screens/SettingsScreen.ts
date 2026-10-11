@@ -1,6 +1,13 @@
 import { SoundManager } from '../utils/SoundManager';
 import { t, getLang, setLang, getSkipIntro, setSkipIntro, LANGS, Lang } from '../../core/i18n';
 
+// Forja/editor são ferramentas de desenvolvimento: visíveis só rodando local
+// (localhost). No deploy (Vercel) os botões nem são renderizados.
+function isLocalHost(): boolean {
+    const h = window.location.hostname;
+    return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+}
+
 export class SettingsScreen {
     private onOpenForja: () => void;
     private onOpenForjaV2: () => void;
@@ -15,6 +22,7 @@ export class SettingsScreen {
     public render(container: HTMLElement) {
         const volSfx = SoundManager.sfxVolume * 100;
         const volAmbient = SoundManager.ambientVolume * 100;
+        const showForgeAccess = isLocalHost();
 
         container.innerHTML = `
             <div class="settings-screen" style="height: 100%; width: 100%; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; box-sizing: border-box; background: rgba(0,0,0,0.3); backdrop-filter: blur(10px); animation: fadeIn 0.5s ease;">
@@ -56,7 +64,8 @@ export class SettingsScreen {
 
                     <div style="height:10px;"></div>
 
-                    <!-- FORJA ACCESS -->
+                    <!-- FORJA ACCESS (só no servidor local) -->
+                    ${showForgeAccess ? `
                     <div id="btn-open-forja" class="settings-item" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.3s; transform: scale(1);">
                         <div style="display: flex; align-items: center; gap: 15px;">
                             <span style="font-size: 1.5rem;">⚒️</span>
@@ -79,6 +88,7 @@ export class SettingsScreen {
                         </div>
                         <span style="color: rgba(255,255,255,0.3);">▶</span>
                     </div>
+                    ` : ''}
 
                     <!-- SKIP INTRO -->
                     <div id="btn-skip-intro" class="settings-item" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;">

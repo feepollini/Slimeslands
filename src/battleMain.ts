@@ -526,22 +526,22 @@ class BattleApp {
         <!-- MODAL DE PEDRA / FERRO (REFERÊNCIA DE JOGO) -->
         <div class="end-modal-card" id="end-modal-card">
           <!-- NÍVEL -->
-          <div class="end-level-pill">NÍVEL ${userLevel}</div>
+          <div class="end-level-pill">${t('bt.level')} ${userLevel}</div>
 
           <!-- 3 CÁPSULAS DE RECOMPENSAS LADO A LADO -->
-          <div class="end-section-header">RECOMPENSAS</div>
+          <div class="end-section-header">${t('bt.end.rewards')}</div>
           <div class="end-capsules-row" id="end-capsules">
             <!-- 1. MOEDAS -->
             <div class="end-capsule-card gold-capsule">
               <div class="end-capsule-icon-wrap">🪙</div>
-              <div class="end-capsule-label">MOEDAS</div>
+              <div class="end-capsule-label">${t('bt.end.coins')}</div>
               <div class="end-capsule-value" id="final-coins">+${coinsGained}</div>
             </div>
 
             <!-- 2. DIAMANTES -->
             <div class="end-capsule-card gems-capsule">
               <div class="end-capsule-icon-wrap">💎</div>
-              <div class="end-capsule-label">DIAMANTES</div>
+              <div class="end-capsule-label">${t('bt.end.gems')}</div>
               <div class="end-capsule-value">+${diamondsGained}</div>
             </div>
 
@@ -557,13 +557,13 @@ class BattleApp {
           <div class="end-card-divider"></div>
 
           <!-- MÉTRICAS ABAIXO -->
-          <div class="end-section-header">MÉTRICAS DA BATALHA</div>
+          <div class="end-section-header">${t('bt.end.metrics')}</div>
           <div class="end-metrics-panel" id="end-metrics">
             <div class="end-metrics-badges-row">
               <div class="end-metric-badge">
                 <span class="end-metric-badge-icon">💀</span>
                 <div class="end-metric-badge-info">
-                  <span class="end-metric-badge-title">INIMIGOS</span>
+                  <span class="end-metric-badge-title">${t('bt.end.enemies')}</span>
                   <span class="end-metric-badge-val">${defeatedEnemies}x</span>
                 </div>
               </div>
@@ -571,7 +571,7 @@ class BattleApp {
               <div class="end-metric-badge">
                 <span class="end-metric-badge-icon">💖</span>
                 <div class="end-metric-badge-info">
-                  <span class="end-metric-badge-title">PV RESTANTE</span>
+                  <span class="end-metric-badge-title">${t('bt.hpLeft')}</span>
                   <span class="end-metric-badge-val">${pvRemain}</span>
                 </div>
               </div>
@@ -579,7 +579,7 @@ class BattleApp {
               <div class="end-metric-badge">
                 <span class="end-metric-badge-icon">🃏</span>
                 <div class="end-metric-badge-info">
-                  <span class="end-metric-badge-title">CARTAS</span>
+                  <span class="end-metric-badge-title">${t('bt.end.cards')}</span>
                   <span class="end-metric-badge-val">${cardsUsed}</span>
                 </div>
               </div>
@@ -598,7 +598,7 @@ class BattleApp {
         </div>
 
         <!-- BOTÃO GRANDE CONTINUAR -->
-        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">CONTINUAR</button>
+        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${t('bt.end.continue')}</button>
       </div>
 
       <div id="coin-fling-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999998;overflow:hidden;"></div>
@@ -1146,7 +1146,7 @@ class BattleApp {
         const cost = card.staminaCost || 1;
         const btn = document.createElement('button');
         btn.className = 'inline-btn-capsule atk';
-        btn.innerHTML = `<div class="name-tag">ATACAR</div><div class="cost-tag">⚡${cost}</div>`;
+        btn.innerHTML = `<div class="name-tag">${t('bt.end.attack')}</div><div class="cost-tag">⚡${cost}</div>`;
         btn.disabled = noActions || this.engine.stamina.p < cost;
         btn.onclick = (e) => { e.stopPropagation(); this.startTargeting(0); };
         atkRoot.appendChild(btn);

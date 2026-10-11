@@ -52,8 +52,25 @@ export class StoreScreen {
     };
   }
 
+  // Títulos das seções: nome customizado na forja prevalece; se for o
+  // padrão em PT, traduz p/ o idioma atual.
+  private static readonly PT_SECTION_DEFAULTS: Record<string, string> = {
+    packs: 'PACOTES & BOOSTERS (CARROSSEL)',
+    packs_split: 'DESTAQUES ESPECIAIS (SPLIT)',
+    daily: 'OFERTAS DO DIA',
+    rare: 'CARTAS RARAS',
+    decks: 'DECKS COMPLETOS',
+    coins: 'MOEDAS',
+    gems: 'DIAMANTES',
+    artifacts: 'ARTEFATOS',
+  };
+
   private title(key: string, fallback: string): string {
-    return this.data.titles[key] || fallback;
+    const custom = this.data.titles[key];
+    if (custom && custom !== (StoreScreen.PT_SECTION_DEFAULTS[key] ?? fallback)) return custom;
+    const tr = t('st.' + key);
+    if (tr !== 'st.' + key) return tr;
+    return custom || fallback;
   }
 
   private resolveCard(name: string): any {
@@ -240,8 +257,8 @@ export class StoreScreen {
           <!-- Trilho Deslizável com Todas as Cartas do Deck (Deslize para o lado / Toque para ver) -->
           <div style="display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:0.56rem; font-weight:900; color:#ffd700; letter-spacing:0.5px;">CARTAS DO DECK (DESLIZE ‹ ›):</span>
-              <span class="store-view-deck" data-deck="${this.esc(deck.id)}" style="font-size:0.56rem; color:#7ee7ff; cursor:pointer; font-weight:900;">🔍 Ver Todas em Tela Cheia</span>
+              <span style="font-size:0.56rem; font-weight:900; color:#ffd700; letter-spacing:0.5px;">${t('st.deckCards')}:</span>
+              <span class="store-view-deck" data-deck="${this.esc(deck.id)}" style="font-size:0.56rem; color:#7ee7ff; cursor:pointer; font-weight:900;">🔍 ${t('st.viewAll')}</span>
             </div>
             <div style="position:relative; width:100%; display:flex; align-items:center;">
               <button class="store-strip-scroll-left" data-deck="${this.esc(deck.id)}" style="position:absolute; left:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">‹</button>
@@ -367,7 +384,7 @@ export class StoreScreen {
     if (pack.mode === 'special') {
       return `
         <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:4px; padding:${compact ? '2px 6px' : '3px 10px'}; font-size:${compact ? '0.55rem' : '0.62rem'}; color:#d8b4fe; font-weight:900; letter-spacing:0.5px;">
-          ⭐ POOL ESPECIAL (${(pack.fixedCards || []).length} CARTAS)
+          ⭐ ${t('st.specialPool')} (${(pack.fixedCards || []).length} ${t('store2.cards')})
         </span>
       `;
     }
@@ -387,7 +404,7 @@ export class StoreScreen {
         <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
         <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
         <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
-        <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 3} CARTAS</span>
+        <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 3} ${t('st.cardsCount')}</span>
       </div>
     `;
   }
@@ -407,7 +424,7 @@ export class StoreScreen {
 
         <!-- Cápsula Gamer de Compra / Abertura -->
         <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:44px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.75rem; letter-spacing:1.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 0 16px rgba(0,180,216,0.4), inset 0 1px 0 rgba(255,255,255,0.3); white-space:nowrap; padding:0 16px;">
-          <span>✨ ABRIR EM 3D</span>
+          <span>✨ ${t('st.open3d')}</span>
           <span style="opacity:0.6;">·</span>
           <span style="color:#ffe066; font-weight:950; text-shadow:0 1px 2px #000;">${priceText}</span>
         </button>
@@ -505,7 +522,7 @@ export class StoreScreen {
             </button>
 
             <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:40px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.7rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 14px rgba(0,180,216,0.4); white-space:nowrap; padding:0 12px;">
-              <span>✨ ABRIR EM 3D</span>
+              <span>✨ ${t('st.open3d')}</span>
               <span style="opacity:0.6;">·</span>
               <span style="color:#ffe066; font-weight:950;">${priceText}</span>
             </button>
@@ -800,7 +817,7 @@ export class StoreScreen {
             </button>
 
             <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:34px; border-radius:999px; border:1.5px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.65rem; letter-spacing:0.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 0 10px rgba(0,180,216,0.35); white-space:nowrap; padding:0 8px; overflow:hidden;">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">✨ ABRIR</span>
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">✨ ${t('st.open')}</span>
               <span style="opacity:0.5;">·</span>
               <span style="color:#ffe066; font-weight:950; flex-shrink:0;">${priceText}</span>
             </button>

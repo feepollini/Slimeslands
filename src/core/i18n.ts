@@ -223,7 +223,34 @@ const DICT: Record<string, Record<Lang, string>> = {
 'store2.cards': { pt: 'CARTAS', en: 'CARDS', es: 'CARTAS' },
 'store2.deck': { pt: 'DECK COMPLETO', en: 'FULL DECK', es: 'MAZO COMPLETO' },
 'store2.packs': { pt: 'PACOTES', en: 'PACKS', es: 'PAQUETES' },
-'store2.empty': { pt: 'VAZIO — CONFIGURE NA FORJA', en: 'EMPTY — SET IT IN THE FORGE', es: 'VACÍO — CONFIGÚRALO EN LA FORJA' }
+'store2.empty': { pt: 'VAZIO — CONFIGURE NA FORJA', en: 'EMPTY — SET IT IN THE FORGE', es: 'VACÍO — CONFIGÚRALO EN LA FORJA' },
+// ─── LOJA: SEÇÕES E AÇÕES (st.*) ───
+'st.packs': { pt: 'PACOTES & BOOSTERS (CARROSSEL)', en: 'PACKS & BOOSTERS', es: 'PACKS Y BOOSTERS' },
+'st.packs_split': { pt: 'DESTAQUES ESPECIAIS (SPLIT)', en: 'FEATURED (SPLIT)', es: 'DESTACADOS (SPLIT)' },
+'st.daily': { pt: 'OFERTAS DO DIA', en: "TODAY'S DEALS", es: 'OFERTAS DEL DÍA' },
+'st.rare': { pt: 'CARTAS RARAS', en: 'RARE CARDS', es: 'CARTAS RARAS' },
+'st.decks': { pt: 'DECKS COMPLETOS', en: 'FULL DECKS', es: 'MAZOS COMPLETOS' },
+'st.coins': { pt: 'MOEDAS', en: 'COINS', es: 'MONEDAS' },
+'st.gems': { pt: 'DIAMANTES', en: 'DIAMONDS', es: 'DIAMANTES' },
+'st.artifacts': { pt: 'ARTEFATOS', en: 'ARTIFACTS', es: 'ARTEFACTOS' },
+'st.open3d': { pt: 'ABRIR EM 3D', en: 'OPEN IN 3D', es: 'ABRIR EN 3D' },
+'st.open': { pt: 'ABRIR', en: 'OPEN', es: 'ABRIR' },
+'st.specialPool': { pt: 'POOL ESPECIAL', en: 'SPECIAL POOL', es: 'POOL ESPECIAL' },
+'st.deckCards': { pt: 'CARTAS DO DECK (DESLIZE ‹ ›)', en: 'DECK CARDS (SWIPE ‹ ›)', es: 'CARTAS DEL MAZO (DESLIZA ‹ ›)' },
+'st.viewAll': { pt: 'Ver Todas em Tela Cheia', en: 'View All Fullscreen', es: 'Ver Todas en Pantalla Completa' },
+'st.cardsCount': { pt: 'CARTAS', en: 'CARDS', es: 'CARTAS' },
+// ─── FIM DE BATALHA (bt.end.*) ───
+'bt.end.rewards': { pt: 'RECOMPENSAS', en: 'REWARDS', es: 'RECOMPENSAS' },
+'bt.end.coins': { pt: 'MOEDAS', en: 'COINS', es: 'MONEDAS' },
+'bt.end.gems': { pt: 'DIAMANTES', en: 'DIAMONDS', es: 'DIAMANTES' },
+'bt.end.metrics': { pt: 'MÉTRICAS DA BATALHA', en: 'BATTLE METRICS', es: 'MÉTRICAS DE BATALLA' },
+'bt.end.enemies': { pt: 'INIMIGOS', en: 'ENEMIES', es: 'ENEMIGOS' },
+'bt.end.cards': { pt: 'CARTAS', en: 'CARDS', es: 'CARTAS' },
+'bt.end.continue': { pt: 'CONTINUAR', en: 'CONTINUE', es: 'CONTINUAR' },
+'bt.end.attack': { pt: 'ATACAR', en: 'ATTACK', es: 'ATACAR' },
+// ─── TABULEIRO (board.* faltantes) ───
+'board.attack': { pt: 'ATACAR', en: 'ATTACK', es: 'ATACAR' },
+'board.back': { pt: 'VOLTAR', en: 'GO BACK', es: 'VOLVER' }
 };
 
 const LANG_KEY = 'low_lang';

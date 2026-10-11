@@ -62,9 +62,9 @@ export class BoardScreen {
 
         <!-- ALÇA DE INCENTIVO AO ATAQUE (FORA DA SEÇÃO E CENTRALIZADA) -->
         <div class="attack-prompt-wrapper">
-          <button class="attack-prompt-handle ${turn !== 'p' ? 'hidden' : ''}" id="btn-attack-prompt" title="Atacar">
+          <button class="attack-prompt-handle ${turn !== 'p' ? 'hidden' : ''}" id="btn-attack-prompt" title="${t('board.attack')}">
             <span class="handle-icon">⚔️</span>
-            <span class="handle-text">ATACAR</span>
+            <span class="handle-text">${t('board.attack')}</span>
           </button>
         </div>
 
@@ -162,7 +162,7 @@ export class BoardScreen {
   public renderDifficultyScreen(): string {
     return `
       <div class="startup-screen difficulty-phase" style="background:#050505; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:35px; padding:48px 0 0 0; position:relative;">
-        <button id="btn-diff-back" style="position:absolute; top:14px; left:14px; z-index:50; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:3px solid #0e0903; color:#ffe9a8; padding:8px 15px; border-radius:10px; font-weight:900; font-size:0.6rem; letter-spacing:1px; cursor:pointer; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35); text-shadow:0 2px 0 #000;">⟨ VOLTAR</button>
+        <button id="btn-diff-back" style="position:absolute; top:14px; left:14px; z-index:50; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:3px solid #0e0903; color:#ffe9a8; padding:8px 15px; border-radius:10px; font-weight:900; font-size:0.6rem; letter-spacing:1px; cursor:pointer; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35); text-shadow:0 2px 0 #000;">⟨ ${t('board.back')}</button>
         <!-- Atmosphere Glow -->
         <div style="position:absolute; inset:0; background:radial-gradient(circle at center, rgba(212,175,55,0.05) 0%, transparent 70%);"></div>
         <div id="er-particles-diff" style="position:absolute; inset:0; pointer-events:none; overflow:hidden;"></div>

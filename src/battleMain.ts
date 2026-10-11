@@ -10,6 +10,7 @@ import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
 import { t } from './core/i18n';
 import { animateParallaxLayers } from './ui/utils/ParallaxUtils';
 import { SoundManager } from './ui/utils/SoundManager';
+import { autoFullscreen } from './ui/utils/fullscreen';
 import * as FX from './ui/utils/BattleAnimations';
 import { ENCHANTMENT_REGISTRY } from './core/enchantments';
 import { CARD_ABILITIES, getGlobalCardBack } from './core/constants';
@@ -1962,4 +1963,5 @@ class BattleApp {
   }
 }
 
+autoFullscreen();
 new BattleApp();

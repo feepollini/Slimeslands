@@ -88,7 +88,8 @@ export function openCardViewer(opts: OpenViewerOpts) {
   document.body.appendChild(overlay);
 
   const paint = () => {
-    const card = list[idx] || opts.card;
+    const curIdx = session ? session.idx : idx;
+    const card = list[curIdx] || opts.card;
     const mock = toPreviewCard(card);
     overlay.innerHTML = `
       <style>
@@ -100,7 +101,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
       ${list.length > 1 ? `
       <button id="cv-prev" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">‹</button>
       <button id="cv-next" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">›</button>` : ''}
-      <div id="cv-counter" style="font-size:0.62rem; font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.5);">${list.length > 1 ? `${idx + 1} / ${list.length}` : ''}</div>
+      <div id="cv-counter" style="font-size:0.62rem; font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.5);">${list.length > 1 ? `${curIdx + 1} / ${list.length}` : ''}</div>
       <div id="cv-card" style="width:min(330px, 84vw); filter:brightness(1.04) drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderPremiumCard(mock)}</div>
       ${opts.priceHtml ? `<div id="cv-price" style="font-size:0.9rem;">${opts.priceHtml}</div>` : ''}
       <button id="cv-action" style="min-width:220px; padding:13px 34px; border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:0.8rem; letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${opts.actionLabel}</button>
@@ -137,7 +138,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
       if (actBtn.disabled) return;
       let res: ViewerActionResult | void;
       try {
-        res = opts.onAction(list[idx] || opts.card);
+        res = opts.onAction(list[curIdx] || opts.card);
       } catch (err) {
         console.error(err);
         return;

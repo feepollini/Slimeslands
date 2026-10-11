@@ -57,11 +57,24 @@ export class StoreScreen {
   }
 
   private resolveCard(name: string): any {
+    if (!name) return null;
     if (this.customTemplates && this.customTemplates.length > 0) {
-      const found = this.customTemplates.find(c => c && c.name === name);
+      const found = this.customTemplates.find(c => c && (c.name === name || c.id === name));
       if (found) return found;
+      const clean = String(name).trim().toLowerCase();
+      const foundClean = this.customTemplates.find(c => c && (
+        String(c.name || '').trim().toLowerCase() === clean ||
+        String(c.id || '').trim().toLowerCase() === clean
+      ));
+      if (foundClean) return foundClean;
     }
-    return (CARD_TEMPLATES as any[]).find(c => c.name === name) || null;
+    const clean = String(name).trim().toLowerCase();
+    return (CARD_TEMPLATES as any[]).find(c => c && (
+      c.name === name ||
+      c.id === name ||
+      String(c.name || '').trim().toLowerCase() === clean ||
+      String(c.id || '').trim().toLowerCase() === clean
+    )) || null;
   }
 
   private getOwned(): { cards: string[]; decks: string[]; artifacts: string[] } {
@@ -1035,23 +1048,9 @@ export class StoreScreen {
     const bal = ProgressionManager.getPlayerData();
 
     container.innerHTML = `
-    <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '10px'}; padding-bottom:110px;">
-      <!-- SALDO -->
-      <div class="store-sec" style="display:flex; gap:10px; justify-content:center; padding:14px 16px 8px 16px;">
-        <div style="display:flex; align-items:center; gap:8px; background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #0e0903; border-radius:12px; padding:7px 16px; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35);">
-          <span style="font-size:1rem;">🪙</span>
-          <span id="store-bal-gold" style="color:#ffe9a8; font-weight:950; font-size:0.85rem; text-shadow:0 2px 0 #000;">${bal.gold}</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px; background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #0e0903; border-radius:12px; padding:7px 16px; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35);">
-          <span style="font-size:1rem;">💎</span>
-          <span id="store-bal-gems" style="color:#7ee7ff; font-weight:950; font-size:0.85rem; text-shadow:0 2px 0 #000;">${bal.diamonds}</span>
-        </div>
-      </div>
-
-      <!-- NAVEGAÇÃO RÁPIDA POR CATEGORIAS (STICKY GAMER PILLS) -->
-      <div id="store-category-bar" style="display:flex; gap:8px; overflow-x:auto; padding:10px 16px; scrollbar-width:none; -webkit-overflow-scrolling:touch; position:sticky; top:0; z-index:45; background:rgba(11,13,20,0.95); backdrop-filter:blur(10px); border-bottom:1px solid rgba(255,255,255,0.08);">
-        ${this.renderCategoryPillsHtml()}
-      </div>
+    <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '0px'}; padding-bottom:110px;">
+      <!-- VINHETA EM DEGRADÊ NO TOPO (QUEBRA O CONTEÚDO QUE ROLA ATRÁS DO HEADER DO JOGO) -->
+      <div id="store-header-vignette" style="position:sticky; top:0; z-index:45; height:50px; margin-bottom:-50px; background:linear-gradient(180deg, rgba(11,13,20,0.98) 0%, rgba(11,13,20,0.8) 50%, rgba(11,13,20,0) 100%); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); pointer-events:none;"></div>
 
       <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
       ${this.renderDynamicSectionsHtml(owned)}
@@ -1384,30 +1383,37 @@ export class StoreScreen {
   }
 
   private openDeckViewerFor(container: HTMLElement, deckId: string, initialIdx: number = 0) {
-    const deck = this.data.decks.find((x: any) => x.id === deckId);
+    let deck = this.data.decks.find((x: any) => x && x.id === deckId);
+    if (!deck && !isNaN(parseInt(deckId))) {
+      deck = this.data.decks[parseInt(deckId)];
+    }
+    if (!deck && this.data.decks.length > 0) {
+      deck = this.data.decks[0];
+    }
     if (!deck) return;
+
     const cards = (deck.cards || []).map((n: string) => this.resolveCard(n) || { name: n, image: '' });
-    const owned = this.getOwned().decks.includes(deckId);
+    const owned = this.getOwned().decks.includes(deck.id);
     const cur = deck.currency === 'gems' ? 'gems' : 'gold';
-    const startIdx = Math.max(0, Math.min(cards.length - 1, initialIdx));
+    const startIdx = Math.max(0, Math.min(Math.max(0, cards.length - 1), initialIdx));
 
     openCardViewer({
       card: cards[startIdx] || { name: deck.name, image: deck.image || '' },
-      list: cards.length > 0 ? cards : undefined,
+      list: cards.length > 0 ? cards : [{ name: deck.name, image: deck.image || '' }],
       index: startIdx,
       priceHtml: `<div style="text-align:center;"><div style="font-size:0.7rem; font-weight:950; color:#ffd76a; letter-spacing:1px;">${this.esc(deck.name).toUpperCase()}</div><div style="color:${cur === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${cur === 'gems' ? '💎' : '🪙'} ${deck.price}</div></div>`,
       actionLabel: owned ? t('store2.owned') : t('store2.buy'),
       actionDisabled: owned,
       onAction: () => {
-        const dd = this.data.decks.find((x: any) => x.id === deckId);
+        const dd = this.data.decks.find((x: any) => x && x.id === deck.id) || deck;
         if (!dd) return { close: false };
         const ow = this.getOwned();
-        if (ow.decks.includes(deckId)) return { close: false };
+        if (ow.decks.includes(dd.id)) return { close: false };
         if (!this.spend(container, cur, dd.price)) return { close: false };
-        ow.decks.push(deckId);
+        ow.decks.push(dd.id);
         (dd.cards || []).forEach((n: string) => { if (!ow.cards.includes(n)) ow.cards.push(n); });
         this.saveOwned(ow);
-        this.markDeckOwned(container, deckId);
+        this.markDeckOwned(container, dd.id);
         (dd.cards || []).forEach((n: string) => this.markCardOwned(container, n));
         this.toast(container, `${dd.name} ✓`);
         return { close: false, label: t('store2.owned'), disabled: true };

@@ -15,6 +15,7 @@ import { CARD_TEMPLATES, SKILL_POOL } from './core/constants';
 import SCENARIOS from './core/scenarios.json';
 import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
 import { SoundManager } from './ui/utils/SoundManager';
+import { autoFullscreen, setFullscreenPref } from './ui/utils/fullscreen';
 
 // Tela cheia do lobby (Fullscreen API; onde não há suporte o botão se esconde)
 function toggleLobbyFullscreen() {
@@ -38,6 +39,7 @@ class HubApp {
 
   constructor() {
     this.container = document.getElementById('app')!;
+    autoFullscreen();
     this.menu = new MenuScreen(() => {
       this.togglePrepMode(true);
     });
@@ -152,7 +154,9 @@ class HubApp {
         if (fsBtn && !document.fullscreenEnabled) fsBtn.style.display = 'none';
         fsBtn?.addEventListener('click', () => {
             SoundManager.playAction('clique_geral', 0.5);
+            const exiting = !!document.fullscreenElement;
             toggleLobbyFullscreen();
+            setFullscreenPref(!exiting);
         });
         document.addEventListener('fullscreenchange', () => {
             const b = document.getElementById('btn-fullscreen') as HTMLElement | null;

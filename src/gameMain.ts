@@ -7,6 +7,7 @@ import './style.css';
 import { RuntimeScreen } from './ui/screens/RuntimeScreen';
 import { PhaseData } from './core/types';
 import { t } from './core/i18n';
+import { autoFullscreen } from './ui/utils/fullscreen';
 
 class GameApp {
     private container: HTMLElement;
@@ -85,4 +86,5 @@ class GameApp {
     }
 }
 
+autoFullscreen();
 new GameApp();

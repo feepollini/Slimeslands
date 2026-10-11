@@ -73,8 +73,15 @@ export class BoosterPackViewer {
     `;
     this.overlay.appendChild(this.container);
 
-    // Brilho ambiente por tipo de booster (sobre o cenário, atrás das cartas)
-    const themeGlow = document.createElement('div');
+    // Desfoque de lente sobre o cenário (frosted cinematográfico atrás das cartas)
+    const lensBlur = document.createElement('div');
+    lensBlur.style.cssText = `
+      position: absolute; inset: 0; pointer-events: none;
+      backdrop-filter: blur(10px) brightness(0.8);
+      -webkit-backdrop-filter: blur(10px) brightness(0.8);
+      background: rgba(0, 0, 0, 0.28);
+    `;
+    this.overlay.insertBefore(lensBlur, this.container);
     const themeKey = (this.options.theme || '').toLowerCase();
     const themeTint: Record<string, string> = {
       charizard: 'rgba(255,90,0,0.30)',

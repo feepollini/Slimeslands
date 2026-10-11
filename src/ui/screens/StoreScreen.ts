@@ -1126,6 +1126,21 @@ export class StoreScreen {
     StoreScreen.activeTimers.forEach(id => window.clearInterval(id));
     StoreScreen.activeTimers = [];
 
+    // Delegação reserva p/ abrir booster: sobrevive a re-renders. Os binds
+    // diretos usam stopPropagation, então não há clique duplo.
+    if (!container.dataset.boosterDelegated) {
+      container.dataset.boosterDelegated = '1';
+      container.addEventListener('click', (e) => {
+        const cap = (e.target as HTMLElement).closest?.('#btn-booster-buy-capsule, #btn-booster-split-buy') as HTMLElement | null;
+        if (!cap || !container.isConnected) return;
+        const pid = cap.dataset.packId;
+        if (!pid) return;
+        const qty = cap.id === 'btn-booster-split-buy' ? this.boosterSplitQty : this.boosterQty;
+        try { this.openBoosterModal(container, pid, qty); }
+        catch (err) { this.toast(container, 'Falha ao abrir: ' + String((err as Error)?.message || err).slice(0, 90), false); }
+      });
+    }
+
     // Entrada animada premium
     gsap.fromTo(container.querySelectorAll('.store-sec'),
       { y: 26, opacity: 0 },
@@ -1247,7 +1262,10 @@ export class StoreScreen {
 
   private openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
     const pack = this.data.packs.find((p: any) => p.id === packId);
-    if (!pack) return;
+    if (!pack) {
+      this.toast(container, 'Booster não encontrado na vitrine', false);
+      return;
+    }
 
     const cur = pack.currency === 'gems' ? 'gems' : 'gold';
     const unitPrice = Number(pack.price) || 0;
@@ -1323,6 +1341,7 @@ export class StoreScreen {
       }
     }
 
+    try {
     new BoosterPackViewer({
       theme: pack.theme || 'charizard',
       customTitle: quantity > 1 ? `${pack.name} (${quantity}x)` : pack.name,
@@ -1338,9 +1357,12 @@ export class StoreScreen {
           }
         });
         this.saveOwned(owned);
-        this.toast(container, `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas reveladas!`);
-      }
+      this.toast(container, `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas reveladas!`);
+      });
     });
+    } catch (err) {
+      this.toast(container, 'Falha ao abrir: ' + String((err as Error)?.message || err).slice(0, 90), false);
+    }
   }
 
   private purchaseCard(container: HTMLElement, cardName: string, currency: string): boolean {

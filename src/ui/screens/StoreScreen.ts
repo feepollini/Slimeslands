@@ -1049,9 +1049,6 @@ export class StoreScreen {
 
     container.innerHTML = `
     <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '0px'}; padding-bottom:110px;">
-      <!-- VINHETA EM DEGRADÊ NO TOPO (QUEBRA O CONTEÚDO QUE ROLA ATRÁS DO HEADER DO JOGO) -->
-      <div id="store-header-vignette" style="position:sticky; top:0; z-index:45; height:50px; margin-bottom:-50px; background:linear-gradient(180deg, rgba(11,13,20,0.98) 0%, rgba(11,13,20,0.8) 50%, rgba(11,13,20,0) 100%); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); pointer-events:none;"></div>
-
       <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
       ${this.renderDynamicSectionsHtml(owned)}
 

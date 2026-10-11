@@ -15,7 +15,7 @@ import {
   playHoloShimmerSound,
   playSparkleBurstSound,
 } from './pokemonAudio';
-import { getGlobalCardBack } from '../../../core/constants';
+import { getGlobalCardBack, CARD_ABILITIES } from '../../../core/constants';
 
 export interface BoosterPackViewerOptions {
   theme?: 'charizard' | 'pikachu' | 'rayquaza' | 'mewtwo' | string;
@@ -182,6 +182,7 @@ export class BoosterPackViewer {
             pv: (c as any).pv ?? (fallback as any).pv,
             mana: (c as any).mana ?? (c as any).manaCost ?? (fallback as any).mana,
             stamina: (c as any).stamina ?? (c as any).staminaCost ?? (fallback as any).stamina,
+            tpl: (c as any).tpl || null,
             texture: fallback.texture
           };
           const art = (c as any).image;
@@ -798,17 +799,119 @@ export class BoosterPackViewer {
 
     rebuildCardMeshes(cardsData);
 
-    // Troca a arte demo pela arte real de cada carta (assíncrono; se falhar, mantém a demo)
+    // Compõe a face da carta no padrão premium (arte + nome + mana/PV +
+    // descrição + habilidade + ataques), com os dados reais do template.
+    const composePremiumFace = (tex: THREE.Texture, item: any): THREE.Texture => {
+      const img: any = (tex as any).image;
+      const tpl: any = item?.tpl || {};
+      if (!img || !img.width || !img.height) return tex;
+      try {
+        const W = 512, H = Math.round(W * (CH / CW));
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return tex;
+        ctx.fillStyle = '#0b0b10';
+        ctx.fillRect(0, 0, W, H);
+        const cover = Math.max(W / img.width, H / img.height);
+        const dw = img.width * cover, dh = img.height * cover;
+        ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+        const name = String(tpl.name || item?.name || '');
+        const mana = tpl.manaCost ?? item?.mana ?? 1;
+        const pv = tpl.pv ?? tpl.basePv ?? item?.pv ?? 0;
+        const flavor = String(tpl.flavorText || tpl.description || '');
+        const attacks: any[] = tpl.attacks || [];
+        const ab = tpl.abilityId && tpl.abilityId !== 'none'
+          ? CARD_ABILITIES.find((a: any) => a.id === tpl.abilityId) : null;
+        ctx.textAlign = 'center';
+        // barra superior
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(0, 0, W, 132);
+        ctx.fillStyle = '#1e40af';
+        ctx.beginPath(); ctx.arc(52, 48, 34, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '900 40px Outfit, sans-serif';
+        ctx.fillText(String(mana), 52, 62);
+        ctx.font = '800 17px Outfit, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillText('MANA', 52, 118);
+        ctx.fillStyle = '#166534';
+        ctx.beginPath(); ctx.arc(W - 52, 48, 34, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '900 34px Outfit, sans-serif';
+        ctx.fillText(String(pv), W - 52, 60);
+        ctx.font = '800 17px Outfit, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillText('PV', W - 52, 118);
+        ctx.fillStyle = tpl.fontColor || '#ffffff';
+        ctx.font = `900 ${name.length > 18 ? 30 : 36}px Cinzel, serif`;
+        ctx.shadowColor = '#000'; ctx.shadowOffsetY = 3;
+        ctx.fillText(name.toUpperCase(), W / 2, 62);
+        ctx.shadowOffsetY = 0;
+        // descrição
+        if (flavor) {
+          ctx.font = '400 23px Outfit, sans-serif';
+          ctx.fillStyle = 'rgba(255,255,255,0.92)';
+          const words = flavor.split(' ');
+          const lines: string[] = [];
+          let cur = '';
+          words.forEach((w: string) => {
+            const t2 = cur ? cur + ' ' + w : w;
+            if (ctx.measureText(t2).width > W - 90) { lines.push(cur); cur = w; }
+            else cur = t2;
+          });
+          if (cur) lines.push(cur);
+          lines.slice(0, 2).forEach((ln, i) => ctx.fillText(ln, W / 2, H - 196 + i * 30));
+        }
+        // habilidade
+        if (ab) {
+          ctx.font = '800 22px Outfit, sans-serif';
+          const label = `${ab.icon || ''} ${(ab.name || '').toUpperCase()}`;
+          const wLbl = ctx.measureText(label).width + 36;
+          ctx.fillStyle = 'rgba(0,0,0,0.66)';
+          ctx.beginPath(); ctx.roundRect((W - wLbl) / 2, H - 166, wLbl, 34, 17); ctx.fill();
+          ctx.fillStyle = '#ffd76a';
+          ctx.fillText(label, W / 2, H - 141);
+        }
+        // ataques (até 4 cápsulas)
+        const slots = attacks.slice(0, 4);
+        if (slots.length) {
+          const bw = 108, gap = 10;
+          const x0 = (W - (slots.length * bw + (slots.length - 1) * gap)) / 2;
+          slots.forEach((a: any, i: number) => {
+            const x = x0 + i * (bw + gap), y = H - 110;
+            ctx.fillStyle = 'rgba(0,0,0,0.72)';
+            ctx.beginPath(); ctx.roundRect(x, y, bw, 72, 14); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = '900 32px Outfit, sans-serif';
+            ctx.fillText(String(a?.damage ?? 'FX'), x + bw / 2, y + 36);
+            ctx.fillStyle = '#ffd76a'; ctx.font = '800 23px Outfit, sans-serif';
+            ctx.fillText(`${a?.costType === 'mana' ? '💎' : '⚡'}${a?.cost ?? 0}`, x + bw / 2, y + 62);
+          });
+        }
+        // borda + brilho do template
+        ctx.shadowColor = tpl.glowColor || '#51c5ff';
+        ctx.shadowBlur = 26;
+        ctx.strokeStyle = tpl.borderColor || '#ffffff';
+        ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.roundRect(6, 6, W - 12, H - 12, 22); ctx.stroke();
+        ctx.shadowBlur = 0;
+        const out = new THREE.CanvasTexture(cv);
+        out.colorSpace = THREE.SRGBColorSpace;
+        return out;
+      } catch { return tex; }
+    };
+
+    // Troca a arte demo pela face premium de cada carta (assíncrono; se falhar, mantém a demo)
     if (artUrls.size > 0) {
       const artLoader = new THREE.TextureLoader();
       artUrls.forEach((url, cardItem) => {
         artLoader.load(url, (tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
-          cardItem.texture = tex;
+          const faceTex = composePremiumFace(tex, cardItem);
+          cardItem.texture = faceTex;
           cardMeshes.forEach((g: any) => {
             if (g?.userData?.cardData === cardItem) {
               const mesh = g.children?.[0] as any;
-              if (mesh?.material?.map) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
+              if (mesh?.material?.map) { mesh.material.map = faceTex; mesh.material.needsUpdate = true; }
             }
           });
         }, undefined, () => { /* mantém a arte demo */ });
@@ -919,7 +1022,6 @@ export class BoosterPackViewer {
 
       updateFloppyTopStrip(0, 0);
       bottomGridBar.style.display = 'none';
-      infoBar.style.display = 'none';
     };
 
     // Duas discretas cápsulas flutuantes no rodapé (barra escura arredondada)
@@ -1002,36 +1104,6 @@ export class BoosterPackViewer {
     bottomGridBar.appendChild(btnOpenAnother);
     bottomGridBar.appendChild(btnCollect);
     this.overlay.appendChild(bottomGridBar);
-
-    // Faixa de infos reais da carta revelada (mesmo formato da aba cartas da forja)
-    const infoBar = document.createElement('div');
-    infoBar.style.cssText = `
-      position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; gap: 10px; z-index: 100; pointer-events: none;
-      background: rgba(10, 8, 5, 0.88); border: 1px solid rgba(212, 175, 55, 0.4);
-      border-radius: 12px; padding: 8px 14px 8px 8px; max-width: 92vw;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
-    `;
-    infoBar.innerHTML = `
-      <div id="bci-art" style="width:44px; height:44px; border-radius:8px; background-size:cover; background-position:center; background-color:#111; flex-shrink:0; border:1px solid rgba(255,255,255,0.15);"></div>
-      <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-        <div id="bci-name" style="font-family:'Cinzel',serif; font-size:0.72rem; font-weight:900; letter-spacing:1px; color:#ffe9a8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 0 #000;"></div>
-        <div id="bci-stats" style="font-size:0.68rem; font-weight:800; color:#fff;"></div>
-      </div>`;
-    this.overlay.appendChild(infoBar);
-    const showBoosterCardInfo = (item: any) => {
-      if (!item || !item.name) { infoBar.style.display = 'none'; return; }
-      const art = infoBar.querySelector('#bci-art') as HTMLElement | null;
-      const nameEl = infoBar.querySelector('#bci-name') as HTMLElement | null;
-      const statsEl = infoBar.querySelector('#bci-stats') as HTMLElement | null;
-      if (art) art.style.backgroundImage = item.imageUrl ? `url('${item.imageUrl}')` : 'none';
-      if (nameEl) nameEl.textContent = String(item.name).toUpperCase();
-      if (statsEl) {
-        const f = (v: any) => (v === undefined || v === null ? '?' : v);
-        statsEl.textContent = `⚔️${f(item.atk)} ❤️${f(item.pv)} · 💎${f(item.mana)} ⚡${f(item.stamina)}`;
-      }
-      infoBar.style.display = 'flex';
-    };
 
     const onPointerDown = (e: PointerEvent) => {
       isPointerDown = true;
@@ -1184,7 +1256,6 @@ export class BoosterPackViewer {
               }
               const clickedIdx = clickedMesh ? cardMeshes.indexOf(clickedMesh) : -1;
               if (clickedIdx >= 0) {
-                showBoosterCardInfo((cardMeshes[clickedIdx] as any)?.userData?.cardData);
                 if ((clickedMesh as any)?.userData?.isVideo) {
                   triggerVideoCinematic(clickedIdx);
                 } else {
@@ -1199,7 +1270,6 @@ export class BoosterPackViewer {
               stopVideoCinematic();
               isGridMode = true;
               bottomGridBar.style.display = 'flex';
-              showBoosterCardInfo((cardMeshes[totalCards - 1] as any)?.userData?.cardData);
               playHoloShimmerSound();
               playSparkleBurstSound();
               triggerSparkleFx();
@@ -1207,7 +1277,6 @@ export class BoosterPackViewer {
               stopVideoCinematic();
               revealedCount += 1;
               triggerCycleCard();
-              showBoosterCardInfo((cardMeshes[revealedCount] as any)?.userData?.cardData);
 
               if (revealedCount >= totalCards) {
                 playSparkleBurstSound();

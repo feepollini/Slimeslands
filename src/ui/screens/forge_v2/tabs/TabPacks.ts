@@ -834,7 +834,8 @@ export class TabPacks {
           pv: tmpl?.basePv ?? 5,
           mana: tmpl?.manaCost ?? 1,
           stamina: tmpl?.staminaCost ?? 1,
-          image: tmpl?.image || ''
+          image: tmpl?.image || '',
+          tpl: tmpl || null
         });
       }
     } else {
@@ -872,7 +873,8 @@ export class TabPacks {
           pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
           mana: picked?.manaCost ?? 1,
           stamina: picked?.staminaCost ?? 1,
-          image: picked?.image || ''
+          image: picked?.image || '',
+          tpl: picked || null
         });
       }
     }

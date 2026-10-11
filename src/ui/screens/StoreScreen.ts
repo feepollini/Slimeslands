@@ -2,6 +2,7 @@ import { gsap } from 'gsap';
 import { CARD_TEMPLATES, SKILL_POOL } from '../../core/constants';
 import { ProgressionManager } from '../../core/ProgressionManager';
 import { SoundManager } from '../utils/SoundManager';
+import { thumbFor } from '../utils/thumb';
 import { openCardViewer } from '../components/CardViewer';
 import { t } from '../../core/i18n';
 import storeData from '../../core/store.json';
@@ -383,7 +384,7 @@ export class StoreScreen {
           return `
             <button class="store-booster-circle-btn" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
               ${p.customFront ? `
-                <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
+                <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
               ` : `
                 <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
               `}
@@ -574,7 +575,7 @@ export class StoreScreen {
             return `
               <button class="store-carousel-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
                 ${p.customFront ? `
-                  <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
+                  <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
                 ` : `
                   <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
                 `}
@@ -794,7 +795,7 @@ export class StoreScreen {
               return `
                 <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:34px; height:34px; border-radius:50%; border:${isActive ? '2.5px solid #38bdf8' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.12)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 12px rgba(56,189,248,0.7)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
                   ${p.customFront ? `
-                    <img src="${p.customFront}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover;" />
+                    <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
                   ` : `
                     <span style="font-size:1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
                   `}

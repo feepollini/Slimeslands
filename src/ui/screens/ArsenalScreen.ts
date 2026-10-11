@@ -4,6 +4,7 @@ import { Skill } from '../../core/GameEngine';
 import { gsap } from 'gsap';
 import { bindLongPress } from '../utils/InputUtils';
 import { SoundManager } from '../utils/SoundManager';
+import { thumbFor } from '../utils/thumb';
 import { openCardViewer, cardViewerNav, isCardViewerOpen } from '../components/CardViewer';
 import { t as i18nT, tx as i18nTx } from '../../core/i18n';
 
@@ -315,7 +316,7 @@ export class ArsenalScreen {
         return `
             <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''}" data-name="${t.name}">
                 <div class="ars-thumb-art">
-                    <div data-lazybg="${t.image}" style="width:100%; height:100%; background-color:#141414; background-size:cover; background-position:center; position:absolute; inset:0;"></div>
+                    <div data-lazybg="${t.image}" data-lazythumb="${thumbFor(t.image)}" style="width:100%; height:100%; background-color:#141414; background-size:cover; background-position:center; position:absolute; inset:0;"></div>
                     <div class="ars-fav-indicator ${isFav ? 'active' : ''}">⭐</div>
                     
                     <div class="ars-thumb-capsules">
@@ -712,9 +713,15 @@ export class ArsenalScreen {
         const els = scope.querySelectorAll('[data-lazybg]');
         if (!els.length) return;
         const paint = (node: HTMLElement) => {
-            const url = node.getAttribute('data-lazybg');
-            if (url) node.style.backgroundImage = `url('${url}')`;
+            const full = node.getAttribute('data-lazybg') || '';
+            const thumb = node.getAttribute('data-lazythumb') || full;
             node.removeAttribute('data-lazybg');
+            node.removeAttribute('data-lazythumb');
+            // Tenta o thumb leve; se faltar, cai p/ a imagem full (nunca quebra).
+            const probe = new Image();
+            probe.onload = () => { node.style.backgroundImage = `url('${thumb}')`; };
+            probe.onerror = () => { if (full) node.style.backgroundImage = `url('${full}')`; };
+            probe.src = thumb || full;
         };
         if (!('IntersectionObserver' in window)) {
             els.forEach((el) => paint(el as HTMLElement));

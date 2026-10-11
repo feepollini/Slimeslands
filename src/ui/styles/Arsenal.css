@@ -496,6 +496,9 @@
     transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     border-radius: 6px;
     overflow: hidden;
+    /* Pula render/offscreen p/ nao engasgar com dezenas de cartas */
+    content-visibility: auto;
+    contain-intrinsic-size: 160px 260px;
 }
 
 .ars-thumb-art {

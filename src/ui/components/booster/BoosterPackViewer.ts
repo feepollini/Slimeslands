@@ -40,29 +40,29 @@ export class BoosterPackViewer {
   constructor(options: BoosterPackViewerOptions = {}) {
     this.options = options;
 
-    // Overlay em tela cheia com fundo limpo (branco puro igual ao original)
+    // Overlay em tela cheia TRANSPARENTE: o cenário da página aparece atrás
     this.overlay = document.createElement('div');
     this.overlay.className = 'booster-modal-overlay';
     this.overlay.style.cssText = `
       position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9999999;
-      background: #ffffff;
+      background: transparent;
       overflow: hidden; touch-action: none; user-select: none; font-family: 'Outfit', sans-serif;
     `;
 
-    // Botão de fechar elegante no canto superior direito
+    // Botão de fechar elegante no canto superior direito (claro p/ fundo escuro)
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '✕';
     closeBtn.title = 'Fechar';
     closeBtn.style.cssText = `
       position: absolute; top: 18px; right: 20px; z-index: 1000;
       width: 38px; height: 38px; border-radius: 50%;
-      background: rgba(0, 0, 0, 0.08); border: 1px solid rgba(0, 0, 0, 0.15);
-      color: #333333; font-size: 1.1rem; font-weight: 700;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff; font-size: 1.1rem; font-weight: 700;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: background 0.2s, transform 0.15s;
     `;
-    closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(0, 0, 0, 0.15)'; };
-    closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(0, 0, 0, 0.08)'; };
+    closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255, 255, 255, 0.18)'; };
+    closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(255, 255, 255, 0.08)'; };
     closeBtn.onclick = () => this.destroy();
     this.overlay.appendChild(closeBtn);
 
@@ -72,6 +72,24 @@ export class BoosterPackViewer {
       position: absolute; inset: 0; width: 100vw; height: 100vh; overflow: hidden; touch-action: none;
     `;
     this.overlay.appendChild(this.container);
+
+    // Brilho ambiente por tipo de booster (sobre o cenário, atrás das cartas)
+    const themeGlow = document.createElement('div');
+    const themeKey = (this.options.theme || '').toLowerCase();
+    const themeTint: Record<string, string> = {
+      charizard: 'rgba(255,90,0,0.30)',
+      pikachu: 'rgba(255,215,0,0.26)',
+      rayquaza: 'rgba(0,200,120,0.26)',
+      mewtwo: 'rgba(150,80,255,0.30)',
+    };
+    const tint = themeTint[themeKey] || 'rgba(120,120,180,0.22)';
+    themeGlow.style.cssText = `
+      position: absolute; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(circle at 50% 42%, ${tint} 0%, transparent 62%),
+        radial-gradient(circle at 50% 50%, rgba(0,0,0,0.55) 0%, transparent 75%);
+    `;
+    this.overlay.insertBefore(themeGlow, this.container);
 
     document.body.appendChild(this.overlay);
 
@@ -84,16 +102,17 @@ export class BoosterPackViewer {
     const width = window.innerWidth || container.clientWidth || 800;
     const height = window.innerHeight || container.clientHeight || 600;
 
-    // --- Scene, Camera & Renderer ---
+    // --- Scene, Camera & Renderer (fundo transparente: cenário aparece atrás) ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#ffffff'); // PURE WHITE BACKGROUND
+    scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
     // Diminui um pouco o tamanho do booster (distância 12.4 ao invés de 10.8)
     camera.position.set(0, 0, 12.4);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = false;
@@ -868,70 +887,72 @@ export class BoosterPackViewer {
       bottomGridBar.style.display = 'none';
     };
 
-    // Barra de Ação no Modo Grid (Identidade Visual Legends of Winter)
+    // Duas discretas cápsulas flutuantes no rodapé (barra escura arredondada)
     const bottomGridBar = document.createElement('div');
     bottomGridBar.className = 'booster-grid-actions';
     bottomGridBar.style.cssText = `
       position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; gap: 10px; padding: 7px 12px;
-      background: linear-gradient(180deg, rgba(38, 26, 14, 0.96) 0%, rgba(14, 9, 4, 0.98) 100%);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border: 2px solid #0e0903; outline: 1.5px solid rgba(212, 175, 55, 0.45);
-      border-radius: 999px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 236, 190, 0.3);
-      z-index: 100;
+      display: none; align-items: center; gap: 10px;
+      background: rgba(12, 9, 6, 0.88); border: 1px solid rgba(212, 175, 55, 0.3);
+      border-radius: 999px; padding: 6px 8px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7);
+      z-index: 100; pointer-events: auto;
     `;
 
+    // Cápsula 1: Abrir outro pack (discreta, tom escuro com borda sutil)
     const btnOpenAnother = document.createElement('button');
-    btnOpenAnother.innerHTML = `✨ Abrir outro pack`;
+    btnOpenAnother.innerHTML = `✨ ABRIR OUTRO PACK`;
     btnOpenAnother.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 9px 18px;
-      background: linear-gradient(180deg, #42321f 0%, #20160b 100%);
-      color: #ffe9a8; border: 2px solid #0e0903; border-radius: 999px;
-      font-family: 'Cinzel', serif, system-ui; font-size: 0.72rem; font-weight: 800;
-      letter-spacing: 0.6px; cursor: pointer; transition: all 0.15s ease;
-      box-shadow: 0 3px 0 rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 236, 190, 0.25);
+      display: flex; align-items: center; gap: 6px; padding: 9px 16px;
+      background: rgba(30, 22, 14, 0.95);
+      color: #ffe9a8; border: 1px solid rgba(212, 175, 55, 0.45); border-radius: 999px;
+      font-family: 'Cinzel', serif, system-ui; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.4px; cursor: pointer; transition: all 0.2s ease;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 236, 190, 0.2);
       text-shadow: 0 1px 2px #000;
     `;
     btnOpenAnother.onmouseenter = () => {
-      btnOpenAnother.style.filter = 'brightness(1.15)';
+      btnOpenAnother.style.filter = 'brightness(1.2)';
+      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.7)';
       btnOpenAnother.style.transform = 'translateY(-1px)';
     };
     btnOpenAnother.onmouseleave = () => {
       btnOpenAnother.style.filter = 'none';
+      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.35)';
       btnOpenAnother.style.transform = 'none';
     };
     btnOpenAnother.onmousedown = () => {
-      btnOpenAnother.style.transform = 'translateY(2px)';
+      btnOpenAnother.style.transform = 'translateY(1px)';
     };
     btnOpenAnother.onmouseup = () => {
       btnOpenAnother.style.transform = 'none';
     };
     btnOpenAnother.onclick = () => resetToSealed();
 
+    // Cápsula 2: Concluir & Coletar (discreta, dourado suave com brilho)
     const btnCollect = document.createElement('button');
-    btnCollect.innerHTML = `🏆 Concluir & Coletar`;
+    btnCollect.innerHTML = `🏆 CONCLUIR & COLETAR`;
     btnCollect.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 9px 22px;
-      background: linear-gradient(180deg, #ffe27a 0%, #ffd700 35%, #c78d12 78%, #8a5f06 100%);
-      color: #1a0f02; border: 2px solid #3a2505; border-radius: 999px;
-      font-family: 'Cinzel', serif, system-ui; font-size: 0.75rem; font-weight: 900;
-      letter-spacing: 0.8px; cursor: pointer; transition: all 0.15s ease;
-      box-shadow: 0 4px 0 rgba(0, 0, 0, 0.65), 0 0 18px rgba(212, 175, 55, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.55);
-      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+      display: flex; align-items: center; gap: 6px; padding: 9px 18px;
+      background: linear-gradient(180deg, #ffd700 0%, #b8860b 100%);
+      color: #1a0f02; border: 1px solid rgba(255, 236, 190, 0.6); border-radius: 999px;
+      font-family: 'Cinzel', serif, system-ui; font-size: 0.72rem; font-weight: 900;
+      letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
     `;
     btnCollect.onmouseenter = () => {
       btnCollect.style.filter = 'brightness(1.12)';
-      btnCollect.style.boxShadow = '0 4px 0 rgba(0, 0, 0, 0.65), 0 0 24px rgba(212, 175, 55, 0.75), inset 0 2px 0 rgba(255, 255, 255, 0.65)';
+      btnCollect.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.6), 0 0 16px rgba(212, 175, 55, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
       btnCollect.style.transform = 'translateY(-1px)';
     };
     btnCollect.onmouseleave = () => {
       btnCollect.style.filter = 'none';
-      btnCollect.style.boxShadow = '0 4px 0 rgba(0, 0, 0, 0.65), 0 0 18px rgba(212, 175, 55, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.55)';
+      btnCollect.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6)';
       btnCollect.style.transform = 'none';
     };
     btnCollect.onmousedown = () => {
-      btnCollect.style.transform = 'translateY(2px)';
+      btnCollect.style.transform = 'translateY(1px)';
     };
     btnCollect.onmouseup = () => {
       btnCollect.style.transform = 'none';

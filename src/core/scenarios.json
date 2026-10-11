@@ -4,7 +4,7 @@
   "arsenal": "{\"mode\":\"grad_pat\",\"url\":\"/cards/Obscure_summoning_dnd_battle_map.jpg\",\"filter\":\"none\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"]}",
   "store": "{\"mode\":\"grad_pat\",\"url\":\"/cards/Obscure_summoning_dnd_battle_map.jpg\",\"filter\":\"none\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"url(\\\"data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'151'%20height%3D'151'%3E%3Ccircle%20cx%3D'20%25'%20cy%3D'30%25'%20r%3D'2'%20fill%3D'%23ffae00'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'70%25'%20cy%3D'60%25'%20r%3D'1.5'%20fill%3D'%23ffae00'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'3s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'40%25'%20cy%3D'80%25'%20r%3D'2.5'%20fill%3D'%23ffae00'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2.5s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3C%2Fsvg%3E\\\")\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
   "preparation": "{\"mode\":\"image\",\"url\":\"/cards/download_-_2026-03-15T161051.950.jpg\",\"mediaType\":\"image\",\"filter\":\"none\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
-  "difficulty": "{\"mode\":\"image\",\"url\":\"/cards/Obscure_summoning_dnd_battle_map.jpg\",\"filter\":\"wave\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"url(\\\"data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'196'%20height%3D'196'%3E%3Ccircle%20cx%3D'20%25'%20cy%3D'30%25'%20r%3D'2'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'70%25'%20cy%3D'60%25'%20r%3D'1.5'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'3s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'40%25'%20cy%3D'80%25'%20r%3D'2.5'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2.5s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3C%2Fsvg%3E\\\")\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
+  "difficulty": "{\"mode\":\"image\",\"url\":\"/cards/gemini_generated_video_91a98711.mp4\",\"mediaType\":\"video\",\"filter\":\"none\",\"filterVal\":20,\"blur\":8,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
   "coin_flip": "{\"mode\":\"image\",\"url\":\"/cards/Obscure_summoning_dnd_battle_map.jpg\",\"filter\":\"wave\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"url(\\\"data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'196'%20height%3D'196'%3E%3Ccircle%20cx%3D'20%25'%20cy%3D'30%25'%20r%3D'2'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'70%25'%20cy%3D'60%25'%20r%3D'1.5'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'3s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3Ccircle%20cx%3D'40%25'%20cy%3D'80%25'%20r%3D'2.5'%20fill%3D'%23ffffff'%20opacity%3D'1.00'%3E%3Canimate%20attributeName%3D'opacity'%20values%3D'0%3B1.00%3B0'%20dur%3D'2.5s'%20repeatCount%3D'indefinite'%2F%3E%3C%2Fcircle%3E%3C%2Fsvg%3E\\\")\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
   "booster": "{\"mode\":\"image\",\"url\":\"/cards/Obscure_summoning_dnd_battle_map.jpg\",\"mediaType\":\"image\",\"filter\":\"none\",\"filterVal\":20,\"gradient\":\"linear-gradient(to bottom, rgba(18, 18, 18, 1), rgba(0, 0, 0, 1))\",\"gradBlend\":\"normal\",\"pattern\":\"\",\"patSpeed\":10,\"patBlend\":\"normal\",\"layers\":[\"pat\",\"grad\",\"img\"],\"blur\":8,\"particles\":{\"type\":\"none\",\"color\":\"#ffaa00\",\"count\":20}}",
   "__meta": {
@@ -201,12 +201,12 @@
     },
     "difficulty": {
       "mode": "image",
-      "url": "/cards/Obscure_summoning_dnd_battle_map.jpg",
+      "url": "/cards/gemini_generated_video_91a98711.mp4",
       "gradFn": "linear-gradient",
       "gradDir": "to bottom",
       "gradC1": "#121212",
       "gradC2": "#000000",
-      "patType": "stars",
+      "patType": "none",
       "patC": "#ffffff",
       "patOpacity": "100",
       "layers": [
@@ -214,7 +214,7 @@
         "grad",
         "img"
       ],
-      "imgFilter": "wave",
+      "imgFilter": "none",
       "imgFilterVal": 20,
       "gradC1Op": 100,
       "gradC2Op": 100,
@@ -226,7 +226,9 @@
         "type": "none",
         "color": "#ffaa00",
         "count": 20
-      }
+      },
+      "mediaType": "video",
+      "blur": 8
     },
     "coin_flip": {
       "mode": "image",

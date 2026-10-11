@@ -391,8 +391,8 @@ export class TabPacks {
               </div>
             </div>
 
-            <!-- GRADE VISUAL DAS CARTAS DA COLEÇÃO (SELETOR INTEGRADO) -->
-            <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:10px; max-height:280px; overflow-y:auto; padding:8px; background:rgba(0,0,0,0.3); border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+            <!-- SELETOR VISUAL POR RARIDADE -->
+            <div style="max-height:420px; overflow-y:auto; padding:8px; background:rgba(0,0,0,0.3); border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
               ${this.renderCardCatalogGrid(pack)}
             </div>
           </div>
@@ -401,27 +401,52 @@ export class TabPacks {
     `;
   }
 
-  // GRADE VISUAL DE CARTAS DO JOGO (COM FOTOS E SELEÇÃO)
+  // SELETOR VISUAL POR RARIDADE: um grupo de cartas para cada raridade,
+  // com contagem e botões TODAS/NENHUMA por grupo.
   private renderCardCatalogGrid(pack: StorePack): string {
     const fixedSet = new Set(pack.fixedCards || []);
     const search = this.cardCatalogSearch.toLowerCase().trim();
+    const matches = (t: any) => !search || t.name.toLowerCase().includes(search);
 
-    const filtered = this.templates.filter(t => {
-      if (search && !t.name.toLowerCase().includes(search)) return false;
-      return true;
-    });
+    const groups: { key: string; label: string; color: string }[] = [
+      { key: 'common', label: 'COMUNS', color: '#e2e8f0' },
+      { key: 'rare', label: 'RARAS', color: '#38bdf8' },
+      { key: 'epic', label: 'ÉPICAS', color: '#c084fc' },
+      { key: 'legendary', label: 'LENDÁRIAS', color: '#ffd700' },
+    ];
 
-    if (filtered.length === 0) {
-      return '<div style="grid-column:1/-1; text-align:center; padding:20px; color:#aaa; font-size:0.75rem;">Nenhuma carta encontrada com este nome.</div>';
-    }
-
-    return filtered.map(t => {
-      const isSelected = fixedSet.has(t.name);
-      const rarity = this.getRarityKey(t);
-      const rColor = rarity === 'legendary' ? '#ffd700' : (rarity === 'rare' ? '#38bdf8' : '#e2e8f0');
-      const img = t.image || '/cards/fundo_de_carta.png';
-
+    const sections = groups.map((g) => {
+      const list = this.templates.filter((t) => this.getRarityKey(t) === g.key && matches(t));
+      if (!list.length) return '';
+      const sel = list.filter((t) => fixedSet.has(t.name)).length;
       return `
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+            <span style="width:10px; height:10px; border-radius:50%; background:${g.color}; box-shadow:0 0 8px ${g.color};"></span>
+            <span style="font-size:0.7rem; font-weight:900; letter-spacing:1px; color:${g.color};">${g.label}</span>
+            <span style="font-size:0.62rem; color:#aaa;">${sel}/${list.length}</span>
+            <span style="flex:1;"></span>
+            <button class="btn-rarity-all" data-rarity="${g.key}" style="font-size:0.6rem; font-weight:800; padding:3px 10px; border-radius:8px; cursor:pointer; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); color:#fff;">TODAS</button>
+            <button class="btn-rarity-none" data-rarity="${g.key}" style="font-size:0.6rem; font-weight:800; padding:3px 10px; border-radius:8px; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,0.15); color:#aaa;">NENHUMA</button>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap:10px;">
+            ${list.map((t) => this.renderCatalogTile(t, fixedSet.has(t.name))).join('')}
+          </div>
+        </div>`;
+    }).join('');
+
+    if (!sections.trim()) {
+      return '<div style="text-align:center; padding:20px; color:#aaa; font-size:0.75rem;">Nenhuma carta encontrada com este nome.</div>';
+    }
+    return sections;
+  }
+
+  private renderCatalogTile(t: any, isSelected: boolean): string {
+    const rarity = this.getRarityKey(t);
+    const rColor = rarity === 'legendary' ? '#ffd700' : rarity === 'epic' ? '#c084fc' : (rarity === 'rare' ? '#38bdf8' : '#e2e8f0');
+    const img = t.image || '/cards/fundo_de_carta.png';
+
+    return `
         <div class="btn-toggle-fixed-card" data-name="${this.esc(t.name)}" style="display:flex; flex-direction:column; border-radius:8px; overflow:hidden; border:2px solid ${isSelected ? '#38bdf8' : 'rgba(255,255,255,0.1)'}; background:${isSelected ? 'rgba(56,189,248,0.15)' : 'rgba(0,0,0,0.4)'}; cursor:pointer; transition:0.15s; position:relative; box-shadow:${isSelected ? '0 0 12px rgba(56,189,248,0.4)' : 'none'};">
           ${isSelected ? `
             <div style="position:absolute; top:4px; right:4px; background:#38bdf8; color:#000; font-size:0.6rem; font-weight:900; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; z-index:2;">✓</div>
@@ -441,7 +466,6 @@ export class TabPacks {
           </div>
         </div>
       `;
-    }).join('');
   }
 
   // SUB-ABA 2: PUBLICADOS NA LOJA
@@ -741,6 +765,27 @@ export class TabPacks {
       pack.fixedCards = [];
       this.reRender();
     });
+
+    // Seletor por raridade: TODAS / NENHUMA do grupo (respeita a busca atual)
+    const rarityBulk = (sel: string, add: boolean) => {
+      container.querySelectorAll(sel).forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = (btn as HTMLElement).dataset.rarity || '';
+          const search = this.cardCatalogSearch.toLowerCase().trim();
+          if (!pack.fixedCards) pack.fixedCards = [];
+          this.templates.forEach((t) => {
+            if (this.getRarityKey(t) !== key) return;
+            if (search && !t.name.toLowerCase().includes(search)) return;
+            const idx = pack.fixedCards.indexOf(t.name);
+            if (add && idx < 0) pack.fixedCards.push(t.name);
+            if (!add && idx >= 0) pack.fixedCards.splice(idx, 1);
+          });
+          this.reRender();
+        });
+      });
+    };
+    rarityBulk('.btn-rarity-all', true);
+    rarityBulk('.btn-rarity-none', false);
 
     // Salvar no Jogo
     const saveBtn = container.querySelector('#btn-save-packs') as HTMLButtonElement | null;

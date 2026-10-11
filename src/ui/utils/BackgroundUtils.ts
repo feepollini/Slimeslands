@@ -247,14 +247,25 @@ export function applyScenarioBackground(bgVal: string) {
                 el.style.backgroundPosition = bgImgs.map(() => 'center').join(', ');
                 el.style.setProperty('animation', (animCombo || 'none'), 'important');
                 
-                // If it's a fixed filter without animation, apply directly (legacy support)
+                // If it's a fixed filter without animation, apply directly (legacy support) + suporte a blur/desfoque
+                const blurVal = bgObj.blur ?? 0;
+                let activeFilter = '';
                 if (!bgIsVideo && bgObj.filter && bgObj.filter !== 'none' && !filterAnimClass && allowImage) {
-                    el.style.filter = bgObj.filter;
+                    activeFilter = bgObj.filter;
+                }
+                if (blurVal > 0) {
+                    activeFilter = activeFilter ? `${activeFilter} blur(${blurVal}px)` : `blur(${blurVal}px)`;
+                    el.style.transform = 'scale(1.05)';
+                } else {
+                    el.style.transform = '';
+                }
+
+                if (activeFilter) {
+                    el.style.filter = activeFilter;
                 } else if (!filterAnimClass) {
                     el.style.filter = 'none';
                 } else {
-                    // Animation is active, don't set filter inline to avoid potential conflicts
-                    el.style.filter = ''; 
+                    el.style.filter = '';
                 }
 
                 // --- VIDEO LAYER (mp4/webm/mov: <video> com autoplay, em vez de so imagem) --- //

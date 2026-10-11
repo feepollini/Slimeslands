@@ -33,6 +33,7 @@ export class TabScenarios {
       { id: 'arsenal', label: 'ARSENAL / DECK BUILDER' },
       { id: 'preparation', label: 'PREPARAÇÃO DE BATALHA' },
       { id: 'store', label: 'LOJA DE ITENS' },
+      { id: 'booster', label: 'ABERTURA DE BOOSTER / PACK' },
       { id: 'difficulty', label: 'DIFICULDADE DA BATALHA' },
       { id: 'coin_flip', label: 'CARA OU COROA / SORTE' }
     ];
@@ -132,6 +133,14 @@ export class TabScenarios {
                          <label>Intensidade do Efeito</label>
                          <input type="range" id="scn-img-filter-val" class="scn-realtime editor-input" min="0" max="100" value="${meta.imgFilterVal ?? 50}">
                       </div>
+                   </div>
+
+                   <div class="form-group" style="margin-top:12px; background:rgba(0,0,0,0.3); padding:10px 12px; border-radius:10px; border:1px solid rgba(81,197,255,0.2);">
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                         <label style="color:#51c5ff; font-weight:800; font-size:0.75rem; margin:0;">🌫️ Desfoque do Fundo (Blur)</label>
+                         <span id="scn-blur-val-txt" style="font-size:0.75rem; color:#ffd700; font-weight:900;">${meta.blur ?? 0}px</span>
+                      </div>
+                      <input type="range" id="scn-img-blur" class="scn-realtime editor-input" min="0" max="30" value="${meta.blur ?? 0}" style="width:100%;">
                    </div>
                 </div>
             </div>
@@ -440,6 +449,10 @@ export class TabScenarios {
        meta.mediaType = isVideoUrl(u) ? 'video' : 'image';
        meta.imgFilter = imgFilterFn;
        meta.imgFilterVal = imgFilterVal;
+       const imgBlur = parseInt((container.querySelector('#scn-img-blur') as HTMLInputElement)?.value || '0');
+       meta.blur = imgBlur;
+       const blurTxt = container.querySelector('#scn-blur-val-txt');
+       if (blurTxt) blurTxt.textContent = `${imgBlur}px`;
 
        const hexToRgb = (hex: string) => {
            let r = 0, g = 0, b = 0;
@@ -487,6 +500,7 @@ export class TabScenarios {
            mediaType: meta.mediaType || 'image',
            filter: imgFilterFn,
            filterVal: imgFilterVal,
+            blur: meta.blur || 0,
            gradient: combinedGrad,
            gradBlend: meta.gradBlend,
            pattern: patSvg,

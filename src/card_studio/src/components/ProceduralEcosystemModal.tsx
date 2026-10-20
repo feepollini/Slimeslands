@@ -1,45 +1,65 @@
 import React, { useState } from 'react';
 import {
   X,
-  Dices,
   PackageOpen,
-  Users,
-  Sliders,
+  ShoppingBag,
+  History,
   Shield,
-  BarChart3,
-  Plus,
-  Check,
+  Swords,
+  Layers,
   Sparkles,
-  Info,
-  Copy,
+  Sliders,
+  Users,
+  BarChart3,
+  Check,
+  RotateCcw,
+  Plus,
+  Coins,
+  ArrowRight,
 } from 'lucide-react';
 import { CardData } from '../types/card';
 import {
   BaseCharacter,
   BoosterModel,
+  BoosterOpenHistoryEntry,
   CardClass,
-  CardOrigin,
-  CardRank,
   ClassBalanceTable,
   DeckCategory,
   ParryAttackerInput,
   SimulationSummary,
+  SubgroupCatalog,
 } from '../types/slimelands';
 import {
   OFFICIAL_CLASSES,
   OFFICIAL_RANKS,
-  ensureCoherentCharacterFields,
   evaluateParryDefense,
   generateBoosterPack,
-  generateProceduralCard,
+  getEligibleMatricesForPack,
   runMonteCarloSimulation,
+  ensureCoherentCharacterFields,
 } from '../utils/proceduralEngine';
 import { CardFrameSVG } from './CardFrameSVG';
 
 interface ProceduralEcosystemModalProps {
   isOpen: boolean;
-  initialSection?: 'generator' | 'boosters' | 'characters' | 'balance' | 'parry-sim';
+  initialSection?:
+    | 'boosters'
+    | 'inventory-board'
+    | 'packs-admin'
+    | 'characters'
+    | 'balance'
+    | 'parry-sim'
+    | 'generator';
   onClose: () => void;
+  matrixCards: CardData[];
+  playerInventory: CardData[];
+  onUpdatePlayerInventory: (inventory: CardData[]) => void;
+  playerCoins: number;
+  onUpdatePlayerCoins: (coins: number) => void;
+  boosterStock: Record<string, number>;
+  onUpdateBoosterStock: (stock: Record<string, number>) => void;
+  boosterHistory: BoosterOpenHistoryEntry[];
+  onUpdateBoosterHistory: (history: BoosterOpenHistoryEntry[]) => void;
   baseCharacters: BaseCharacter[];
   onUpdateBaseCharacters: (chars: BaseCharacter[]) => void;
   balanceTables: Record<CardClass, ClassBalanceTable>;
@@ -47,14 +67,25 @@ interface ProceduralEcosystemModalProps {
   boosterModels: BoosterModel[];
   onUpdateBoosterModels: (models: BoosterModel[]) => void;
   decks: DeckCategory[];
-  onGrantCardsToInventory: (cards: CardData[], selectFirst?: boolean) => void;
+  subgroupCatalog: SubgroupCatalog;
+  onUpdateSubgroupCatalog: (catalog: SubgroupCatalog) => void;
   onInspectCard: (card: CardData) => void;
+  onSelectCardForStudio?: (cardId: string) => void;
 }
 
 export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> = ({
   isOpen,
   initialSection = 'boosters',
   onClose,
+  matrixCards,
+  playerInventory,
+  onUpdatePlayerInventory,
+  playerCoins,
+  onUpdatePlayerCoins,
+  boosterStock,
+  onUpdateBoosterStock,
+  boosterHistory,
+  onUpdateBoosterHistory,
   baseCharacters,
   onUpdateBaseCharacters,
   balanceTables,
@@ -62,68 +93,71 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
   boosterModels,
   onUpdateBoosterModels,
   decks,
-  onGrantCardsToInventory,
+  subgroupCatalog,
   onInspectCard,
+  onSelectCardForStudio,
 }) => {
   const [activeSection, setActiveSection] = useState<
-    'generator' | 'boosters' | 'characters' | 'balance' | 'parry-sim'
-  >(initialSection);
+    | 'boosters'
+    | 'inventory-board'
+    | 'packs-admin'
+    | 'characters'
+    | 'balance'
+    | 'parry-sim'
+  >(initialSection === 'generator' ? 'packs-admin' : initialSection);
 
-  // 1. Instant Procedural Generator State
-  const [selectedCharId, setSelectedCharId] = useState<string>('RANDOM');
-  const [selectedOrigin, setSelectedOrigin] = useState<CardOrigin>('Escaneamento');
-  const [selectedClassOverride, setSelectedClassOverride] = useState<string>('AUTO');
-  const [selectedRankOverride, setSelectedRankOverride] = useState<string>('AUTO');
-  const [targetDeckId, setTargetDeckId] = useState<string>(decks[0]?.id || 'deck-main');
-  const [batchQuantity, setBatchQuantity] = useState<number>(1);
-  const [stagedGeneratedCards, setStagedGeneratedCards] = useState<CardData[]>([]);
-
-  // 2. Booster Generator & Slot Editor State
+  // Active selected Booster for Opening / Shop
   const [activeBoosterId, setActiveBoosterId] = useState<string>(
     boosterModels[0]?.id || 'booster-standard-9'
   );
-  const [boosterBatchCount, setBoosterBatchCount] = useState<number>(1);
-  const [openedBoosterCards, setOpenedBoosterCards] = useState<CardData[]>([]);
-  const [boosterGranted, setBoosterGranted] = useState(false);
 
-  // 3. Base Character Editor State
-  const [editingCharId, setEditingCharId] = useState<string>(
-    baseCharacters[0]?.id || 'char-lumys'
-  );
+  // Active 9-Card Reveal Screen State (Section 14)
+  const [activeRevealEntry, setActiveRevealEntry] = useState<BoosterOpenHistoryEntry | null>(null);
+  const [revealedSlotIndex, setRevealedSlotIndex] = useState<number>(9); // 9 = all revealed
 
-  // 4. Balance Table Editor State
-  const [editingBalanceClass, setEditingBalanceClass] = useState<CardClass>('Comum');
+  // Player Board Combat Simulator State (Section 11, 16 & 17)
+  const [deployedBoardCardId, setDeployedBoardCardId] = useState<string | null>(null);
+  const [boardStamina, setBoardStamina] = useState<number>(9);
+  const [boardMana, setBoardMana] = useState<number>(9);
+  const [parryEfficiency, setParryEfficiency] = useState<number>(80);
 
-  // 5. Combat Economy (Parry & Stamina 3/6/9) + Statistical Simulator State
-  const [playerStamina, setPlayerStamina] = useState<number>(9);
-  const [parryBlockEfficiency, setParryBlockEfficiency] = useState<number>(80);
   const [attackers, setAttackers] = useState<ParryAttackerInput[]>([
     {
-      id: 'atk-a',
-      attackerName: 'Agressor A · Slime Comum',
-      abilityName: 'Pulso Arcano',
-      manaUsed: 3,
-      incomingDamage: 350,
+      id: 'atk-1',
+      attackerName: 'Slime Verde Agressor',
+      abilityName: 'Impacto Viscoso',
+      manaUsed: 3, // Parry cost = 1.5 Stamina
+      incomingDamage: 380,
       selectedToDefend: true,
     },
     {
-      id: 'atk-b',
-      attackerName: 'Agressor B · Slime Raro',
-      abilityName: 'Torrente Ancestral',
-      manaUsed: 6,
-      incomingDamage: 780,
+      id: 'atk-2',
+      attackerName: 'Slime Tóxico de Pântano',
+      abilityName: 'Torrente Venenosa',
+      manaUsed: 6, // Parry cost = 3.0 Stamina
+      incomingDamage: 850,
       selectedToDefend: true,
     },
     {
-      id: 'atk-c',
-      attackerName: 'Agressor C · Slime Mítico',
-      abilityName: 'Explosão Celestial',
-      manaUsed: 9,
-      incomingDamage: 1850,
-      selectedToDefend: true,
+      id: 'atk-3',
+      attackerName: 'Herisdia Corrompida',
+      abilityName: 'Cataclismo Astral',
+      manaUsed: 9, // Parry cost = 4.5 Stamina
+      incomingDamage: 1950,
+      selectedToDefend: false,
     },
   ]);
 
+  // Admin Editors State
+  const [editingPackId, setEditingPackId] = useState<string>(
+    boosterModels[0]?.id || 'booster-standard-9'
+  );
+  const [editingCharId, setEditingCharId] = useState<string>(
+    baseCharacters[0]?.id || 'char-slime-verde'
+  );
+  const [editingBalanceClass, setEditingBalanceClass] = useState<CardClass>('Comum');
+
+  // Monte Carlo Simulator State
   const [simCount, setSimCount] = useState<number>(10000);
   const [simMode, setSimMode] = useState<'scan' | 'drop' | 'booster-special'>('booster-special');
   const [simReport, setSimReport] = useState<SimulationSummary | null>(() =>
@@ -135,284 +169,408 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
   const activeBooster =
     boosterModels.find((b) => b.id === activeBoosterId) || boosterModels[0];
 
+  const stockCount = boosterStock[activeBooster.id] ?? 0;
+  const boosterPrice = activeBooster.priceCoins ?? 150;
+
+  const deployedCard =
+    playerInventory.find((c) => c.id === deployedBoardCardId) ||
+    playerInventory[0] ||
+    null;
+
   const activeEditingChar =
     baseCharacters.find((c) => c.id === editingCharId) || baseCharacters[0];
 
   const currentClassTable = balanceTables[editingBalanceClass];
 
-  // Sum of rank probabilities for validation
   const rankProbSum = OFFICIAL_RANKS.reduce(
     (sum, r) => sum + (currentClassTable?.ranks[r]?.rankProbability ?? 0),
     0
   );
 
-  // Handlers
-  const handleRunProceduralRoll = () => {
-    const chosenChar =
-      selectedCharId === 'RANDOM'
-        ? undefined
-        : baseCharacters.find((c) => c.id === selectedCharId);
+  /**
+   * SECTION 14: FLUXO CORRETO DOS BOOSTERS
+   * 1. Jogador seleciona o booster.
+   * 2. Clica em Abrir.
+   * 3. O sistema consulta o pack.
+   * 4. O pack seleciona as matrizes elegíveis.
+   * 5. O motor gera as instâncias individuais (9 cartas com IDs únicos).
+   * 6. O sistema registra o resultado no histórico.
+   * 7. Consome o booster.
+   * 8. Concede as nove cartas ao inventário do jogador.
+   * 9. Apresenta a revelação (sem menus administrativos, sem re-sorteios durante a animação).
+   */
+  const handleOpenBoosterDirect = (boosterToOpen: BoosterModel) => {
+    // Check if player has stock; if not, check coins and auto-buy
+    const currentStock = boosterStock[boosterToOpen.id] ?? 0;
+    const price = boosterToOpen.priceCoins ?? 150;
 
-    const results: CardData[] = [];
-    const count = Math.max(1, Math.min(24, batchQuantity));
-    for (let i = 0; i < count; i++) {
-      results.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: baseCharacters,
-          balanceTables,
-          origin: selectedOrigin,
-          forcedClass:
-            selectedClassOverride === 'AUTO'
-              ? undefined
-              : (selectedClassOverride as CardClass),
-          forcedRank:
-            selectedRankOverride === 'AUTO'
-              ? undefined
-              : (selectedRankOverride as CardRank),
-          deckId: targetDeckId,
-        })
-      );
+    if (currentStock <= 0) {
+      if (playerCoins < price) {
+        alert(
+          `Você precisa de ${price} moedas para adquirir este booster (Saldo atual: ${playerCoins} moedas). Ganhe moedas ou selecione outro pacote.`
+        );
+        return;
+      }
+      // Deduct coins & open
+      onUpdatePlayerCoins(playerCoins - price);
+    } else {
+      // Consume 1 from stock
+      onUpdateBoosterStock({
+        ...boosterStock,
+        [boosterToOpen.id]: Math.max(0, currentStock - 1),
+      });
     }
-    setStagedGeneratedCards(results);
+
+    // Step 3, 4, 5: Generate 9 instances using Matrix references and procedural engine
+    const nineInstances = generateBoosterPack(
+      boosterToOpen,
+      baseCharacters,
+      balanceTables,
+      'deck-main',
+      matrixCards
+    );
+
+    // Step 6: Register confirmed result in history
+    const historyEntry: BoosterOpenHistoryEntry = {
+      id: `open-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      boosterId: boosterToOpen.id,
+      boosterName: boosterToOpen.name,
+      openedAt: new Date().toISOString(),
+      instanceIds: nineInstances.map((c) => c.id),
+      cards: nineInstances,
+    };
+
+    onUpdateBoosterHistory([historyEntry, ...boosterHistory]);
+
+    // Step 8: Grant instances to player inventory
+    onUpdatePlayerInventory([...nineInstances, ...playerInventory]);
+
+    // Step 9: Present reveal
+    setActiveRevealEntry(historyEntry);
+    setRevealedSlotIndex(9);
   };
 
-  const handleOpenBoosterPacks = () => {
-    const packs = Math.max(1, Math.min(10, boosterBatchCount));
-    const allCards: CardData[] = [];
-    for (let p = 0; p < packs; p++) {
-      const pack = generateBoosterPack(
-        activeBooster,
-        baseCharacters,
-        balanceTables,
-        targetDeckId
-      );
-      allCards.push(...pack);
+  const handleBuyBoosterStock = (booster: BoosterModel) => {
+    const price = booster.priceCoins ?? 150;
+    if (playerCoins < price) {
+      alert(`Moedas insuficientes! Preço: ${price} moedas, Saldo: ${playerCoins}.`);
+      return;
     }
-    setOpenedBoosterCards(allCards);
-    setBoosterGranted(false);
+    onUpdatePlayerCoins(playerCoins - price);
+    onUpdateBoosterStock({
+      ...boosterStock,
+      [booster.id]: (boosterStock[booster.id] ?? 0) + 1,
+    });
   };
 
-  const parryResult = evaluateParryDefense(
+  const parryCalculation = evaluateParryDefense(
     attackers,
-    playerStamina,
-    parryBlockEfficiency
+    boardStamina,
+    parryEfficiency
   );
 
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-6xl h-[88vh] bg-[#0B0D13] border border-slate-800 rounded-xl shadow-2xl flex flex-col overflow-hidden text-slate-100"
+        className="w-full max-w-6xl h-[92vh] bg-[#0A0D14] border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100"
       >
-        {/* Top Modal Header & Navigation Tabs */}
-        <div className="px-5 py-3.5 border-b border-slate-800 bg-[#10141D] flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
-            <span className="text-sm font-bold text-white whitespace-nowrap shrink-0">
-              Worlds of Slimelands · Motor Procedural
-            </span>
+        {/* =====================================================================
+            TOP MODAL HEADER & DUAL MODE NAVIGATION (PLAYER / ADMIN)
+           ===================================================================== */}
+        <div className="px-5 py-3 border-b border-slate-800 bg-[#0F131D] flex items-center justify-between gap-4 shrink-0 flex-wrap">
+          {/* Left: Brand + Navigation Tabs */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold text-white tracking-wide font-['Outfit',sans-serif]">
+                Worlds of Slimelands
+              </span>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Packs & Ecossistema
+              </span>
+            </div>
 
-            <nav className="flex items-center gap-1">
-              {[
-                { id: 'boosters', label: 'Boosters (9 Cartas)', icon: PackageOpen },
-                { id: 'generator', label: 'Escaneamento & Drops', icon: Dices },
-                { id: 'characters', label: 'Personagens & Magias', icon: Users },
-                { id: 'balance', label: 'Classes, Ranks & Regras', icon: Sliders },
-                { id: 'parry-sim', label: 'Parry & Simulador (100k)', icon: BarChart3 },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const active = activeSection === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveSection(tab.id as typeof activeSection)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                      active
-                        ? 'bg-emerald-600 text-white'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-                    }`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
+            {/* Navigation Tabs */}
+            <nav className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1">
+              <button
+                onClick={() => {
+                  setActiveSection('boosters');
+                  setActiveRevealEntry(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                  activeSection === 'boosters'
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <PackageOpen className="w-3.5 h-3.5" />
+                <span>Loja & Boosters (9 Cartas)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('inventory-board')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                  activeSection === 'inventory-board'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <Swords className="w-3.5 h-3.5" />
+                <span>Inventário & Tabuleiro ({playerInventory.length})</span>
+              </button>
+
+              <div className="w-[1px] h-4 bg-slate-800 mx-1" />
+
+              <button
+                onClick={() => setActiveSection('packs-admin')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  activeSection === 'packs-admin'
+                    ? 'bg-slate-800 text-emerald-300 font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Configurar regras e filtros dos Packs de distribuição (Seção 12)"
+              >
+                <Sliders className="w-3 h-3 text-emerald-400" />
+                <span>Filtros de Packs</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('balance')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  activeSection === 'balance'
+                    ? 'bg-slate-800 text-emerald-300 font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sliders className="w-3 h-3 text-sky-400" />
+                <span>Classes & Balanceamento</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('characters')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  activeSection === 'characters'
+                    ? 'bg-slate-800 text-emerald-300 font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-3 h-3 text-purple-400" />
+                <span>Modelos Base</span>
+              </button>
+
+              <button
+                onClick={() => setActiveSection('parry-sim')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  activeSection === 'parry-sim'
+                    ? 'bg-slate-800 text-emerald-300 font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <BarChart3 className="w-3 h-3 text-amber-400" />
+                <span>Simulador 100k</span>
+              </button>
             </nav>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Right: Player Coins & Close */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-amber-950/40 border border-amber-500/40 rounded-xl px-3 py-1.5 text-xs font-extrabold text-amber-300 font-mono">
+              <Coins className="w-3.5 h-3.5 text-amber-400" />
+              <span>{playerCoins} Moedas</span>
+              <button
+                onClick={() => onUpdatePlayerCoins(playerCoins + 500)}
+                className="ml-1 text-[10px] text-amber-400 hover:text-amber-200 underline"
+                title="Adicionar moedas de teste"
+              >
+                +500
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Modal Body Content */}
+        {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-5">
           {/* =================================================================
-              TAB 1: BOOSTERS (9 CARTAS: 4 COMUNS, 2 RARAS, 2 MAGIAS, 1 ESPECIAL A/S)
+              1. PLAYER BOOSTER OPENING & SHOP (SEÇÕES 13, 14, 15 & 17)
+              Clean, direct flow without administrative menus!
              ================================================================= */}
-          {activeSection === 'boosters' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 bg-[#121621] border border-slate-800 rounded-xl p-4">
-                <div className="lg:col-span-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold text-white">
-                      {activeBooster.name}
-                    </h3>
-                    <span className="text-xs font-mono tabular-nums text-emerald-400">
-                      9 Cartas por Pacote
-                    </span>
+          {activeSection === 'boosters' && !activeRevealEntry && (
+            <div className="space-y-6">
+              {/* Header Banner */}
+              <div className="bg-gradient-to-r from-[#121624] via-[#0E131F] to-[#121624] border border-slate-800 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <PackageOpen className="w-5 h-5 text-amber-400" />
+                    <h2 className="text-lg font-extrabold text-white">
+                      Loja & Abertura Oficial de Boosters
+                    </h2>
                   </div>
-                  <p className="text-xs text-slate-300">
-                    {activeBooster.description}
+                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    Cada pacote contém <strong>9 cartas</strong> oficiais: <strong>4 Comuns</strong>, <strong>2 Raras</strong>, <strong>2 Magias</strong> e <strong>1 Carta Especial garantida de Rank Alto (A ou S)</strong>. Ao abrir, o motor procedural consulta a Matriz e gera atributos únicos para seu inventário.
                   </p>
-
-                  {/* Official 9-Slot Distribution Summary */}
-                  <div className="grid grid-cols-4 gap-2 pt-2">
-                    <div className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800/80">
-                      <div className="text-[11px] text-slate-400">Slots 1 a 4</div>
-                      <div className="text-xs font-bold text-white mt-0.5">
-                        4× Classe Comum
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800/80">
-                      <div className="text-[11px] text-slate-400">Slots 5 a 6</div>
-                      <div className="text-xs font-bold text-sky-400 mt-0.5">
-                        2× Classe Rara
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800/80">
-                      <div className="text-[11px] text-slate-400">Slots 7 a 8</div>
-                      <div className="text-xs font-bold text-purple-400 mt-0.5">
-                        2× Cartas de Magia
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800/80">
-                      <div className="text-[11px] text-slate-400">Slot 9 · Especial</div>
-                      <div className="text-xs font-bold text-amber-400 mt-0.5">
-                        1× Rank Alto (A ou S)
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Booster Execution Controls */}
-                <div className="flex flex-col justify-between bg-[#0B0D13] border border-slate-800 rounded-lg p-3.5 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
-                        Qtd. de Boosters
-                      </label>
-                      <select
-                        value={boosterBatchCount}
-                        onChange={(e) => setBoosterBatchCount(Number(e.target.value))}
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white"
-                      >
-                        <option value={1}>1 Booster (9 cartas)</option>
-                        <option value={2}>2 Boosters (18 cartas)</option>
-                        <option value={5}>Lote 5 Boosters (45 cartas)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">
-                        Deck de Destino
-                      </label>
-                      <select
-                        value={targetDeckId}
-                        onChange={(e) => setTargetDeckId(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white"
-                      >
-                        {decks.map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}
-                          </option>
-                        ))}
-                      </select>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="text-[11px] text-slate-400">Total no Inventário</div>
+                    <div className="text-base font-extrabold text-emerald-400 font-mono">
+                      {playerInventory.length} Cartas
                     </div>
                   </div>
-
-                  <button
-                    onClick={handleOpenBoosterPacks}
-                    className="w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <PackageOpen className="w-4 h-4" />
-                    <span>Gerar Booster ({boosterBatchCount * 9} Cartas)</span>
-                  </button>
+                  {boosterHistory.length > 0 && (
+                    <button
+                      onClick={() => setActiveRevealEntry(boosterHistory[0])}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1.5 transition-colors"
+                      title="Ver o último booster aberto"
+                    >
+                      <History className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Último Aberto</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Generated Booster Pack Visual Grid */}
-              {openedBoosterCards.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between bg-[#121621] border border-slate-800 rounded-lg px-4 py-2.5">
-                    <span className="text-xs font-semibold text-slate-200">
-                      Resultado da Abertura ({openedBoosterCards.length} instâncias geradas — clique em qualquer carta para ver o Informativo Completo)
-                    </span>
+              {/* Booster Packs Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {boosterModels.map((booster) => {
+                  const stock = boosterStock[booster.id] ?? 0;
+                  const price = booster.priceCoins ?? 150;
+                  const isSelected = activeBoosterId === booster.id;
+                  const eligibleCount = getEligibleMatricesForPack(
+                    booster,
+                    matrixCards,
+                    balanceTables
+                  ).length;
 
-                    <button
-                      onClick={() => {
-                        if (!boosterGranted) {
-                          onGrantCardsToInventory(openedBoosterCards, true);
-                          setBoosterGranted(true);
-                        }
-                      }}
-                      disabled={boosterGranted}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                        boosterGranted
-                          ? 'bg-slate-800 text-emerald-400 cursor-default'
-                          : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                  return (
+                    <div
+                      key={booster.id}
+                      onClick={() => setActiveBoosterId(booster.id)}
+                      className={`relative rounded-2xl p-4 border transition-all cursor-pointer flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-[#141A28] border-amber-400 ring-2 ring-amber-400/40 shadow-xl'
+                          : 'bg-[#101420] border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>
-                        {boosterGranted
-                          ? 'Cartas Concedidas à Galeria'
-                          : 'Confirmar & Enviar todas para a Galeria'}
-                      </span>
-                    </button>
+                      {/* Top Badges */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                            {booster.themeLabel || 'Geral'}
+                          </span>
+                          <span className="text-xs font-bold text-amber-300 font-mono">
+                            {stock > 0 ? `${stock} em estoque` : `${price} Moedas`}
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-extrabold text-white">
+                          {booster.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                          {booster.description}
+                        </p>
+
+                        {/* Filter Badges Preview */}
+                        <div className="mt-3 flex items-center gap-1 flex-wrap text-[10px]">
+                          {booster.filters?.biomes && booster.filters.biomes.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-semibold">
+                              Bioma: {booster.filters.biomes.join(', ')}
+                            </span>
+                          )}
+                          {booster.filters?.families && booster.filters.families.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                              {booster.filters.families.join(', ')}
+                            </span>
+                          )}
+                          {booster.filters?.collections &&
+                            booster.filters.collections.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-300">
+                                {booster.filters.collections.join(', ')}
+                              </span>
+                            )}
+                          <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 font-mono">
+                            {eligibleCount} matrizes elegíveis
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons for this Booster */}
+                      <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleBuyBoosterStock(booster);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center gap-1 transition-colors"
+                          title="Comprar mais um pacote para seu estoque de boosters"
+                        >
+                          <ShoppingBag className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Comprar ({price} M.)</span>
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenBoosterDirect(booster);
+                          }}
+                          className="flex-1 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md"
+                          title="Abrir este Booster de 9 cartas imediatamente"
+                        >
+                          <PackageOpen className="w-4 h-4" />
+                          <span>Abrir Booster</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* History of Confirmed Booster Openings (Section 14: "O resultado já confirmado deverá permanecer recuperável.") */}
+              {boosterHistory.length > 0 && (
+                <div className="bg-[#101420] border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                      <History className="w-4 h-4 text-sky-400" />
+                      <span>Histórico de Boosters Abertos ({boosterHistory.length})</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Resultados confirmados gravados sem re-sorteios
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2.5">
-                    {openedBoosterCards.map((card, idx) => {
-                      const slotNum = (idx % 9) + 1;
-                      const isSlot9 = slotNum === 9;
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto pr-1">
+                    {boosterHistory.map((hist, idx) => {
+                      const slot9Card = hist.cards[8];
                       return (
                         <div
-                          key={card.id}
-                          onClick={() => onInspectCard(card)}
-                          className={`p-1.5 rounded-lg border cursor-pointer transition-transform hover:-translate-y-1 flex flex-col ${
-                            isSlot9
-                              ? 'bg-amber-950/25 border-amber-500/80'
-                              : 'bg-[#121620] border-slate-800 hover:border-slate-600'
-                          }`}
+                          key={hist.id}
+                          onClick={() => setActiveRevealEntry(hist)}
+                          className="p-2.5 rounded-xl bg-[#0B0E17] border border-slate-800 hover:border-slate-700 cursor-pointer flex items-center justify-between gap-2"
                         >
-                          <div className="text-[10px] font-mono tabular-nums text-slate-400 mb-1 flex items-center justify-between">
-                            <span>#{slotNum}</span>
-                            <span className="font-bold text-white">
-                              {card.cardClass} · {card.cardRank}
-                            </span>
+                          <div>
+                            <div className="text-xs font-bold text-white">
+                              {hist.boosterName} #{boosterHistory.length - idx}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {new Date(hist.openedAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })} · Especial: {slot9Card?.title} ({slot9Card?.cardClass} · {slot9Card?.cardRank})
+                            </div>
                           </div>
-                          <div className="w-full aspect-[680/990] rounded overflow-hidden bg-black pointer-events-none">
-                            <CardFrameSVG
-                              card={card}
-                              interactive={false}
-                              animateChroma={false}
-                              idScope={`modal-booster-${card.id}`}
-                            />
-                          </div>
-                          <div className="mt-1.5 text-[10px] font-semibold text-white truncate">
-                            {card.title}
-                          </div>
-                          <div className="text-[9px] font-mono tabular-nums text-slate-400">
-                            {card.entityType === 'Magia'
-                              ? `Magia · ${card.summonStaminaCost} Mana`
-                              : `${card.pvText} · Máx ${card.maxDamage}`}
-                          </div>
+                          <button className="px-2 py-1 rounded bg-slate-800 text-[10px] font-bold text-sky-300 hover:bg-slate-700">
+                            Ver 9
+                          </button>
                         </div>
                       );
                     })}
@@ -423,163 +581,377 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
           )}
 
           {/* =================================================================
-              TAB 2: ESCANEAMENTO, DROPS NO MAPA & GERAÇÃO INSTANTÂNEA
+              1b. 9-CARD REVEAL SCREEN (SEÇÃO 14)
+              Displays the 9 generated instances with zero extra rolls
              ================================================================= */}
-          {activeSection === 'generator' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 bg-[#121621] border border-slate-800 rounded-xl p-4">
+          {activeSection === 'boosters' && activeRevealEntry && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-[#121624] border border-slate-800 rounded-xl px-4 py-3 flex-wrap gap-2">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Personagem-Base / Encontro
-                  </label>
-                  <select
-                    value={selectedCharId}
-                    onChange={(e) => setSelectedCharId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  >
-                    <option value="RANDOM">Sorteio Elegível do Mapa</option>
-                    {baseCharacters.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.entityType})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-sm font-extrabold text-white">
+                      Revelação: {activeRevealEntry.boosterName} (9 Cartas Concedidas)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Todas as 9 instâncias foram adicionadas diretamente ao seu inventário com atributos próprios.
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Origem da Obtenção
-                  </label>
-                  <select
-                    value={selectedOrigin}
-                    onChange={(e) => setSelectedOrigin(e.target.value as CardOrigin)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                  >
-                    <option value="Escaneamento">Escaneamento no Mapa</option>
-                    <option value="Drop de Mapa">Drop de Combate</option>
-                    <option value="Booster">Slot Especial de Booster</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Classe
-                    </label>
-                    <select
-                      value={selectedClassOverride}
-                      onChange={(e) => setSelectedClassOverride(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white"
-                    >
-                      <option value="AUTO">Probabilidade Real</option>
-                      {OFFICIAL_CLASSES.filter((c) => balanceTables[c]?.enabled).map(
-                        (cls) => (
-                          <option key={cls} value={cls}>
-                            {cls}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Rank
-                    </label>
-                    <select
-                      value={selectedRankOverride}
-                      onChange={(e) => setSelectedRankOverride(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white"
-                    >
-                      <option value="AUTO">Probabilidade Real</option>
-                      {OFFICIAL_RANKS.map((r) => (
-                        <option key={r} value={r}>
-                          Rank {r}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-end gap-2">
-                  <div className="w-24">
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Quantidade
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={batchQuantity}
-                      onChange={(e) => setBatchQuantity(Number(e.target.value) || 1)}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white font-mono tabular-nums"
-                    />
-                  </div>
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={handleRunProceduralRoll}
-                    className="flex-1 py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                    onClick={() => {
+                      setActiveSection('inventory-board');
+                      setActiveRevealEntry(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5"
                   >
-                    <Dices className="w-4 h-4" />
-                    <span>Gerar Agora</span>
+                    <Swords className="w-3.5 h-3.5" />
+                    <span>Ver no Inventário & Tabuleiro</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveRevealEntry(null)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                  >
+                    Voltar aos Boosters
                   </button>
                 </div>
               </div>
 
-              {stagedGeneratedCards.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between bg-[#121621] border border-slate-800 rounded-lg px-4 py-2.5">
-                    <span className="text-xs text-slate-300">
-                      {stagedGeneratedCards.length} versão(ões) gerada(s) pelo motor procedural
-                    </span>
-                    <button
-                      onClick={() => {
-                        onGrantCardsToInventory(stagedGeneratedCards, true);
-                        onClose();
-                      }}
-                      className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-                    >
-                      Adicionar à Galeria & Abrir no Estúdio
-                    </button>
-                  </div>
+              {/* 9 Card Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+                {activeRevealEntry.cards.map((card, idx) => {
+                  const slotNum = idx + 1;
+                  const isSpecialSlot = slotNum === 9;
+                  const isRevealed = slotNum <= revealedSlotIndex;
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {stagedGeneratedCards.map((card) => (
-                      <div
-                        key={card.id}
-                        onClick={() => onInspectCard(card)}
-                        className="p-2 rounded-xl bg-[#121620] border border-slate-800 hover:border-emerald-500/70 cursor-pointer flex flex-col"
-                      >
-                        <div className="w-full aspect-[680/990] rounded overflow-hidden bg-black pointer-events-none">
-                          <CardFrameSVG
-                            card={card}
-                            interactive={false}
-                            animateChroma={false}
-                            idScope={`modal-staged-${card.id}`}
-                          />
-                        </div>
-                        <div className="mt-2 flex items-center justify-between text-xs font-bold text-white">
-                          <span className="truncate">{card.title}</span>
-                          <span className="text-amber-400 font-mono">
-                            {card.cardClass} · {card.cardRank}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
-                          {card.pvText} · Máx {card.maxDamage} · {card.summonStaminaCost} Est.
-                        </div>
+                  return (
+                    <div
+                      key={card.id}
+                      onClick={() => onInspectCard(card)}
+                      className={`rounded-xl p-2 border cursor-pointer transition-all flex flex-col ${
+                        isSpecialSlot
+                          ? 'bg-amber-950/20 border-amber-500/80 ring-2 ring-amber-400/40 shadow-lg'
+                          : 'bg-[#101420] border-slate-800 hover:border-slate-600'
+                      }`}
+                    >
+                      {/* Slot Header */}
+                      <div className="flex items-center justify-between text-[10px] font-mono tabular-nums mb-1">
+                        <span className="text-slate-400">Slot {slotNum}</span>
+                        <span
+                          className={`font-bold ${
+                            isSpecialSlot ? 'text-amber-400' : 'text-slate-200'
+                          }`}
+                        >
+                          {card.cardClass} · {card.cardRank}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+
+                      {/* Card Thumbnail */}
+                      <div className="w-full aspect-[680/990] rounded overflow-hidden bg-black relative pointer-events-none">
+                        <CardFrameSVG
+                          card={card}
+                          interactive={false}
+                          animateChroma={false}
+                          idScope={`reveal-${card.id}`}
+                        />
+                      </div>
+
+                      {/* Card Stats */}
+                      <div className="mt-2 text-[11px] font-bold text-white truncate">
+                        {card.title}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono tabular-nums">
+                        {card.entityType === 'Magia'
+                          ? `Magia · Mana ${card.summonStaminaCost || 3}`
+                          : card.entityType === 'Item'
+                          ? 'Item'
+                          : `${card.pvText} · ${card.summonStaminaCost} Est.`}
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeployedBoardCardId(card.id);
+                          setActiveSection('inventory-board');
+                        }}
+                        className="mt-2 w-full py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-emerald-300"
+                      >
+                        Tabuleiro →
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
           {/* =================================================================
-              TAB 3: CADASTRO DE PERSONAGENS-BASE & CARTAS DE MAGIA
+              2. INVENTÁRIO DO JOGADOR & SIMULADOR DE TABULEIRO
+              (SEÇÕES 11, 14, 16 & 17)
+             ================================================================= */}
+          {activeSection === 'inventory-board' && (
+            <div className="space-y-6">
+              {/* Combat Board HUD */}
+              <div className="bg-[#121624] border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Swords className="w-5 h-5 text-emerald-400" />
+                    <h3 className="text-base font-extrabold text-white">
+                      Tabuleiro de Combate & Economia de Parry
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-xs font-bold">
+                    <div className="px-3 py-1.5 rounded-xl bg-sky-950/50 border border-sky-500/40 text-sky-300">
+                      Mana Máx: 9 (Atual: {boardMana})
+                    </div>
+                    <div className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-300">
+                      Estamina Máx: 9 (Atual: {boardStamina})
+                    </div>
+                  </div>
+                </div>
+
+                {deployedCard ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 bg-[#0B0D13] border border-slate-800/80 rounded-xl p-4 items-center">
+                    {/* Deployed Card Overview */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-20 aspect-[680/990] rounded overflow-hidden bg-black shrink-0 pointer-events-none">
+                        <CardFrameSVG
+                          card={deployedCard}
+                          interactive={false}
+                          animateChroma={false}
+                          idScope={`board-${deployedCard.id}`}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[10px] uppercase font-bold text-emerald-400">
+                          Carta em Campo (Instância)
+                        </div>
+                        <div className="text-sm font-extrabold text-white truncate">
+                          {deployedCard.title}
+                        </div>
+                        <div className="text-xs text-slate-300 font-mono">
+                          {deployedCard.cardClass} · Rank {deployedCard.cardRank} ·{' '}
+                          {deployedCard.pvText}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          ID: {deployedCard.id.slice(0, 14)}...
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Attacks / Abilities of this Instance */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">
+                        Ataques Disponíveis (Consumo de Mana)
+                      </span>
+                      <div className="space-y-1">
+                        {deployedCard.generatedAbilities?.map((ab) => (
+                          <div
+                            key={ab.id}
+                            className="flex items-center justify-between text-xs bg-slate-900 px-2.5 py-1 rounded"
+                          >
+                            <span className="font-semibold text-white truncate">
+                              {ab.name}
+                            </span>
+                            <span className="font-mono text-amber-300 font-bold shrink-0 ml-2">
+                              {ab.isFree ? '0 Mana (∞)' : `${ab.manaCost} Mana`} ·{' '}
+                              {ab.damage} Dano
+                            </span>
+                          </div>
+                        )) || (
+                          <div className="text-xs text-slate-500">
+                            Nenhuma habilidade gerada.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Parry Defense Breakdown against incoming attackers (Section 11) */}
+                    <div className="space-y-1 bg-slate-900/80 border border-slate-800 p-2.5 rounded-lg text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white flex items-center gap-1">
+                          <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Parry (50% da Mana do Agressor)</span>
+                        </span>
+                        <span
+                          className={`font-mono font-bold ${
+                            parryCalculation.canAffordAllSelected
+                              ? 'text-emerald-400'
+                              : 'text-rose-400'
+                          }`}
+                        >
+                          Custo: {parryCalculation.totalStaminaCost} Est.
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {parryCalculation.canAffordAllSelected
+                          ? `Defesa viável! Sobram ${parryCalculation.remainingStamina} de estamina.`
+                          : 'Estamina insuficiente para parry de todos os selecionados!'}
+                      </div>
+                      <div className="text-[11px] font-mono text-emerald-300">
+                        Dano Bloqueado: {parryCalculation.totalBlockedDamage} · Passou:{' '}
+                        {parryCalculation.totalUnblockedDamage}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-[#0B0D13] border border-slate-800 text-center text-xs text-slate-400">
+                    Selecione uma carta do seu inventário abaixo para enviar ao Tabuleiro.
+                  </div>
+                )}
+              </div>
+
+              {/* Complete Player Inventory Cards Grid (Section 7, 8 & 17) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-emerald-400" />
+                    <h4 className="text-sm font-extrabold text-white">
+                      Instâncias no Inventário do Jogador ({playerInventory.length})
+                    </h4>
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    Clique em qualquer carta para abrir o Informativo Oficial com seus dados individuais
+                  </span>
+                </div>
+
+                {playerInventory.length === 0 ? (
+                  <div className="p-8 rounded-xl bg-[#101420] border border-dashed border-slate-800 text-center">
+                    <p className="text-xs text-slate-400">
+                      Seu inventário de jogador ainda está vazio.
+                    </p>
+                    <button
+                      onClick={() => setActiveSection('boosters')}
+                      className="mt-3 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950"
+                    >
+                      Abrir Booster de 9 Cartas
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    {playerInventory.map((instance) => {
+                      const isDeployed = deployedBoardCardId === instance.id;
+
+                      return (
+                        <div
+                          key={instance.id}
+                          onClick={() => onInspectCard(instance)}
+                          className={`rounded-xl p-2 border cursor-pointer transition-all flex flex-col ${
+                            isDeployed
+                              ? 'bg-emerald-950/40 border-emerald-400 ring-2 ring-emerald-400/40'
+                              : 'bg-[#101420] border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between mb-1">
+                            <span className="font-bold text-white">
+                              {instance.cardClass} · {instance.cardRank}
+                            </span>
+                            <span>{instance.pvText}</span>
+                          </div>
+
+                          <div className="w-full aspect-[680/990] rounded overflow-hidden bg-black pointer-events-none">
+                            <CardFrameSVG
+                              card={instance}
+                              interactive={false}
+                              animateChroma={false}
+                              idScope={`inv-${instance.id}`}
+                            />
+                          </div>
+
+                          <div className="mt-2 text-[11px] font-bold text-white truncate">
+                            {instance.title}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {instance.entityType || 'Criatura'}
+                          </div>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeployedBoardCardId(instance.id);
+                            }}
+                            className={`mt-2 w-full py-1 rounded text-[10px] font-bold transition-colors ${
+                              isDeployed
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
+                          >
+                            {isDeployed ? 'Em Campo ✓' : 'Enviar Tabuleiro'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              3. ADMIN: FILTROS & CONFIGURAÇÃO DE PACKS (SEÇÃO 12)
+             ================================================================= */}
+          {activeSection === 'packs-admin' && (
+            <div className="space-y-4">
+              <div className="bg-[#121624] border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-extrabold text-white">
+                    Configuração de Packs de Distribuição (Admin)
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Os packs consultam as matrizes cadastradas sem duplicá-las, filtrando por Raridade, Bioma, Família, Coleção e Tipo (Seção 12).
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {boosterModels.map((b) => {
+                  const eligible = getEligibleMatricesForPack(
+                    b,
+                    matrixCards,
+                    balanceTables
+                  );
+                  return (
+                    <div
+                      key={b.id}
+                      className="p-4 rounded-xl bg-[#101420] border border-slate-800 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-white">{b.name}</span>
+                        <span className="text-xs text-emerald-400 font-mono">
+                          {eligible.length} Matrizes Elegíveis
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400">{b.description}</div>
+
+                      <div className="space-y-1.5 pt-2 border-t border-slate-800 text-xs">
+                        <div className="text-slate-300 font-semibold">Filtros do Pack:</div>
+                        <div className="text-slate-400">
+                          Biomas: {b.filters?.biomes?.join(', ') || 'Todos'}
+                        </div>
+                        <div className="text-slate-400">
+                          Famílias: {b.filters?.families?.join(', ') || 'Todas'}
+                        </div>
+                        <div className="text-slate-400">
+                          Coleções: {b.filters?.collections?.join(', ') || 'Todas'}
+                        </div>
+                        <div className="text-slate-400">
+                          Tipos: {b.filters?.types?.join(', ') || 'Todos'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              4. ADMIN: PERSONAGENS-BASE & MAGIAS
              ================================================================= */}
           {activeSection === 'characters' && activeEditingChar && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              {/* Character List */}
               <div className="bg-[#121621] border border-slate-800 rounded-xl p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white">
@@ -596,7 +968,7 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                     }}
                     className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1"
                   >
-                    <Plus className="w-3 h-3" /> Novo Personagem
+                    <Plus className="w-3 h-3" /> Novo
                   </button>
                 </div>
 
@@ -616,40 +988,19 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                           {ch.name}
                         </div>
                         <div className="text-[11px] text-slate-400">
-                          {ch.entityType} · {ch.element} · {ch.abilities.length} hab.
+                          {ch.entityType} · {ch.element} · {ch.matrixRarity || 'Comum'}
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const dup = ensureCoherentCharacterFields({
-                              ...ch,
-                              id: `char-dup-${Date.now()}`,
-                              name: `${ch.name} (Variante)`,
-                            });
-                            onUpdateBaseCharacters([...baseCharacters, dup]);
-                            setEditingCharId(dup.id);
-                          }}
-                          className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
-                          title="Duplicar cadastro"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Character Detail & 4 Abilities Editor */}
+              {/* Character Details */}
               <div className="lg:col-span-2 bg-[#121621] border border-slate-800 rounded-xl p-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
-                    <label className="block text-xs text-slate-400 mb-1">
-                      Nome do Personagem / Magia
-                    </label>
+                    <label className="block text-xs text-slate-400 mb-1">Nome</label>
                     <input
                       type="text"
                       value={activeEditingChar.name}
@@ -657,7 +1008,7 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                         onUpdateBaseCharacters(
                           baseCharacters.map((c) =>
                             c.id === activeEditingChar.id
-                              ? { ...c, name: e.target.value, isProvisional: false }
+                              ? { ...c, name: e.target.value }
                               : c
                           )
                         )
@@ -665,60 +1016,32 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">
-                        Tipo
-                      </label>
-                      <select
-                        value={activeEditingChar.entityType}
-                        onChange={(e) =>
-                          onUpdateBaseCharacters(
-                            baseCharacters.map((c) =>
-                              c.id === activeEditingChar.id
-                                ? {
-                                    ...c,
-                                    entityType: e.target.value as 'Criatura' | 'Magia',
-                                  }
-                                : c
-                            )
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Tipo</label>
+                    <select
+                      value={activeEditingChar.entityType}
+                      onChange={(e) =>
+                        onUpdateBaseCharacters(
+                          baseCharacters.map((c) =>
+                            c.id === activeEditingChar.id
+                              ? {
+                                  ...c,
+                                  entityType: e.target.value as 'Criatura' | 'Magia',
+                                }
+                              : c
                           )
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
-                      >
-                        <option value="Criatura">Criatura</option>
-                        <option value="Magia">Magia</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">
-                        Elemento
-                      </label>
-                      <input
-                        type="text"
-                        value={activeEditingChar.element}
-                        maxLength={6}
-                        onChange={(e) =>
-                          onUpdateBaseCharacters(
-                            baseCharacters.map((c) =>
-                              c.id === activeEditingChar.id
-                                ? { ...c, element: e.target.value.toUpperCase() }
-                                : c
-                            )
-                          )
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white font-mono"
-                      />
-                    </div>
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                    >
+                      <option value="Criatura">Criatura</option>
+                      <option value="Magia">Magia</option>
+                    </select>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">
-                    Descrição Oficial
-                  </label>
+                  <label className="block text-xs text-slate-400 mb-1">Descrição</label>
                   <textarea
                     rows={2}
                     value={activeEditingChar.description}
@@ -726,7 +1049,7 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                       onUpdateBaseCharacters(
                         baseCharacters.map((c) =>
                           c.id === activeEditingChar.id
-                            ? { ...c, description: e.target.value, isProvisional: false }
+                            ? { ...c, description: e.target.value }
                             : c
                         )
                       )
@@ -735,79 +1058,8 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                   />
                 </div>
 
-                {/* Availability Checkboxes */}
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300 pt-1">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={activeEditingChar.active}
-                      onChange={(e) =>
-                        onUpdateBaseCharacters(
-                          baseCharacters.map((c) =>
-                            c.id === activeEditingChar.id
-                              ? { ...c, active: e.target.checked }
-                              : c
-                          )
-                        )
-                      }
-                    />
-                    <span>Cadastro Ativo</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={activeEditingChar.availableForScan}
-                      onChange={(e) =>
-                        onUpdateBaseCharacters(
-                          baseCharacters.map((c) =>
-                            c.id === activeEditingChar.id
-                              ? { ...c, availableForScan: e.target.checked }
-                              : c
-                          )
-                        )
-                      }
-                    />
-                    <span>Disponível para Escaneamento</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={activeEditingChar.availableForDrops}
-                      onChange={(e) =>
-                        onUpdateBaseCharacters(
-                          baseCharacters.map((c) =>
-                            c.id === activeEditingChar.id
-                              ? { ...c, availableForDrops: e.target.checked }
-                              : c
-                          )
-                        )
-                      }
-                    />
-                    <span>Disponível para Drops</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={activeEditingChar.availableForBoosters}
-                      onChange={(e) =>
-                        onUpdateBaseCharacters(
-                          baseCharacters.map((c) =>
-                            c.id === activeEditingChar.id
-                              ? { ...c, availableForBoosters: e.target.checked }
-                              : c
-                          )
-                        )
-                      }
-                    />
-                    <span>Disponível em Boosters</span>
-                  </label>
-                </div>
-
-                {/* Character's 4 Abilities */}
                 <div className="space-y-2 pt-2 border-t border-slate-800">
-                  <div className="text-xs font-bold text-slate-200">
-                    Habilidades do Personagem (Preservadas em todas as versões geradas)
-                  </div>
+                  <div className="text-xs font-bold text-slate-200">Habilidades</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {activeEditingChar.abilities.map((ab, idx) => (
                       <div
@@ -815,52 +1067,25 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                         className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800 space-y-1.5"
                       >
                         <div className="flex items-center justify-between text-[11px] text-slate-400">
-                          <span>
-                            Prioridade #{ab.unlockPriority} · {ab.tier}
-                          </span>
-                          {idx === activeEditingChar.abilities.length - 1 && (
-                            <span className="text-fuchsia-400">
-                              Gratuita (∞) nas Míticas
-                            </span>
-                          )}
+                          <span>Prioridade #{ab.unlockPriority}</span>
+                          <span className="text-fuchsia-400">{ab.tier}</span>
                         </div>
                         <input
                           type="text"
                           value={ab.name}
                           onChange={(e) => {
-                            const updatedAbs = activeEditingChar.abilities.map(
-                              (item, i) =>
-                                i === idx ? { ...item, name: e.target.value } : item
+                            const updated = activeEditingChar.abilities.map((item, i) =>
+                              i === idx ? { ...item, name: e.target.value } : item
                             );
                             onUpdateBaseCharacters(
                               baseCharacters.map((c) =>
                                 c.id === activeEditingChar.id
-                                  ? { ...c, abilities: updatedAbs }
+                                  ? { ...c, abilities: updated }
                                   : c
                               )
                             );
                           }}
                           className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-bold text-white"
-                        />
-                        <input
-                          type="text"
-                          value={ab.description}
-                          onChange={(e) => {
-                            const updatedAbs = activeEditingChar.abilities.map(
-                              (item, i) =>
-                                i === idx
-                                  ? { ...item, description: e.target.value }
-                                  : item
-                            );
-                            onUpdateBaseCharacters(
-                              baseCharacters.map((c) =>
-                                c.id === activeEditingChar.id
-                                  ? { ...c, abilities: updatedAbs }
-                                  : c
-                              )
-                            );
-                          }}
-                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300"
                         />
                       </div>
                     ))}
@@ -871,87 +1096,32 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
           )}
 
           {/* =================================================================
-              TAB 4: EDITOR DE BALANCEAMENTO (CLASSES × RANKS & INCREMENTOS)
+              5. ADMIN: CLASSES, RANKS & BALANCEAMENTO (SEÇÃO 10)
              ================================================================= */}
           {activeSection === 'balance' && currentClassTable && (
             <div className="space-y-4">
-              {/* Class Selector Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 bg-[#121621] border border-slate-800 rounded-xl p-3.5">
                 <div className="flex items-center gap-1.5">
-                  {OFFICIAL_CLASSES.map((cls) => {
-                    const enabled = balanceTables[cls]?.enabled;
-                    return (
-                      <button
-                        key={cls}
-                        onClick={() => setEditingBalanceClass(cls)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                          editingBalanceClass === cls
-                            ? 'bg-emerald-600 text-white'
-                            : enabled
-                            ? 'bg-slate-900 text-slate-300 hover:text-white'
-                            : 'bg-slate-950 text-slate-600'
-                        }`}
-                      >
-                        {cls} {!enabled && '(Inativa)'}
-                      </button>
-                    );
-                  })}
+                  {OFFICIAL_CLASSES.map((cls) => (
+                    <button
+                      key={cls}
+                      onClick={() => setEditingBalanceClass(cls)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        editingBalanceClass === cls
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-900 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      {cls}
+                    </button>
+                  ))}
                 </div>
-
-                <div className="flex items-center gap-4 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-200">
-                    <input
-                      type="checkbox"
-                      checked={currentClassTable.enabled}
-                      onChange={(e) =>
-                        onUpdateBalanceTables({
-                          ...balanceTables,
-                          [editingBalanceClass]: {
-                            ...currentClassTable,
-                            enabled: e.target.checked,
-                          },
-                        })
-                      }
-                    />
-                    <span>Classe Habilitada no Jogo</span>
-                  </label>
-
-                  <label className="flex items-center gap-1.5 cursor-pointer text-fuchsia-300">
-                    <input
-                      type="checkbox"
-                      checked={currentClassTable.guaranteedFreeAbility}
-                      onChange={(e) =>
-                        onUpdateBalanceTables({
-                          ...balanceTables,
-                          [editingBalanceClass]: {
-                            ...currentClassTable,
-                            guaranteedFreeAbility: e.target.checked,
-                          },
-                        })
-                      }
-                    />
-                    <span>1 Habilidade Gratuita (0 Mana / ∞)</span>
-                  </label>
+                <div className="text-xs font-mono font-bold text-emerald-400">
+                  Soma Probabilidades de Rank: {rankProbSum}%
                 </div>
               </div>
 
-              {/* 5 Ranks (S > A > B > C > D) Table for the Selected Class */}
               <div className="bg-[#121621] border border-slate-800 rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
-                  <span className="font-bold text-white">
-                    Tabela de Atributos & Incrementos — Classe {editingBalanceClass} (Ordem S &gt; A &gt; B &gt; C &gt; D)
-                  </span>
-                  <span
-                    className={`font-mono tabular-nums font-bold ${
-                      Math.abs(rankProbSum - 100) < 0.01
-                        ? 'text-emerald-400'
-                        : 'text-rose-400'
-                    }`}
-                  >
-                    Soma das Probabilidades de Rank: {rankProbSum}%
-                  </span>
-                </div>
-
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs font-mono tabular-nums">
                     <thead>
@@ -961,7 +1131,7 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                         <th className="p-3">PV Máx</th>
                         <th className="p-3">Incr. PV</th>
                         <th className="p-3">Dano Mín</th>
-                        <th className="p-3">Dano Máx (Teto)</th>
+                        <th className="p-3">Dano Máx</th>
                         <th className="p-3">Incr. Dano</th>
                         <th className="p-3">Invocação (Est.)</th>
                         <th className="p-3">Chance (%)</th>
@@ -970,78 +1140,46 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                     <tbody className="divide-y divide-slate-800/70">
                       {OFFICIAL_RANKS.map((r) => {
                         const rule = currentClassTable.ranks[r];
-                        const updateRankField = (
-                          field: keyof typeof rule,
-                          val: number
-                        ) => {
+                        const updateField = (field: keyof typeof rule, val: number) => {
                           onUpdateBalanceTables({
                             ...balanceTables,
                             [editingBalanceClass]: {
                               ...currentClassTable,
                               ranks: {
                                 ...currentClassTable.ranks,
-                                [r]: {
-                                  ...rule,
-                                  [field]: val,
-                                },
+                                [r]: { ...rule, [field]: val },
                               },
                             },
                           });
                         };
-
                         return (
                           <tr key={r} className="hover:bg-slate-900/50">
-                            <td className="p-3 font-bold text-amber-400">
-                              Rank {r}
-                            </td>
+                            <td className="p-3 font-bold text-amber-400">Rank {r}</td>
                             <td className="p-3">
                               <input
                                 type="number"
                                 value={rule.pvMin}
-                                onChange={(e) =>
-                                  updateRankField('pvMin', Number(e.target.value))
-                                }
-                                className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white"
+                                onChange={(e) => updateField('pvMin', Number(e.target.value))}
+                                className="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-white"
                               />
                             </td>
                             <td className="p-3">
                               <input
                                 type="number"
                                 value={rule.pvMax}
-                                onChange={(e) =>
-                                  updateRankField('pvMax', Number(e.target.value))
-                                }
-                                className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white"
+                                onChange={(e) => updateField('pvMax', Number(e.target.value))}
+                                className="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-white"
                               />
                             </td>
-                            <td className="p-3">
-                              <select
-                                value={rule.pvIncrement}
-                                onChange={(e) =>
-                                  updateRankField(
-                                    'pvIncrement',
-                                    Number(e.target.value)
-                                  )
-                                }
-                                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-400"
-                              >
-                                <option value={5}>5</option>
-                                <option value={10}>10</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                              </select>
-                            </td>
+                            <td className="p-3">{rule.pvIncrement}</td>
                             <td className="p-3">
                               <input
                                 type="number"
                                 value={rule.damageMin}
                                 onChange={(e) =>
-                                  updateRankField(
-                                    'damageMin',
-                                    Number(e.target.value)
-                                  )
+                                  updateField('damageMin', Number(e.target.value))
                                 }
-                                className="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white"
+                                className="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-white"
                               />
                             </td>
                             <td className="p-3">
@@ -1049,75 +1187,23 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                                 type="number"
                                 value={rule.damageMax}
                                 onChange={(e) =>
-                                  updateRankField(
-                                    'damageMax',
-                                    Number(e.target.value)
-                                  )
+                                  updateField('damageMax', Number(e.target.value))
                                 }
-                                className="w-24 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-rose-400 font-bold"
+                                className="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-white"
                               />
                             </td>
+                            <td className="p-3">{rule.damageIncrement}</td>
                             <td className="p-3">
-                              <select
-                                value={rule.damageIncrement}
-                                onChange={(e) =>
-                                  updateRankField(
-                                    'damageIncrement',
-                                    Number(e.target.value)
-                                  )
-                                }
-                                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-emerald-400"
-                              >
-                                <option value={5}>5</option>
-                                <option value={10}>10</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                              </select>
-                            </td>
-                            <td className="p-3">
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={9}
-                                  value={rule.summonCostMin}
-                                  onChange={(e) =>
-                                    updateRankField(
-                                      'summonCostMin',
-                                      Number(e.target.value)
-                                    )
-                                  }
-                                  className="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-amber-300"
-                                />
-                                <span>a</span>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={9}
-                                  value={rule.summonCostMax}
-                                  onChange={(e) =>
-                                    updateRankField(
-                                      'summonCostMax',
-                                      Number(e.target.value)
-                                    )
-                                  }
-                                  className="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-amber-300"
-                                />
-                              </div>
+                              {rule.summonCostMin}–{rule.summonCostMax}
                             </td>
                             <td className="p-3">
                               <input
                                 type="number"
-                                min={0}
-                                max={100}
                                 value={rule.rankProbability}
                                 onChange={(e) =>
-                                  updateRankField(
-                                    'rankProbability',
-                                    Number(e.target.value)
-                                  )
+                                  updateField('rankProbability', Number(e.target.value))
                                 }
-                                className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-white"
+                                className="w-14 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-emerald-400 font-bold"
                               />
                             </td>
                           </tr>
@@ -1131,241 +1217,76 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
           )}
 
           {/* =================================================================
-              TAB 5: ECONOMIA DE COMBATE (PARRY = MANA × 0,5) & SIMULADOR 100K
+              6. ADMIN: SIMULADOR ESTATÍSTICO (100k)
              ================================================================= */}
           {activeSection === 'parry-sim' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* Left: Parry & Stamina Economy Calculator (Section 9, 10, 11) */}
-              <div className="bg-[#121621] border border-slate-800 rounded-xl p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-amber-400" />
-                      <span>Calculadora de Parry & Estamina (Marcos 3 / 6 / 9)</span>
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Fórmula oficial: Custo de Parry = Mana consumida pelo agressor × 0,5
-                    </p>
-                  </div>
+            <div className="space-y-4">
+              <div className="bg-[#121624] border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h3 className="text-base font-extrabold text-white">
+                    Simulador Estatístico de Monte Carlo
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Executa 10.000 a 100.000 simulações matemáticas sem poluir o inventário para verificar balanceamento.
+                  </p>
                 </div>
-
-                {/* Stamina Bar (3, 6, 9 Milestones) */}
-                <div className="p-3 rounded-lg bg-[#0B0D13] border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">
-                      Estamina Disponível do Defensor (Máx 9):
-                    </span>
-                    <div className="flex items-center gap-1.5 font-mono tabular-nums">
-                      {[3, 6, 9].map((milestone) => (
-                        <button
-                          key={milestone}
-                          onClick={() => setPlayerStamina(milestone)}
-                          className={`px-2 py-0.5 rounded text-xs font-bold ${
-                            playerStamina === milestone
-                              ? 'bg-amber-500 text-slate-950'
-                              : 'bg-slate-800 text-slate-300'
-                          }`}
-                        >
-                          {milestone} Est.
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={9}
-                    step={0.5}
-                    value={playerStamina}
-                    onChange={(e) => setPlayerStamina(Number(e.target.value))}
-                    className="w-full accent-amber-500"
-                  />
-                </div>
-
-                {/* Multiple Attackers List */}
-                <div className="space-y-2">
-                  {parryResult.breakdown.map((atk, idx) => (
-                    <div
-                      key={atk.id}
-                      className="p-2.5 rounded-lg bg-[#0B0D13] border border-slate-800 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <label className="flex items-center gap-2 cursor-pointer min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={atk.selectedToDefend}
-                          onChange={(e) =>
-                            setAttackers(
-                              attackers.map((item, i) =>
-                                i === idx
-                                  ? { ...item, selectedToDefend: e.target.checked }
-                                  : item
-                              )
-                            )
-                          }
-                        />
-                        <span className="font-semibold text-white truncate">
-                          {atk.attackerName}
-                        </span>
-                      </label>
-
-                      <div className="flex items-center gap-2 shrink-0 font-mono tabular-nums">
-                        <span className="text-slate-400">Mana:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={9}
-                          value={atk.manaUsed}
-                          onChange={(e) =>
-                            setAttackers(
-                              attackers.map((item, i) =>
-                                i === idx
-                                  ? {
-                                      ...item,
-                                      manaUsed: Math.max(
-                                        1,
-                                        Math.min(9, Number(e.target.value) || 1)
-                                      ),
-                                    }
-                                  : item
-                              )
-                            )
-                          }
-                          className="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-sky-400 text-center"
-                        />
-                        <span className="text-amber-400 font-bold">
-                          → Parry: {atk.parryStaminaCost.toFixed(1).replace('.0', '')} Est.
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Parry Verification Summary */}
-                <div className="p-3 rounded-lg bg-[#0B0D13] border border-slate-800 flex items-center justify-between text-xs font-mono tabular-nums">
-                  <div>
-                    <div className="text-slate-400">
-                      Custo Total de Parry:{' '}
-                      <span className="text-amber-400 font-bold">
-                        {parryResult.totalStaminaCost.toFixed(1).replace('.0', '')} / {playerStamina} Estamina
-                      </span>
-                    </div>
-                    <div className="text-slate-400 mt-0.5">
-                      Estamina Restante: {parryResult.remainingStamina.toFixed(1).replace('.0', '')} Est.
-                    </div>
-                  </div>
-                  <div
-                    className={`px-3 py-1.5 rounded font-bold ${
-                      parryResult.canAffordAllSelected
-                        ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700/60'
-                        : 'bg-rose-950/80 text-rose-400 border border-rose-700/60'
-                    }`}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={simCount}
+                    onChange={(e) => setSimCount(Number(e.target.value))}
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
                   >
-                    {parryResult.canAffordAllSelected
-                      ? 'Defesa Autorizada'
-                      : 'Estamina Insuficiente'}
-                  </div>
+                    <option value={1000}>1.000 Cartas</option>
+                    <option value={10000}>10.000 Cartas</option>
+                    <option value={50000}>50.000 Cartas</option>
+                    <option value={100000}>100.000 Cartas</option>
+                  </select>
+                  <button
+                    onClick={() =>
+                      setSimReport(
+                        runMonteCarloSimulation(
+                          simCount,
+                          simMode,
+                          baseCharacters,
+                          balanceTables
+                        )
+                      )
+                    }
+                    className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white"
+                  >
+                    Executar Simulação
+                  </button>
                 </div>
               </div>
 
-              {/* Right: Monte Carlo Statistical Simulator (Section 19) */}
-              <div className="bg-[#121621] border border-slate-800 rounded-xl p-4 space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">
-                      Simulador Estatístico de Probabilidades
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      Simula gerações em memória sem conceder cartas reais ao inventário
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {[100, 1000, 10000, 100000].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => {
-                          setSimCount(n);
-                          setSimReport(
-                            runMonteCarloSimulation(
-                              n,
-                              simMode,
-                              baseCharacters,
-                              balanceTables
-                            )
-                          );
-                        }}
-                        className={`px-2 py-1 rounded text-xs font-mono tabular-nums font-bold ${
-                          simCount === n
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-900 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        {n >= 1000 ? `${n / 1000}k` : n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {simReport && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-4 gap-2 text-center font-mono tabular-nums">
-                      <div className="p-2 rounded bg-[#0B0D13] border border-slate-800">
-                        <div className="text-[10px] text-slate-400">Média PV</div>
-                        <div className="text-xs font-bold text-emerald-400">
-                          {simReport.avgPv}
-                        </div>
-                      </div>
-                      <div className="p-2 rounded bg-[#0B0D13] border border-slate-800">
-                        <div className="text-[10px] text-slate-400">Média Dano</div>
-                        <div className="text-xs font-bold text-rose-400">
-                          {simReport.avgMaxDamage}
-                        </div>
-                      </div>
-                      <div className="p-2 rounded bg-[#0B0D13] border border-slate-800">
-                        <div className="text-[10px] text-slate-400">Míticas</div>
-                        <div className="text-xs font-bold text-fuchsia-400">
-                          {simReport.mythicCount}
-                        </div>
-                      </div>
-                      <div className="p-2 rounded bg-[#0B0D13] border border-slate-800">
-                        <div className="text-[10px] text-slate-400">Limitadas</div>
-                        <div className="text-xs font-bold text-amber-400">
-                          {simReport.limitedCount}
-                        </div>
-                      </div>
+              {simReport && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-xl bg-[#101420] border border-slate-800">
+                    <div className="text-xs text-slate-400">Total Simulado</div>
+                    <div className="text-base font-bold text-white font-mono">
+                      {simReport.totalCards.toLocaleString()} Cartas
                     </div>
-
-                    <table className="w-full text-left text-xs font-mono tabular-nums border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-800 text-slate-400">
-                          <th className="py-1.5">Classe</th>
-                          <th className="py-1.5">Configurado</th>
-                          <th className="py-1.5">Observado</th>
-                          <th className="py-1.5 text-right">Qtd ({simReport.totalCards})</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60">
-                        {simReport.expectedVsObserved.map((row) => (
-                          <tr key={row.cardClass}>
-                            <td className="py-1.5 font-bold text-white">
-                              {row.cardClass}
-                            </td>
-                            <td className="py-1.5 text-slate-400">
-                              {row.configuredPct}%
-                            </td>
-                            <td className="py-1.5 text-emerald-400">
-                              {row.observedPct}%
-                            </td>
-                            <td className="py-1.5 text-right text-slate-200">
-                              {row.count}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
-                )}
-              </div>
+                  <div className="p-3 rounded-xl bg-[#101420] border border-slate-800">
+                    <div className="text-xs text-slate-400">PV Médio</div>
+                    <div className="text-base font-bold text-emerald-400 font-mono">
+                      {simReport.avgPv}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#101420] border border-slate-800">
+                    <div className="text-xs text-slate-400">Dano Médio</div>
+                    <div className="text-base font-bold text-amber-400 font-mono">
+                      {simReport.avgMaxDamage}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#101420] border border-slate-800">
+                    <div className="text-xs text-slate-400">Míticas Obtidas</div>
+                    <div className="text-base font-bold text-fuchsia-400 font-mono">
+                      {simReport.mythicCount}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

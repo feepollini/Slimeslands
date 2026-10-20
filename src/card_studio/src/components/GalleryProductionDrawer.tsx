@@ -8,38 +8,46 @@ import {
   Trash2,
   Copy,
   Info,
-  Dices,
   Layers,
   Maximize2,
   Minimize2,
-  PackageOpen,
   Grid,
-  RefreshCw,
   CheckSquare,
   Square,
   FolderKanban,
-  Pencil,
   Check,
   X,
   SlidersHorizontal,
+  Tag,
+  GitBranch,
+  Lock,
+  Unlock,
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  Move,
+  FileDown,
+  Database,
+  ShoppingBag,
+  Workflow,
 } from 'lucide-react';
 import { CardData } from '../types/card';
 import {
   BaseCharacter,
   CardClass,
   CardEntityType,
-  CardOrigin,
   CardRank,
   ClassBalanceTable,
   DeckCategory,
-  MatrixRarity,
+  SubgroupCatalog,
 } from '../types/slimelands';
 import { CardFrameSVG } from './CardFrameSVG';
 import {
   OFFICIAL_CLASSES,
   OFFICIAL_RANKS,
-  ensureCoherentCharacterFields,
-  generateProceduralCard,
+  createNeutralMatrixCard,
+  generateFromMatrix,
 } from '../utils/proceduralEngine';
 import {
   DEFAULT_PRESET_PALETTES,
@@ -73,9 +81,15 @@ interface GalleryProductionDrawerProps {
   baseCharacters: BaseCharacter[];
   onAddBaseCharacters: (chars: BaseCharacter[]) => void;
   balanceTables: Record<CardClass, ClassBalanceTable>;
+  subgroupCatalog: SubgroupCatalog;
+  onUpdateSubgroupCatalog: (next: SubgroupCatalog) => void;
   isExpandedWide: boolean;
   onToggleExpandedWide: () => void;
 }
+
+type RarityNavFilter = 'ALL' | 'UNCLASSIFIED' | CardClass;
+type GalleryFlowMode = 'guided' | 'free';
+type PipelineStep = 1 | 2 | 3 | 4;
 
 export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = React.memo(({
   cards,
@@ -87,7 +101,6 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   onClearAllCards,
   onDuplicateCard,
   onAssignCardDeck,
-  onAssignCardClass,
   onInspectCard,
   onOpenBoosterModal,
   globalBackImageUrl,
@@ -100,629 +113,237 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   onDeleteDeck,
   onClearDeckCards,
   onMoveAllDeckCards,
-  baseCharacters,
-  onAddBaseCharacters,
   balanceTables,
+  subgroupCatalog,
+  onUpdateSubgroupCatalog,
   isExpandedWide,
   onToggleExpandedWide,
 }) => {
-  const [selectedDeckId, setSelectedDeckId] = useState<string>('ALL');
-  // Dedicated Rarity & Rank target for Folder/Category & Multi-Select Pack Randomization
-  const [targetRarity, setTargetRarity] = useState<CardClass | 'AUTO'>('Lendária');
-  const [targetRank, setTargetRank] = useState<CardRank | 'AUTO'>('AUTO');
+  // Mode switcher: Guided Pipeline (4 Steps) vs Free Matrix Grid
+  const [galleryFlowMode, setGalleryFlowMode] = useState<GalleryFlowMode>('guided');
+  const [pipelineStep, setPipelineStep] = useState<PipelineStep>(1);
 
-  // Multi-card selection state & Pack Quantity override
+  // Drag and Drop State for Step 2 Triagem
+  const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
+  const [activeDropZone, setActiveDropZone] = useState<string | null>(null);
+
+  // Section 7: Primary Navigation by Rarity ("Não classificadas", "Comum", "Rara", "Lendária", "Mítica", "Limitada", etc.)
+  const [selectedRarityTab, setSelectedRarityTab] = useState<RarityNavFilter>('ALL');
+  const [selectedDeckId, setSelectedDeckId] = useState<string>('ALL');
+
+  // Combined Subgroup Filters (Section 5, 6 & 7)
+  const [filterFamily, setFilterFamily] = useState<string>('ALL');
+  const [filterBiome, setFilterBiome] = useState<string>('ALL');
+  const [filterCollection, setFilterCollection] = useState<string>('ALL');
+  const [filterEntityType, setFilterEntityType] = useState<string>('ALL');
+  const [filterRecordState, setFilterRecordState] = useState<string>('ALL');
+  const [filterSourceMatrixId, setFilterSourceMatrixId] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Step 2 specific filter: show unclassified only vs all
+  const [step2ShowOnlyUnclassified, setStep2ShowOnlyUnclassified] = useState<boolean>(true);
+
+  // Multi-selection for Batch Classification & Version generation
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
-  const [customPackQty, setCustomPackQty] = useState<number | null>(null);
 
-  const [filterCharacterId, setFilterCharacterId] = useState<string>('ALL');
-  const [filterClass, setFilterClass] = useState<string>('ALL');
-  const [filterRank, setFilterRank] = useState<string>('ALL');
-  const [filterOrigin, setFilterOrigin] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Batch / Individual Classification Draft controls
+  const [batchRarity, setBatchRarity] = useState<CardClass | 'UNCLASSIFIED' | ''>('');
+  const [batchFamily, setBatchFamily] = useState<string>('');
+  const [batchBiome, setBatchBiome] = useState<string>('');
+  const [batchCollection, setBatchCollection] = useState<string>('');
+  const [batchEntityType, setBatchEntityType] = useState<CardEntityType | ''>('');
+  const [versionTargetRank, setVersionTargetRank] = useState<CardRank | 'AUTO'>('AUTO');
+
+  // Adding new shared subgroups on the fly (Section 5 & 6)
+  const [newSubgroupKind, setNewSubgroupKind] = useState<'family' | 'biome' | 'collection' | null>(null);
+  const [newSubgroupValue, setNewSubgroupValue] = useState('');
+
   const [gridCols, setGridCols] = useState<3 | 4 | 5 | 6>(4);
   const [isAddingDeck, setIsAddingDeck] = useState(false);
   const [newDeckName, setNewDeckName] = useState('');
   const [isManagingDecks, setIsManagingDecks] = useState(false);
-  const [deckManagerFilter, setDeckManagerFilter] = useState<'ALL' | 'PACKS' | 'CUSTOM'>('ALL');
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const [editingDeckName, setEditingDeckName] = useState<string>('');
   const [isImportingFolder, setIsImportingFolder] = useState(false);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-
-  // Subgroup filters (Section 5 & 7)
-  const [filterFamily, setFilterFamily] = useState<string>('ALL');
-  const [filterBiome, setFilterBiome] = useState<string>('ALL');
-  const [filterThemeCollection, setFilterThemeCollection] = useState<string>('ALL');
-  const [filterEntityType, setFilterEntityType] = useState<string>('ALL');
-
-  // Classification toolbar state for selected cards
-  const [batchAssignRarity, setBatchAssignRarity] = useState<CardClass>('Comum');
-  const [batchAssignFamily, setBatchAssignFamily] = useState<string>('');
-  const [batchAssignBiome, setBatchAssignBiome] = useState<string>('');
-  const [batchAssignCollection, setBatchAssignCollection] = useState<string>('');
-  const [batchAssignEntityType, setBatchAssignEntityType] = useState<CardEntityType>('Criatura');
+  const [showSubgroupFilters, setShowSubgroupFilters] = useState(true);
 
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const multiFilesInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Clean up any stale selected card IDs if cards are deleted
   const validSelectedCardIds = selectedCardIds.filter((id) =>
     cards.some((c) => c.id === id)
   );
 
-  // Effective quantity of cards to generate in the Pack:
-  // Defaults to the number of selected cards (when >= 1), or 1 when none selected, unless customized by the user
-  const effectivePackCount =
-    customPackQty !== null && customPackQty >= 1
-      ? customPackQty
-      : validSelectedCardIds.length > 0
-      ? validSelectedCardIds.length
-      : 1;
+  // Enabled rarities read dynamically from project configuration (Section 4)
+  const enabledRarities = OFFICIAL_CLASSES.filter(
+    (cls) => balanceTables[cls]?.enabled || cards.some((c) => c.cardClass === cls)
+  );
 
-  const rarityDisplayLabel =
-    targetRarity === 'AUTO' ? 'Misto' : targetRarity;
+  const isCardUnclassified = (c: CardData) =>
+    c.classificationState === 'Não classificada' ||
+    c.isNeutralMatrix === true ||
+    !c.cardClass;
 
-  // Compute the next sequential number (1, 2, 3...) for `Pack (<Nome da Raridade>) <Nº>`
-  const getNextPackSequenceNumber = (rarityName: string): number => {
-    const prefix = `pack (${rarityName.toLowerCase()})`;
-    const matchingNumbers = decks
-      .filter((d) => d.name.toLowerCase().startsWith(prefix))
-      .map((d) => {
-        const remainder = d.name.slice(prefix.length).trim();
-        const match = remainder.match(/^#?(\d+)/);
-        return match ? parseInt(match[1], 10) : 1;
-      });
-    return matchingNumbers.length > 0 ? Math.max(...matchingNumbers) + 1 : 1;
-  };
-
-  const nextPackNumberPreview = getNextPackSequenceNumber(rarityDisplayLabel);
-
-  const createSequentialPackDeck = (rarityName: string, cardCount: number): string => {
-    const seqNum = getNextPackSequenceNumber(rarityName);
-    const qtyLabel = `${cardCount} ${cardCount === 1 ? 'Carta' : 'Cartas'}`;
-    const packDeckName = `Pack (${rarityName}) ${seqNum} (${qtyLabel})`;
-    return onCreateDeck(packDeckName);
-  };
+  const unclassifiedCount = cards.filter(isCardUnclassified).length;
+  const classifiedCount = cards.length - unclassifiedCount;
 
   const toggleCardSelection = (cardId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setSelectedCardIds((prev) => {
-      const exists = prev.includes(cardId);
-      const next = exists ? prev.filter((id) => id !== cardId) : [...prev, cardId];
-      return next;
-    });
+    setSelectedCardIds((prev) =>
+      prev.includes(cardId) ? prev.filter((id) => id !== cardId) : [...prev, cardId]
+    );
   };
 
-  // Long-press timer for mobile contextual info popover (Section 16)
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressTriggeredRef = useRef(false);
-
-  const handleCardPointerDown = (card: CardData) => {
-    longPressTriggeredRef.current = false;
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-    }
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTriggeredRef.current = true;
-      onInspectCard(card);
-    }, 520);
+  // Drag and drop handlers for Step 2
+  const handleDragStart = (e: React.DragEvent, cardId: string) => {
+    e.dataTransfer.setData('text/plain', cardId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedCardId(cardId);
   };
 
-  const handleCardPointerUpOrLeave = () => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+  const handleDragOverCategory = (e: React.DragEvent, zoneKey: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (activeDropZone !== zoneKey) {
+      setActiveDropZone(zoneKey);
     }
   };
 
-  // Ensure the selected rarity is enabled in balanceTables when forced (even if Épica was off)
-  const getEffectiveBalanceTables = (rarity: CardClass | 'AUTO') => {
-    if (rarity === 'AUTO') return balanceTables;
-    return {
-      ...balanceTables,
-      [rarity]: {
-        ...balanceTables[rarity],
-        enabled: true,
-      },
-    };
+  const handleDragLeaveCategory = () => {
+    setActiveDropZone(null);
   };
 
-  // Process Folder / Batch Image Import -> Auto-create Category from Folder Name + Roll within Selected Rarity!
-  const processImportedFiles = async (fileList: FileList | null) => {
+  const handleDropOnCategory = (e: React.DragEvent, targetRarity: CardClass | 'Magia') => {
+    e.preventDefault();
+    setActiveDropZone(null);
+    const droppedId = e.dataTransfer.getData('text/plain') || draggedCardId;
+    setDraggedCardId(null);
+    if (!droppedId) return;
+
+    // If multiple cards are checked, apply to all of them; otherwise just the dragged card
+    const targetIds = validSelectedCardIds.includes(droppedId)
+      ? validSelectedCardIds
+      : [droppedId];
+
+    if (targetRarity === 'Magia') {
+      onReplaceCards(
+        cards.map((c) =>
+          targetIds.includes(c.id)
+            ? {
+                ...c,
+                entityType: 'Magia',
+                elementText: 'MAGIA',
+                magicManaCost: c.magicManaCost ?? 3,
+                pvNumber: undefined,
+                summonStaminaCost: undefined,
+                pvText: `MANA${c.magicManaCost ?? 3}`,
+                classificationState: 'Classificada',
+                editState: 'Classificada',
+                isNeutralMatrix: false,
+              }
+            : c
+        )
+      );
+    } else {
+      onReplaceCards(
+        cards.map((c) =>
+          targetIds.includes(c.id)
+            ? applyRarityToCardRecord(c, targetRarity)
+            : c
+        )
+      );
+    }
+    // Clear selection after moving
+    setSelectedCardIds([]);
+  };
+
+  /**
+   * SECTION 3: IMPORTAÇÃO DE CARTAS NEUTRAS
+   * Imports folder or image files into the Matrix as neutral records ("Não classificadas").
+   */
+  const processImportedFilesNeutral = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setIsImportingFolder(true);
 
-    const imageFiles = Array.from(fileList).filter((f) =>
-      f.type.startsWith('image/')
-    );
-
-    // Detect folder name from webkitRelativePath if available (e.g. "Slimes_Fogo/slime1.png" -> "Pasta: Slimes Fogo")
-    let destinationDeckId = selectedDeckId === 'ALL' ? 'deck-main' : selectedDeckId;
-    const firstRelPath = (imageFiles[0] as File & { webkitRelativePath?: string })
-      ?.webkitRelativePath;
-    if (firstRelPath && firstRelPath.includes('/')) {
-      const folderName = firstRelPath.split('/')[0].replace(/[_-]+/g, ' ').trim();
-      if (folderName) {
-        const existingDeck = decks.find(
-          (d) => d.name.toLowerCase() === folderName.toLowerCase()
-        );
-        if (existingDeck) {
-          destinationDeckId = existingDeck.id;
-        } else {
-          destinationDeckId = onCreateDeck(folderName);
-        }
-        setSelectedDeckId(destinationDeckId);
-      }
-    }
-
-    const createdCharacters: BaseCharacter[] = [];
-    const createdCards: CardData[] = [];
-
-    for (let i = 0; i < imageFiles.length; i++) {
-      const file = imageFiles[i];
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve((ev.target?.result as string) || '');
-        reader.readAsDataURL(file);
-      });
-      if (!dataUrl) continue;
-
-      const rawName = file.name
-        .replace(/\.[^/.]+$/, '')
-        .replace(/[_-]+/g, ' ')
-        .trim();
-      const formattedName =
-        rawName.length > 2
-          ? rawName.charAt(0).toUpperCase() + rawName.slice(1)
-          : undefined;
-
-      const charId = `matrix-char-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
-      const cardId = `matrix-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`;
-
-      let palettes = DEFAULT_PRESET_PALETTES;
-      try {
-        palettes = await extractAdaptivePalettesFromImage(dataUrl);
-      } catch {
-        palettes = DEFAULT_PRESET_PALETTES;
-      }
-      const primary = palettes[0] || DEFAULT_PRESET_PALETTES[0];
-
-      // Section 3: Neutral BaseCharacter without rolled stats
-      const newChar: BaseCharacter = {
-        id: charId,
-        name: formattedName || `Matriz ${baseCharacters.length + i + 1}`,
-        description: 'Matriz neutra importada aguardando classificação e configuração de habilidades.',
-        imageUrl: dataUrl,
-        rarity: 'Não classificada',
-        isClassified: false,
-        entityType: 'Criatura',
-        element: 'Neutro',
-        abilities: [],
-        allowedClasses: ['Comum', 'Rara', 'Lendária', 'Mítica', 'Limitada', 'Épica'],
-        availableForDrops: false,
-        availableForScan: false,
-        availableForBoosters: false,
-        active: true,
-        isProvisional: true,
-      };
-      createdCharacters.push(newChar);
-
-      // Section 3: Neutral CardData Blueprint in "Não classificadas"
-      const neutralCard: CardData = {
-        id: cardId,
-        matrixId: charId,
-        baseCharacterId: charId,
-        isMatrixBlueprint: true,
-        isClassified: false,
-        rarity: 'Não classificada',
-        cardClass: 'Não classificada',
-        cardRank: 'D',
-        title: newChar.name,
-        pvText: '-',
-        elementText: 'NEUTRO',
-        rankBadgeText: '-',
-        loreHeader: `${newChar.name} · Não classificada`,
-        loreBody: newChar.description,
-        magicPrefix: '',
-        magicDescription: '',
-        showLoreBox: true,
-        loreBoxOpacity: 92,
-        loreBoxY: 724,
-        pillCount: 4,
-        dockAutoFit: true,
-        pills: [
-          { id: 'p1', mode: 'stat', badgeValue: '-', badgeColor: '#334155', mainText: '-' },
-          { id: 'p2', mode: 'stat', badgeValue: '-', badgeColor: '#334155', mainText: '-' },
-          { id: 'p3', mode: 'stat', badgeValue: '-', badgeColor: '#334155', mainText: '-' },
-          { id: 'p4', mode: 'stat', badgeValue: '-', badgeColor: '#334155', mainText: '-' },
-        ],
-        imageUrl: dataUrl,
-        videoUrl: null,
-        mediaType: 'image',
-        imageScale: 1,
-        imageOffsetX: 0,
-        imageOffsetY: 0,
-        backgroundFill: 'dark',
-        autoAdaptColors: true,
-        frameTopColor: primary.frameTopColor,
-        frameMidColor: primary.frameMidColor,
-        frameBottomColor: primary.frameBottomColor,
-        strokeColor: primary.strokeColor,
-        strokeWidth: 2,
-        strokeGlow: 100,
-        elementTextColor: primary.elementTextColor,
-        rankCircleColor: primary.rankCircleColor,
-        extractedSwatches: palettes,
-        isPremium: false,
-        prismaticIntensity: 100,
-        microGlitterIntensity: 100,
-        contourLightSpeed: 1.8,
-        parallaxDepth: 100,
-        autoShowcaseEnabled: false,
-        showcaseDurationSec: 5,
-        isRankChromatic: false,
-        isPvChromatic: false,
-        invertElementCapsule: true,
-        showcaseVfx: 'none',
-        showcaseVfxIntensity: 85,
-        vfxPlayOnNormalView: false,
-        backImageUrl: globalBackImageUrl || null,
-        backImageScale: 1,
-        backImageOffsetX: 0,
-        backImageOffsetY: 0,
-        entityType: 'Criatura',
-        origin: 'Pasta Importada',
-        deckId: destinationDeckId,
-        createdAt: new Date().toISOString(),
-        rulesVersion: '1',
-      };
-      createdCards.push(neutralCard);
-    }
-
-    if (createdCharacters.length > 0) {
-      onAddBaseCharacters(createdCharacters);
-    }
-    if (createdCards.length > 0) {
-      onAddCards(createdCards);
-      onSelectCard(createdCards[0].id);
-      setFilterClass('Não classificada');
-    }
-
-    setIsImportingFolder(false);
-    if (folderInputRef.current) folderInputRef.current.value = '';
-    if (multiFilesInputRef.current) multiFilesInputRef.current.value = '';
-  };
-
-  /**
-   * 1. Sortear / Gerar Pack Random a partir das Cartas Selecionadas (ou da Pasta/Categoria ativa)
-   * obedecendo às regras da Raridade escolhida e criando automaticamente a categoria:
-   * `Pack (<Nome da Raridade>) <Número 1, 2, 3...> (<Quantidade> Cartas)`
-   */
-  const handleRollRandomPackFromSelectionOrCategory = (
-    overrideCount?: number,
-    forceCreatePackCategory = true
-  ) => {
-    const effectiveTables = getEffectiveBalanceTables(targetRarity);
-
-    // Source pool: prioritize explicitly multi-selected cards! Otherwise use cards in the active category.
-    const selectedCardsPool =
-      validSelectedCardIds.length > 0
-        ? cards.filter((c) => validSelectedCardIds.includes(c.id))
-        : [];
-
-    const categoryCardsPool =
-      selectedDeckId === 'ALL'
-        ? cards
-        : cards.filter((c) => (c.deckId || 'deck-main') === selectedDeckId);
-
-    const activePool =
-      selectedCardsPool.length > 0 ? selectedCardsPool : categoryCardsPool;
-
-    const totalToGenerate =
-      overrideCount !== undefined
-        ? overrideCount
-        : effectivePackCount;
-
-    // Create the sequential Pack category whenever cards are selected or when creating a Pack
-    const shouldCreatePackCategory =
-      forceCreatePackCategory ||
-      selectedCardsPool.length > 0 ||
-      totalToGenerate > 1;
-
-    const destinationDeckId = shouldCreatePackCategory
-      ? createSequentialPackDeck(rarityDisplayLabel, totalToGenerate)
-      : selectedDeckId === 'ALL'
-      ? 'deck-main'
-      : selectedDeckId;
-
-    const generated: CardData[] = [];
-
-    for (let i = 0; i < totalToGenerate; i++) {
-      // When cards are selected, use each selected card in order first so every selected card is rolled,
-      // and if totalToGenerate > selectedCardsPool.length, pick randomly from the selected pool for the extras!
-      const sourceCard =
-        selectedCardsPool.length > 0
-          ? i < selectedCardsPool.length
-            ? selectedCardsPool[i]
-            : selectedCardsPool[Math.floor(Math.random() * selectedCardsPool.length)]
-          : activePool.length > 0
-          ? activePool[Math.floor(Math.random() * activePool.length)]
-          : null;
-
-      const sourceChar = sourceCard
-        ? baseCharacters.find((ch) => ch.id === sourceCard.baseCharacterId)
-        : undefined;
-
-      const rolled = generateProceduralCard({
-        character: sourceChar,
-        charactersPool: baseCharacters,
-        balanceTables: effectiveTables,
-        origin: shouldCreatePackCategory ? 'Booster' : 'Escaneamento',
-        forcedClass: targetRarity === 'AUTO' ? undefined : targetRarity,
-        forcedRank: targetRank === 'AUTO' ? undefined : targetRank,
-        deckId: destinationDeckId,
-      });
-
-      if (sourceCard) {
-        generated.push({
-          ...rolled,
-          title: sourceCard.title,
-          imageUrl: sourceCard.imageUrl,
-          videoUrl: sourceCard.videoUrl,
-          mediaType: sourceCard.mediaType,
-          imageScale: sourceCard.imageScale,
-          imageOffsetX: sourceCard.imageOffsetX,
-          imageOffsetY: sourceCard.imageOffsetY,
-          frameTopColor: sourceCard.frameTopColor,
-          frameMidColor: sourceCard.frameMidColor,
-          frameBottomColor: sourceCard.frameBottomColor,
-          strokeColor: sourceCard.strokeColor,
-          elementTextColor: sourceCard.elementTextColor,
-          rankCircleColor: sourceCard.rankCircleColor,
-          extractedSwatches: sourceCard.extractedSwatches,
-          backImageUrl:
-            sourceCard.backImageUrl || globalBackImageUrl || null,
-          backImageScale: sourceCard.backImageScale,
-          backImageOffsetX: sourceCard.backImageOffsetX,
-          backImageOffsetY: sourceCard.backImageOffsetY,
-        });
-      } else {
-        generated.push({
-          ...rolled,
-          backImageUrl: globalBackImageUrl || rolled.backImageUrl || null,
-        });
-      }
-    }
-
-    onAddCards(generated);
-    if (shouldCreatePackCategory) {
-      setSelectedDeckId(destinationDeckId);
-    }
-    if (generated[0]) {
-      onSelectCard(generated[0].id);
-    }
-    // Clear selection after generating the Pack so the user immediately sees their new Pack cleanly
-    if (selectedCardsPool.length > 0) {
-      setSelectedCardIds([]);
-      setCustomPackQty(null);
-    }
-  };
-
-  /**
-   * 1b. Re-sortear as próprias cartas selecionadas e movê-las diretamente para o novo Pack (sem duplicar)
-   */
-  const handleRerollAndMoveSelectedToNewPack = () => {
-    if (validSelectedCardIds.length === 0) return;
-    const effectiveTables = getEffectiveBalanceTables(targetRarity);
-    const packDeckId = createSequentialPackDeck(
-      rarityDisplayLabel,
-      validSelectedCardIds.length
-    );
-
-    const updated = cards.map((card) => {
-      if (!validSelectedCardIds.includes(card.id)) return card;
-      const char = baseCharacters.find((c) => c.id === card.baseCharacterId);
-      const rolled = generateProceduralCard({
-        character: char,
-        charactersPool: baseCharacters,
-        balanceTables: effectiveTables,
-        origin: 'Booster',
-        forcedClass: targetRarity === 'AUTO' ? undefined : targetRarity,
-        forcedRank: targetRank === 'AUTO' ? undefined : targetRank,
-        deckId: packDeckId,
-      });
-
-      return {
-        ...rolled,
-        id: card.id,
-        title: card.title,
-        imageUrl: card.imageUrl,
-        videoUrl: card.videoUrl,
-        mediaType: card.mediaType,
-        imageScale: card.imageScale,
-        imageOffsetX: card.imageOffsetX,
-        imageOffsetY: card.imageOffsetY,
-        frameTopColor: card.frameTopColor,
-        frameMidColor: card.frameMidColor,
-        frameBottomColor: card.frameBottomColor,
-        strokeColor: card.strokeColor,
-        elementTextColor: card.elementTextColor,
-        rankCircleColor: card.rankCircleColor,
-        extractedSwatches: card.extractedSwatches,
-        backImageUrl: card.backImageUrl || globalBackImageUrl || null,
-        backImageScale: card.backImageScale,
-        backImageOffsetX: card.backImageOffsetX,
-        backImageOffsetY: card.backImageOffsetY,
-      };
-    });
-
-    onReplaceCards(updated);
-    setSelectedDeckId(packDeckId);
-    onSelectCard(validSelectedCardIds[0]);
-    setSelectedCardIds([]);
-    setCustomPackQty(null);
-  };
-
-  /**
-   * Atribuir Raridade e Subgrupos para as cartas selecionadas (individual ou em lote) - Sections 3, 5, 7
-   */
-  const handleApplyBatchClassification = () => {
-    if (validSelectedCardIds.length === 0) return;
-
-    const updatedCards = cards.map((c) => {
-      if (!validSelectedCardIds.includes(c.id)) return c;
-      const collections = batchAssignCollection.trim()
-        ? [batchAssignCollection.trim()]
-        : c.themeCollections || [];
-
-      return {
-        ...c,
-        cardClass: batchAssignRarity,
-        rarity: batchAssignRarity,
-        isClassified: true,
-        family: batchAssignFamily.trim() || c.family,
-        biome: batchAssignBiome || c.biome,
-        themeCollections: collections,
-        entityType: batchAssignEntityType,
-        loreHeader: `${c.title} · ${batchAssignRarity}`,
-      };
-    });
-
-    const updatedChars = baseCharacters.map((char) => {
-      const isReferenced = validSelectedCardIds.some(
-        (id) => cards.find((c) => c.id === id)?.baseCharacterId === char.id
+    try {
+      const files = Array.from(fileList).filter((f) =>
+        f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(f.name)
       );
-      if (!isReferenced) return char;
 
-      const collections = batchAssignCollection.trim()
-        ? [batchAssignCollection.trim()]
-        : char.themeCollections || [];
+      if (files.length === 0) {
+        setIsImportingFolder(false);
+        return;
+      }
 
-      return {
-        ...char,
-        rarity: batchAssignRarity,
-        isClassified: true,
-        family: batchAssignFamily.trim() || char.family,
-        biome: batchAssignBiome || char.biome,
-        themeCollections: collections,
-        entityType: batchAssignEntityType,
-        availableForBoosters: true,
-      };
-    });
+      // Sort natural order by filename
+      files.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+      );
 
-    onReplaceCards(updatedCards);
-    onAddBaseCharacters(updatedChars);
-    setSelectedCardIds([]);
-  };
+      const targetDeck = selectedDeckId !== 'ALL' ? selectedDeckId : 'deck-main';
+      const createdCards: CardData[] = [];
 
-  /**
-   * Gerar Atributos Procedurais (Versão) para as cartas selecionadas na Matriz - Sections 7 & 8
-   */
-  const handleGenerateProceduralAttributesForSelected = () => {
-    if (validSelectedCardIds.length === 0) return;
-    const effectiveTables = getEffectiveBalanceTables(batchAssignRarity || targetRarity);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
 
-    const updatedCards = cards.map((c) => {
-      if (!validSelectedCardIds.includes(c.id)) return c;
-      const char = baseCharacters.find((ch) => ch.id === c.baseCharacterId);
-      const chosenRarity = (c.rarity && c.rarity !== 'Não classificada'
-        ? c.rarity
-        : batchAssignRarity) as CardClass;
+        const rawName = file.name.replace(/\.[^/.]+$/, '').trim();
+        const baseTitle =
+          rawName
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/^\d+[\s.-]*/, '')
+            .trim() || `Carta Matriz ${cards.length + i + 1}`;
 
-      const rolled = generateProceduralCard({
-        character: char,
-        charactersPool: baseCharacters,
-        balanceTables: effectiveTables,
-        origin: 'Manual',
-        forcedClass: chosenRarity,
-        deckId: c.deckId || (selectedDeckId === 'ALL' ? 'deck-main' : selectedDeckId),
-      });
+        let extractedPalettes = DEFAULT_PRESET_PALETTES;
+        try {
+          const palettes = await extractAdaptivePalettesFromImage(dataUrl);
+          if (palettes && palettes.length > 0) {
+            extractedPalettes = palettes;
+          }
+        } catch {
+          // fallback
+        }
 
-      return {
-        ...c,
-        ...rolled,
-        id: c.id,
-        imageUrl: c.imageUrl,
-        backImageUrl: c.backImageUrl || globalBackImageUrl || null,
-        isClassified: true,
-        isMatrixBlueprint: true,
-        cardClass: chosenRarity,
-        rarity: chosenRarity,
-        family: c.family || char?.family,
-        biome: c.biome || char?.biome,
-        themeCollections: c.themeCollections || char?.themeCollections,
-        entityType: c.entityType || char?.entityType || 'Criatura',
-      };
-    });
+        const neutralMatrix = createNeutralMatrixCard({
+          title: baseTitle,
+          imageUrl: dataUrl,
+          deckId: targetDeck,
+          palette: extractedPalettes[0],
+        });
+        if (globalBackImageUrl) {
+          neutralMatrix.backImageUrl = globalBackImageUrl;
+        }
 
-    onReplaceCards(updatedCards);
-  };
+        createdCards.push(neutralMatrix);
+      }
 
-  /**
-   * 2. Re-Randomizar TODAS as cartas da Pasta/Categoria selecionada dentro das regras da Raridade escolhida!
-   * Mantém a arte e cores de cada carta da pasta/categoria, mas sorteia novamente seus atributos
-   * (Rank, PV, Dano das Habilidades, Mana, Custo de Invocação e Habilidade Gratuita ∞) na Raridade escolhida.
-   */
-  const handleRerollEntireCategoryInRarity = () => {
-    const effectiveTables = getEffectiveBalanceTables(targetRarity);
-    if (cards.length === 0) {
-      handleRollRandomPackFromSelectionOrCategory(6, true);
-      return;
+      onAddCards(createdCards);
+      if (createdCards.length > 0) {
+        onSelectCard(createdCards[0].id);
+        // Direct guided flow to triage if currently on Step 1
+        if (pipelineStep === 1) {
+          setPipelineStep(2);
+        }
+      }
+    } finally {
+      setIsImportingFolder(false);
+      if (folderInputRef.current) folderInputRef.current.value = '';
+      if (multiFilesInputRef.current) multiFilesInputRef.current.value = '';
     }
-
-    const updated = cards.map((card) => {
-      const belongsToCategory =
-        selectedDeckId === 'ALL' ||
-        (card.deckId || 'deck-main') === selectedDeckId;
-      if (!belongsToCategory) return card;
-
-      const char = baseCharacters.find((c) => c.id === card.baseCharacterId);
-      const rolled = generateProceduralCard({
-        character: char,
-        charactersPool: baseCharacters,
-        balanceTables: effectiveTables,
-        origin: card.origin || 'Escaneamento',
-        forcedClass: targetRarity === 'AUTO' ? undefined : targetRarity,
-        forcedRank: targetRank === 'AUTO' ? undefined : targetRank,
-        deckId: card.deckId || 'deck-main',
-      });
-
-      return {
-        ...rolled,
-        id: card.id,
-        title: card.title,
-        imageUrl: card.imageUrl,
-        videoUrl: card.videoUrl,
-        mediaType: card.mediaType,
-        imageScale: card.imageScale,
-        imageOffsetX: card.imageOffsetX,
-        imageOffsetY: card.imageOffsetY,
-        frameTopColor: card.frameTopColor,
-        frameMidColor: card.frameMidColor,
-        frameBottomColor: card.frameBottomColor,
-        strokeColor: card.strokeColor,
-        elementTextColor: card.elementTextColor,
-        rankCircleColor: card.rankCircleColor,
-        extractedSwatches: card.extractedSwatches,
-        backImageUrl: card.backImageUrl || globalBackImageUrl || null,
-        backImageScale: card.backImageScale,
-        backImageOffsetX: card.backImageOffsetX,
-        backImageOffsetY: card.backImageOffsetY,
-      };
-    });
-
-    onReplaceCards(updated);
   };
 
-  // Create a new blank card
-  const handleCreateBlankCard = () => {
-    const targetDeck = selectedDeckId === 'ALL' ? 'deck-main' : selectedDeckId;
+  const handleCreateNeutralMatrix = () => {
+    const targetDeck = selectedDeckId !== 'ALL' ? selectedDeckId : 'deck-main';
     const newBlank: CardData = {
       ...BLANK_TEMPLATE_CARD,
-      id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      title: `Nova Carta ${cards.length + 1}`,
+      id: `mtx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: `Nova Matriz ${cards.length + 1}`,
       deckId: targetDeck,
       origin: 'Manual',
       backImageUrl: globalBackImageUrl || null,
@@ -732,134 +353,259 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
     onSelectCard(newBlank.id);
   };
 
-  // Re-roll a single card within the currently selected targetRarity (or its own rarity)
-  const handleRescanCharacterVersion = (card: CardData, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const effectiveTables = getEffectiveBalanceTables(targetRarity);
-    const char = baseCharacters.find((c) => c.id === card.baseCharacterId);
-    const newVersion = generateProceduralCard({
-      character: char,
-      charactersPool: baseCharacters,
-      balanceTables: effectiveTables,
-      origin: 'Escaneamento',
-      forcedClass: targetRarity === 'AUTO' ? undefined : targetRarity,
-      forcedRank: targetRank === 'AUTO' ? undefined : targetRank,
-      deckId: card.deckId || 'deck-main',
-    });
-
-    const merged: CardData = {
-      ...newVersion,
-      title: card.title,
-      imageUrl: card.imageUrl || newVersion.imageUrl,
-      frameTopColor: card.frameTopColor,
-      frameMidColor: card.frameMidColor,
-      frameBottomColor: card.frameBottomColor,
-      strokeColor: card.strokeColor,
-      elementTextColor: card.elementTextColor,
-      rankCircleColor: card.rankCircleColor,
-      extractedSwatches: card.extractedSwatches,
-      backImageUrl: card.backImageUrl,
-    };
-
-    onAddCards([merged]);
-    onSelectCard(merged.id);
+  /**
+   * Helper: Applies classification updates to a single card (or batch of selected cards)
+   */
+  const updateTargetCards = (
+    targetIds: string[],
+    updater: (card: CardData) => CardData
+  ) => {
+    if (targetIds.length === 0) return;
+    const updated = cards.map((card) =>
+      targetIds.includes(card.id) ? updater(card) : card
+    );
+    onReplaceCards(updated);
   };
 
-  // Distinct Subgroups for Filter Options (Section 5 & 7)
-  const distinctFamilies = Array.from(
-    new Set(
-      [
-        ...cards.map((c) => c.family),
-        ...baseCharacters.map((c) => c.family),
-      ].filter(Boolean) as string[]
-    )
-  );
+  const applyRarityToCardRecord = (
+    card: CardData,
+    nextRarity: CardClass | 'UNCLASSIFIED'
+  ): CardData => {
+    if (nextRarity === 'UNCLASSIFIED') {
+      return {
+        ...card,
+        cardClass: undefined,
+        classificationState: 'Não classificada',
+        editState: 'Importada / Neutra',
+        isNeutralMatrix: true,
+        isPremium: false,
+        loreHeader: `${card.title} · Matriz Não Classificada`,
+      };
+    }
 
-  const distinctBiomes = Array.from(
-    new Set(
-      [
-        'Floresta',
-        'Deserto',
-        'Neve',
-        'Vulcânico',
-        'Pântano',
-        'Reino Sombrio',
-        ...cards.map((c) => c.biome),
-        ...baseCharacters.map((c) => c.biome),
-      ].filter(Boolean) as string[]
-    )
-  );
+    const isAutoPremium =
+      nextRarity === 'Lendária' ||
+      nextRarity === 'Mítica' ||
+      nextRarity === 'Limitada';
 
-  const distinctCollections = Array.from(
-    new Set(
-      [
-        'Halloween',
-        'Criaturas Sombrias',
-        'Coleção Oriental',
-        'Coleção dos Deuses',
-        'Festival de Inverno',
-        'Coleção de Aniversário',
-        ...cards.flatMap((c) => c.themeCollections || []),
-        ...baseCharacters.flatMap((c) => c.themeCollections || []),
-      ].filter(Boolean) as string[]
-    )
-  );
+    return {
+      ...card,
+      cardClass: nextRarity,
+      classificationState: 'Classificada',
+      editState:
+        card.editState === 'Importada / Neutra'
+          ? 'Classificada'
+          : card.editState || 'Classificada',
+      isNeutralMatrix: false,
+      isPremium: isAutoPremium ? true : card.isPremium,
+      isRankChromatic: isAutoPremium ? true : card.isRankChromatic,
+      isPvChromatic: isAutoPremium ? true : card.isPvChromatic,
+      loreHeader: `${card.title} · Matriz ${nextRarity}${
+        card.biome ? ` · ${card.biome}` : ''
+      }`,
+    };
+  };
 
-  const unclassifiedCount = cards.filter(
-    (c) =>
-      c.cardClass === 'Não classificada' ||
-      c.rarity === 'Não classificada' ||
-      c.isClassified === false
+  const handleApplyBatchClassifications = () => {
+    const targetIds =
+      validSelectedCardIds.length > 0
+        ? validSelectedCardIds
+        : activeCardId
+        ? [activeCardId]
+        : [];
+    if (targetIds.length === 0) return;
+
+    updateTargetCards(targetIds, (card) => {
+      let next = { ...card };
+
+      if (batchRarity) {
+        next = applyRarityToCardRecord(next, batchRarity);
+      }
+      if (batchFamily) {
+        next.family = batchFamily === '__CLEAR__' ? undefined : batchFamily;
+      }
+      if (batchBiome) {
+        next.biome = batchBiome === '__CLEAR__' ? undefined : batchBiome;
+        if (next.biome && next.elementText === 'NEUTRA') {
+          next.elementText = next.biome.slice(0, 6).toUpperCase();
+        }
+      }
+      if (batchCollection) {
+        if (batchCollection === '__CLEAR__') {
+          next.collections = [];
+        } else {
+          const current = next.collections || [];
+          next.collections = current.includes(batchCollection)
+            ? current.filter((c) => c !== batchCollection)
+            : [...current, batchCollection];
+        }
+      }
+      if (batchEntityType) {
+        next.entityType = batchEntityType;
+        if (batchEntityType === 'Magia') {
+          next.pvNumber = undefined;
+          next.summonStaminaCost = undefined;
+          next.pvText = `MANA${next.magicManaCost ?? 3}`;
+        } else if (batchEntityType === 'Item') {
+          next.pvNumber = undefined;
+          next.summonStaminaCost = undefined;
+          next.pvText = 'ITEM';
+        }
+      }
+      return next;
+    });
+
+    setBatchRarity('');
+    setBatchFamily('');
+    setBatchBiome('');
+    setBatchCollection('');
+    setBatchEntityType('');
+  };
+
+  const handleGenerateRandomVersionForCards = (targetMatrices: CardData[]) => {
+    const classifiedTargets = targetMatrices.filter(
+      (m) => !isCardUnclassified(m) && m.cardClass
+    );
+    if (classifiedTargets.length === 0) return;
+
+    const newVersions: CardData[] = classifiedTargets.map((mtx) => {
+      const sourceMatrix =
+        mtx.recordKind === 'version' && mtx.sourceMatrixId
+          ? cards.find((c) => c.id === mtx.sourceMatrixId) || mtx
+          : mtx;
+
+      return generateFromMatrix({
+        matrix: sourceMatrix,
+        balanceTables,
+        targetRecordKind: 'version',
+        origin: 'Manual',
+        forcedRank: versionTargetRank === 'AUTO' ? undefined : versionTargetRank,
+        deckId: sourceMatrix.deckId || 'deck-main',
+      });
+    });
+
+    onAddCards(newVersions);
+    if (newVersions.length > 0) {
+      onSelectCard(newVersions[0].id);
+    }
+  };
+
+  const handleSaveNewSubgroup = () => {
+    const val = newSubgroupValue.trim();
+    if (!val || !newSubgroupKind) return;
+
+    if (newSubgroupKind === 'family') {
+      if (!subgroupCatalog.families.includes(val)) {
+        onUpdateSubgroupCatalog({
+          ...subgroupCatalog,
+          families: [...subgroupCatalog.families, val],
+        });
+      }
+      setBatchFamily(val);
+    } else if (newSubgroupKind === 'biome') {
+      if (!subgroupCatalog.biomes.includes(val)) {
+        onUpdateSubgroupCatalog({
+          ...subgroupCatalog,
+          biomes: [...subgroupCatalog.biomes, val],
+        });
+      }
+      setBatchBiome(val);
+    } else if (newSubgroupKind === 'collection') {
+      if (!subgroupCatalog.collections.includes(val)) {
+        onUpdateSubgroupCatalog({
+          ...subgroupCatalog,
+          collections: [...subgroupCatalog.collections, val],
+        });
+      }
+      setBatchCollection(val);
+    }
+    setNewSubgroupValue('');
+    setNewSubgroupKind(null);
+  };
+
+  const handleExportMatrixJson = () => {
+    const jsonStr = JSON.stringify(cards, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `worlds_of_slimelands_matriz_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Matrix Health Diagnostic (Step 4)
+  const commonCount = cards.filter((c) => c.cardClass === 'Comum').length;
+  const rareCount = cards.filter((c) => c.cardClass === 'Rara').length;
+  const magicCount = cards.filter((c) => c.entityType === 'Magia').length;
+  const highRankCount = cards.filter(
+    (c) => c.cardRank === 'A' || c.cardRank === 'S' || (c.cardClass && ['Lendária', 'Mítica'].includes(c.cardClass))
   ).length;
 
-  // Filtered Cards with combined criteria (Section 7)
+  const cardsWithImage = cards.filter((c) => Boolean(c.imageUrl)).length;
+  const cardsWithBiome = cards.filter((c) => Boolean(c.biome)).length;
+  const cardsWithFamily = cards.filter((c) => Boolean(c.family)).length;
+
+  const isBoosterReady =
+    commonCount >= 4 && rareCount >= 2 && magicCount >= 2 && highRankCount >= 1;
+
+  // Filtered Cards logic
   const filteredCards = cards.filter((c) => {
+    // In Guided Mode Step 2 with "Show unclassified only"
+    if (galleryFlowMode === 'guided' && pipelineStep === 2 && step2ShowOnlyUnclassified) {
+      if (!isCardUnclassified(c)) return false;
+    }
+
+    // Free Mode / Step 3 Primary Rarity Navigation
+    if (selectedRarityTab === 'UNCLASSIFIED') {
+      if (!isCardUnclassified(c)) return false;
+    } else if (selectedRarityTab !== 'ALL') {
+      if (isCardUnclassified(c) || c.cardClass !== selectedRarityTab) return false;
+    }
+
     if (selectedDeckId !== 'ALL' && (c.deckId || 'deck-main') !== selectedDeckId) {
       return false;
     }
-    if (filterCharacterId !== 'ALL' && c.baseCharacterId !== filterCharacterId) {
+    if (filterFamily !== 'ALL' && (c.family || '') !== filterFamily) {
       return false;
     }
-    if (filterClass !== 'ALL') {
-      if (filterClass === 'Não classificada') {
-        const isUnclass =
-          c.cardClass === 'Não classificada' ||
-          c.rarity === 'Não classificada' ||
-          c.isClassified === false;
-        if (!isUnclass) return false;
-      } else {
-        const effectiveRarity = c.cardClass || c.rarity || 'Comum';
-        if (effectiveRarity !== filterClass) return false;
-      }
-    }
-    if (filterRank !== 'ALL' && (c.cardRank || c.rankBadgeText) !== filterRank) {
+    if (filterBiome !== 'ALL' && (c.biome || '') !== filterBiome) {
       return false;
     }
-    if (filterOrigin !== 'ALL' && (c.origin || 'Manual') !== filterOrigin) {
+    if (
+      filterCollection !== 'ALL' &&
+      (!c.collections || !c.collections.includes(filterCollection))
+    ) {
       return false;
-    }
-    if (filterFamily !== 'ALL' && c.family !== filterFamily) {
-      return false;
-    }
-    if (filterBiome !== 'ALL' && c.biome !== filterBiome) {
-      return false;
-    }
-    if (filterThemeCollection !== 'ALL') {
-      const hasColl = c.themeCollections?.includes(filterThemeCollection);
-      if (!hasColl) return false;
     }
     if (filterEntityType !== 'ALL' && (c.entityType || 'Criatura') !== filterEntityType) {
+      return false;
+    }
+    if (filterRecordState === 'MATRICES_ONLY' && c.recordKind === 'version') {
+      return false;
+    }
+    if (filterRecordState === 'VERSIONS_ONLY' && c.recordKind !== 'version') {
+      return false;
+    }
+    if (filterRecordState === 'FIXED_PACK' && !c.useFixedVersionInPacks) {
+      return false;
+    }
+    if (
+      filterSourceMatrixId !== 'ALL' &&
+      c.id !== filterSourceMatrixId &&
+      c.sourceMatrixId !== filterSourceMatrixId
+    ) {
       return false;
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchTitle = c.title.toLowerCase().includes(q);
-      const matchLore = c.loreHeader.toLowerCase().includes(q);
-      const matchElem = c.elementText.toLowerCase().includes(q);
       const matchFamily = (c.family || '').toLowerCase().includes(q);
       const matchBiome = (c.biome || '').toLowerCase().includes(q);
-      if (!matchTitle && !matchLore && !matchElem && !matchFamily && !matchBiome) return false;
+      const matchElem = c.elementText.toLowerCase().includes(q);
+      if (!matchTitle && !matchFamily && !matchBiome && !matchElem) return false;
     }
+
     return true;
   });
 
@@ -885,26 +631,79 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       ? 'grid-cols-3 md:grid-cols-4 xl:grid-cols-5'
       : 'grid-cols-3 md:grid-cols-4 xl:grid-cols-6';
 
-  const activeDeckObj = decks.find((d) => d.id === selectedDeckId);
-  const activeDeckLabel =
-    selectedDeckId === 'ALL'
-      ? `Todas as Categorias (${cards.length})`
-      : activeDeckObj
-      ? activeDeckObj.name
-      : 'Deck Principal';
-
-  const activeDropdownFiltersCount =
-    (filterCharacterId !== 'ALL' ? 1 : 0) +
-    (filterClass !== 'ALL' ? 1 : 0) +
-    (filterRank !== 'ALL' ? 1 : 0) +
-    (filterOrigin !== 'ALL' ? 1 : 0) +
-    (filterFamily !== 'ALL' ? 1 : 0) +
-    (filterBiome !== 'ALL' ? 1 : 0) +
-    (filterThemeCollection !== 'ALL' ? 1 : 0) +
-    (filterEntityType !== 'ALL' ? 1 : 0);
-
-  const hasActiveFilters =
-    activeDropdownFiltersCount > 0 || searchQuery.trim() !== '';
+  const categoryTriageBoxes: {
+    key: CardClass | 'Magia';
+    label: string;
+    sublabel: string;
+    bgClass: string;
+    borderClass: string;
+    textClass: string;
+    count: number;
+  }[] = [
+    {
+      key: 'Comum',
+      label: 'Comum',
+      sublabel: 'Base do baralho · Slots 1-4',
+      bgClass: 'bg-slate-900/80',
+      borderClass: 'border-slate-700',
+      textClass: 'text-slate-300',
+      count: cards.filter((c) => c.cardClass === 'Comum').length,
+    },
+    {
+      key: 'Rara',
+      label: 'Rara',
+      sublabel: 'Poder superior · Slots 5-6',
+      bgClass: 'bg-emerald-950/40',
+      borderClass: 'border-emerald-600/50',
+      textClass: 'text-emerald-300',
+      count: cards.filter((c) => c.cardClass === 'Rara').length,
+    },
+    {
+      key: 'Magia',
+      label: 'Magia',
+      sublabel: 'Feitiços e Auras · Slots 7-8',
+      bgClass: 'bg-sky-950/40',
+      borderClass: 'border-sky-500/50',
+      textClass: 'text-sky-300',
+      count: cards.filter((c) => c.entityType === 'Magia').length,
+    },
+    {
+      key: 'Épica',
+      label: 'Épica',
+      sublabel: 'Raridade intermediária',
+      bgClass: 'bg-purple-950/40',
+      borderClass: 'border-purple-600/50',
+      textClass: 'text-purple-300',
+      count: cards.filter((c) => c.cardClass === 'Épica').length,
+    },
+    {
+      key: 'Lendária',
+      label: 'Lendária',
+      sublabel: 'Alto impacto de combate',
+      bgClass: 'bg-amber-950/40',
+      borderClass: 'border-amber-500/50',
+      textClass: 'text-amber-300',
+      count: cards.filter((c) => c.cardClass === 'Lendária').length,
+    },
+    {
+      key: 'Mítica',
+      label: 'Mítica',
+      sublabel: 'Habilidade grátis garantida',
+      bgClass: 'bg-rose-950/40',
+      borderClass: 'border-rose-500/50',
+      textClass: 'text-rose-300',
+      count: cards.filter((c) => c.cardClass === 'Mítica').length,
+    },
+    {
+      key: 'Limitada',
+      label: 'Limitada',
+      sublabel: 'Edições sazonais de evento',
+      bgClass: 'bg-yellow-950/40',
+      borderClass: 'border-yellow-500/50',
+      textClass: 'text-yellow-300',
+      count: cards.filter((c) => c.cardClass === 'Limitada').length,
+    },
+  ];
 
   return (
     <aside
@@ -922,7 +721,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
         webkitdirectory=""
         directory=""
         multiple
-        onChange={(e) => processImportedFiles(e.target.files)}
+        onChange={(e) => processImportedFilesNeutral(e.target.files)}
         className="hidden"
       />
       <input
@@ -930,63 +729,53 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
         type="file"
         accept="image/*"
         multiple
-        onChange={(e) => processImportedFiles(e.target.files)}
+        onChange={(e) => processImportedFilesNeutral(e.target.files)}
         className="hidden"
       />
 
       {/* =====================================================================
-          1. BARRA DE TOPO: ENTRADA DE CARTAS (CRIAR/IMPORTAR) + VISUALIZAÇÃO
+          1. BARRA DE TOPO DA MATRIZ: ALTERNADOR MODO GUIADO X GRADE LIVRE
          ===================================================================== */}
       <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0E1118] flex items-center justify-between gap-2 flex-wrap shrink-0">
-        {/* Left: Title + Counter + Unified Creation/Import Actions */}
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-emerald-400 shrink-0" />
             <span className="text-sm font-bold text-white whitespace-nowrap">
-              Galeria
+              Matriz de Cartas
             </span>
             <span className="text-xs font-mono tabular-nums text-slate-400 whitespace-nowrap">
-              · {filteredCards.length}/{cards.length}
+              · {cards.length} cartas ({unclassifiedCount} pendentes)
             </span>
           </div>
 
-          {/* Unified Add/Import Group */}
-          <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+          {/* Flow Mode Switcher */}
+          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
             <button
-              onClick={handleCreateBlankCard}
-              className="px-2.5 py-1 rounded-md hover:bg-slate-800 text-xs font-semibold text-slate-200 hover:text-white flex items-center gap-1 transition-colors whitespace-nowrap"
-              title="Criar uma nova carta em branco na categoria atual"
+              onClick={() => setGalleryFlowMode('guided')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                galleryFlowMode === 'guided'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Nova</span>
+              <Workflow className="w-3.5 h-3.5" />
+              <span>Modo Guiado (Passo a Passo)</span>
             </button>
-
-            <div className="w-[1px] h-3.5 bg-slate-800" />
-
             <button
-              onClick={() => multiFilesInputRef.current?.click()}
-              className="px-2.5 py-1 rounded-md hover:bg-slate-800 text-xs font-semibold text-sky-300 hover:text-sky-200 flex items-center gap-1 transition-colors whitespace-nowrap"
-              title="Importar uma ou várias imagens do computador"
+              onClick={() => setGalleryFlowMode('free')}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                galleryFlowMode === 'free'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              <ImagePlus className="w-3.5 h-3.5 text-sky-400" />
-              <span>+ Imagens</span>
-            </button>
-
-            <div className="w-[1px] h-3.5 bg-slate-800" />
-
-            <button
-              onClick={() => folderInputRef.current?.click()}
-              disabled={isImportingFolder}
-              className="px-2.5 py-1 rounded-md hover:bg-slate-800 text-xs font-semibold text-amber-300 hover:text-amber-200 flex items-center gap-1 transition-colors whitespace-nowrap"
-              title="Importar pasta inteira do computador (cria a categoria automaticamente e gera as cartas na Raridade escolhida)"
-            >
-              <FolderUp className="w-3.5 h-3.5 text-amber-400" />
-              <span>{isImportingFolder ? 'Importando...' : '+ Pasta'}</span>
+              <Grid className="w-3.5 h-3.5" />
+              <span>Grade Livre</span>
             </button>
           </div>
         </div>
 
-        {/* Right: Global Card Back + Grid Columns + Clear + Expand */}
+        {/* Right Tools: Verso Global + Grid Zoom + Expand */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <div className="flex items-center gap-1 bg-purple-950/30 border border-purple-500/35 rounded-lg px-2 py-1">
             {globalBackImageUrl && (
@@ -999,7 +788,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             <button
               onClick={onUploadGlobalBack}
               className="text-xs font-semibold text-purple-200 hover:text-white flex items-center gap-1 whitespace-nowrap"
-              title="Definir ou trocar a imagem do Verso Global (aplicado a todas as cartas)"
+              title="Definir Verso Global"
             >
               <ImagePlus className="w-3.5 h-3.5 text-purple-400" />
               <span>{globalBackImageUrl ? 'Verso' : 'Importar Verso'}</span>
@@ -1007,7 +796,6 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             <button
               onClick={onFlipCardPreview}
               className="px-1.5 py-0.5 rounded bg-purple-600/80 hover:bg-purple-500 text-[10px] font-bold text-white whitespace-nowrap"
-              title="Virar a carta em destaque no palco para ver o Verso"
             >
               Ver
             </button>
@@ -1015,7 +803,6 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
               <button
                 onClick={onClearGlobalBack}
                 className="text-[10px] text-rose-300 hover:text-rose-200 px-0.5"
-                title="Remover Verso Global"
               >
                 ✕
               </button>
@@ -1033,37 +820,24 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     ? 'bg-emerald-600 text-white'
                     : 'text-slate-400 hover:text-white'
                 }`}
-                title={`Exibir ${cols} colunas na grade`}
               >
                 {cols}x
               </button>
             ))}
           </div>
 
-          <button
-            onClick={() => {
-              if (
-                window.confirm(
-                  'Deseja limpar totalmente todas as cartas e biblioteca da Matriz? Isso é ABSOLUTO e purgará imediatamente a aba booster e todos os pacotes.'
-                )
-              ) {
-                onClearAllCards();
-              }
-            }}
-            className="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/80 border border-rose-800/60 text-xs font-semibold text-rose-300 hover:text-white transition-colors whitespace-nowrap flex items-center gap-1 shadow-sm"
-            title="Limpar absolutamente todas as cartas e biblioteca da Matriz (atinge também a aba booster)"
-          >
-            <span>🗑️ Limpar Biblioteca</span>
-          </button>
+          {cards.length > 0 && (
+            <button
+              onClick={onClearAllCards}
+              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-xs font-medium text-slate-400 hover:text-rose-300 transition-colors whitespace-nowrap"
+            >
+              Limpar
+            </button>
+          )}
 
           <button
             onClick={onToggleExpandedWide}
             className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1 transition-colors whitespace-nowrap"
-            title={
-              isExpandedWide
-                ? 'Voltar ao tamanho padrão da galeria'
-                : 'Expandir largura da galeria para 75% da tela'
-            }
           >
             {isExpandedWide ? (
               <>
@@ -1081,1051 +855,890 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       </div>
 
       {/* =====================================================================
-          2. GERADOR DE PACK RANDOM GUIADO (① ORIGEM → ② REGRAS → ③ GERAR PACK)
+          2. ESTEIRA GUIADA: PIPELINE DE 4 ETAPAS (QUANDO MODO GUIADO ATIVO)
          ===================================================================== */}
-      <div className="px-4 py-2 border-b border-slate-800/80 bg-[#101520] flex items-center justify-between gap-2 flex-wrap shrink-0">
-        {/* Passo 1 & 2: Origem (Seleção) + Raridade/Rank/Qtd */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* ① Origem / Seleção de Cartas */}
-          <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
-            <span className="text-[10px] font-mono font-bold text-slate-400 pl-2 pr-1 whitespace-nowrap">
-              ① Origem:
-            </span>
+      {galleryFlowMode === 'guided' && (
+        <div className="px-4 py-2.5 border-b border-slate-800/90 bg-[#0B0F17] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
+          <div className="flex items-center gap-2 min-w-max">
+            {/* Step 1 */}
             <button
-              onClick={() => setIsMultiSelectMode((prev) => !prev)}
-              className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-colors whitespace-nowrap ${
-                isMultiSelectMode || validSelectedCardIds.length > 0
-                  ? 'bg-amber-500 text-slate-950'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+              onClick={() => setPipelineStep(1)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                pipelineStep === 1
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
               }`}
-              title="Clique para ativar a seleção de várias cartas na grade ou sortear da aba atual"
             >
-              <CheckSquare className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                {validSelectedCardIds.length > 0
-                  ? `${validSelectedCardIds.length} Selecionada(s)`
-                  : isMultiSelectMode
-                  ? 'Clique nas Cartas...'
-                  : 'Selecionar Cartas'}
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
+                1
+              </span>
+              <span>1. Ingestão & Base</span>
+              {unclassifiedCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
+                  {unclassifiedCount}
+                </span>
+              )}
+            </button>
+
+            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+
+            {/* Step 2 */}
+            <button
+              onClick={() => setPipelineStep(2)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                pipelineStep === 2
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
+              }`}
+            >
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
+                2
+              </span>
+              <span>2. Triagem de Raridades</span>
+              <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">
+                {classifiedCount}/{cards.length}
               </span>
             </button>
 
-            {filteredCards.length > 0 && (
-              <button
-                onClick={handleSelectAllFiltered}
-                className="px-2 py-1 rounded-md hover:bg-slate-800 text-[11px] font-semibold text-slate-300 hover:text-white transition-colors whitespace-nowrap"
-                title="Selecionar ou desmarcar todas as cartas visíveis nesta aba"
-              >
-                {filteredCards.every((c) => validSelectedCardIds.includes(c.id))
-                  ? 'Desmarcar Aba'
-                  : `Todas (${filteredCards.length})`}
-              </button>
-            )}
+            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
 
-            {validSelectedCardIds.length > 0 && (
-              <button
-                onClick={() => {
-                  setSelectedCardIds([]);
-                  setCustomPackQty(null);
-                }}
-                className="px-1.5 py-1 rounded-md text-[11px] font-bold text-rose-300 hover:text-rose-200 transition-colors whitespace-nowrap"
-                title="Limpar seleção de cartas"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* ② Raridade do Pack */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-amber-500/45 rounded-lg px-2.5 py-1">
-            <span className="text-[10px] font-mono font-bold text-amber-300/90 whitespace-nowrap">
-              ② Pack:
-            </span>
-            <select
-              value={targetRarity}
-              onChange={(e) =>
-                setTargetRarity(e.target.value as CardClass | 'AUTO')
-              }
-              className="bg-transparent text-xs font-bold text-amber-300 focus:outline-none cursor-pointer"
-              title="Nível de Raridade para gerar o Pack ou re-rolar"
-            >
-              <option value="Comum" className="bg-slate-900 text-slate-200">
-                Comum (1–2 hab)
-              </option>
-              <option value="Rara" className="bg-slate-900 text-sky-300">
-                Rara (3 hab)
-              </option>
-              <option value="Épica" className="bg-slate-900 text-purple-300">
-                Épica (3 hab)
-              </option>
-              <option value="Lendária" className="bg-slate-900 text-amber-300">
-                Lendária (4 hab · Premium)
-              </option>
-              <option value="Mítica" className="bg-slate-900 text-rose-300">
-                Mítica (4 hab + ∞ · Premium)
-              </option>
-              <option value="Limitada" className="bg-slate-900 text-emerald-300">
-                Limitada (Evento · Premium)
-              </option>
-              <option value="AUTO" className="bg-slate-900 text-white">
-                Automático (Misto)
-              </option>
-            </select>
-          </div>
-
-          {/* Rank Selector */}
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/90 rounded-lg px-2 py-1">
-            <span className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
-              Rank:
-            </span>
-            <select
-              value={targetRank}
-              onChange={(e) =>
-                setTargetRank(e.target.value as CardRank | 'AUTO')
-              }
-              className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
-            >
-              <option value="AUTO" className="bg-slate-900">
-                Auto
-              </option>
-              {OFFICIAL_RANKS.map((r) => (
-                <option key={r} value={r} className="bg-slate-900">
-                  Rank {r}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Quantity Stepper */}
-          <div
-            className="flex items-center gap-1 bg-slate-900 border border-emerald-500/40 rounded-lg px-2 py-0.5"
-            title="Quantidade de cartas que serão geradas na nova categoria Pack"
-          >
-            <span className="text-[11px] font-semibold text-emerald-300 mr-0.5 whitespace-nowrap">
-              Qtd:
-            </span>
+            {/* Step 3 */}
             <button
-              type="button"
-              onClick={() =>
-                setCustomPackQty(Math.max(1, effectivePackCount - 1))
-              }
-              className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center"
+              onClick={() => setPipelineStep(3)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                pipelineStep === 3
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
+              }`}
             >
-              -
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
+                3
+              </span>
+              <span>3. Subgrupos & Regras</span>
             </button>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={effectivePackCount}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (!Number.isNaN(val) && val >= 1) {
-                  setCustomPackQty(Math.min(60, val));
-                } else {
-                  setCustomPackQty(null);
-                }
-              }}
-              className="w-8 bg-transparent text-center text-xs font-mono tabular-nums font-bold text-emerald-300 focus:outline-none"
-            />
+
+            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+
+            {/* Step 4 */}
             <button
-              type="button"
-              onClick={() =>
-                setCustomPackQty(Math.min(60, effectivePackCount + 1))
-              }
-              className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center"
+              onClick={() => setPipelineStep(4)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                pipelineStep === 4
+                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
+                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
+              }`}
             >
-              +
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
+                4
+              </span>
+              <span>4. Diagnóstico & Packs</span>
+              {isBoosterReady ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+              ) : (
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+              )}
             </button>
+          </div>
+
+          {/* Quick step progress indicators */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-slate-400 font-mono">
+              Etapa {pipelineStep} de 4
+            </span>
           </div>
         </div>
-
-        {/* ③ Ações de Sorteio (Criar Novo Pack vs Re-Rolar Existentes) */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            onClick={() =>
-              handleRollRandomPackFromSelectionOrCategory(
-                effectivePackCount,
-                true
-              )
-            }
-            className="py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-colors whitespace-nowrap shadow-sm"
-            title={`Sortear ${effectivePackCount} carta(s) na raridade ${rarityDisplayLabel} e criar automaticamente a categoria "Pack (${rarityDisplayLabel}) ${nextPackNumberPreview} (${effectivePackCount} ${
-              effectivePackCount === 1 ? 'Carta' : 'Cartas'
-            })"`}
-          >
-            <Dices className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              ③ Sortear → Pack ({rarityDisplayLabel}) #{nextPackNumberPreview} ({effectivePackCount})
-            </span>
-          </button>
-
-          {validSelectedCardIds.length > 0 ? (
-            <button
-              onClick={handleRerollAndMoveSelectedToNewPack}
-              className="py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 flex items-center gap-1 transition-colors whitespace-nowrap"
-              title="Re-sorteia os atributos das próprias cartas selecionadas na Raridade escolhida e move elas para o novo Pack (sem duplicar)"
-            >
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              <span>Mover & Re-Rolar ({validSelectedCardIds.length})</span>
-            </button>
-          ) : (
-            <button
-              onClick={handleRerollEntireCategoryInRarity}
-              className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-xs font-semibold text-amber-300 flex items-center gap-1 transition-colors whitespace-nowrap"
-              title="Re-sorteia os atributos de todas as cartas da aba atual dentro da Raridade escolhida"
-            >
-              <RefreshCw className="w-3.5 h-3.5 shrink-0" />
-              <span>Re-Rolar Aba</span>
-            </button>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* =====================================================================
-          3. NAVEGAÇÃO PRINCIPAL DA MATRIZ (SECTION 7) + CATEGORIAS & FILTROS
+          3. PAINÉIS ESPECÍFICOS DE CADA ETAPA DO MODO GUIADO
          ===================================================================== */}
-      <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0B0D13] space-y-2 shrink-0">
-        {/* ===================================================================
-            OFICIAL: NAVEGAÇÃO PRINCIPAL DA MATRIZ DE CARTAS (SECTION 7)
-           =================================================================== */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 border-b border-slate-800/60 pb-2">
-          <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider shrink-0 mr-1 flex items-center gap-1">
-            <Layers className="w-3.5 h-3.5 text-amber-400" />
-            Matriz:
-          </span>
+      {galleryFlowMode === 'guided' && pipelineStep === 1 && (
+        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-400" />
+                <span>Etapa 1: Ingestão de Base de Cartas</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Alimente o banco com ilustrações locais ou crie matrizes neutras. Elas entram como Não Classificadas sem sortear atributos precipitados.
+              </p>
+            </div>
+            <button
+              onClick={() => setPipelineStep(2)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
+            >
+              <span>Avançar para Triagem</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
-          <button
-            onClick={() => setFilterClass('ALL')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-              filterClass === 'ALL'
-                ? 'bg-white text-slate-950 shadow-md'
-                : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            Todas ({cards.length})
-          </button>
+          {/* 3 Action Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+            <button
+              onClick={() => folderInputRef.current?.click()}
+              disabled={isImportingFolder}
+              className="p-3 rounded-xl bg-gradient-to-b from-amber-950/20 to-slate-900 border border-amber-500/40 hover:border-amber-400 text-left transition-all group"
+            >
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                <FolderUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                <span>Importar Pasta Completa</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Carrega todos os arquivos de imagem de uma pasta local de uma vez em estado neutro.
+              </p>
+            </button>
 
-          {/* Seção Não classificadas (Section 3 & 7) */}
-          <button
-            onClick={() => setFilterClass('Não classificada')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 ${
-              filterClass === 'Não classificada'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25'
-                : unclassifiedCount > 0
-                ? 'bg-amber-950/40 border border-amber-500/60 text-amber-300 hover:bg-amber-900/50'
-                : 'bg-slate-900 text-slate-400 hover:text-white'
-            }`}
-          >
-            <span>Não classificadas</span>
-            {unclassifiedCount > 0 && (
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                  filterClass === 'Não classificada'
-                    ? 'bg-slate-950 text-amber-400'
-                    : 'bg-amber-500 text-slate-950'
-                }`}
-              >
-                {unclassifiedCount}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => multiFilesInputRef.current?.click()}
+              className="p-3 rounded-xl bg-gradient-to-b from-sky-950/20 to-slate-900 border border-sky-500/40 hover:border-sky-400 text-left transition-all group"
+            >
+              <div className="flex items-center gap-2 text-sky-400 font-bold text-xs">
+                <ImagePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                <span>Adicionar Imagens Locais</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Selecione uma ou mais imagens avulsas para registrar na Matriz.
+              </p>
+            </button>
 
-          {/* Raridades Principais */}
-          {OFFICIAL_CLASSES.map((cls) => {
-            const count = cards.filter(
-              (c) => (c.cardClass || c.rarity) === cls
-            ).length;
-            const isActive = filterClass === cls;
-            return (
-              <button
-                key={cls}
-                onClick={() => setFilterClass(cls)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                {cls} ({count})
-              </button>
-            );
-          })}
+            <button
+              onClick={handleCreateNeutralMatrix}
+              className="p-3 rounded-xl bg-gradient-to-b from-emerald-950/20 to-slate-900 border border-emerald-500/40 hover:border-emerald-400 text-left transition-all group"
+            >
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                <span>Criar Matriz em Branco</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Cria uma matriz vazia para configurar arte, nome e lore manualmente no estúdio.
+              </p>
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* ===================================================================
-            BARRA ADMINISTRATIVA DE CLASSIFICAÇÃO (INDIVIDUAL OU EM LOTE)
-           =================================================================== */}
-        {validSelectedCardIds.length > 0 && (
-          <div className="p-3 rounded-xl bg-gradient-to-r from-slate-900 via-[#131a29] to-slate-900 border border-amber-500/50 shadow-xl space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-xs font-bold text-amber-300">
-                  Classificar Matriz ({validSelectedCardIds.length}{' '}
-                  {validSelectedCardIds.length === 1
-                    ? 'carta selecionada'
-                    : 'cartas selecionadas'})
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedCardIds([]);
-                  setIsMultiSelectMode(false);
-                }}
-                className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
-              >
-                Cancelar seleção
-              </button>
+      {galleryFlowMode === 'guided' && pipelineStep === 2 && (
+        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <Move className="w-4 h-4 text-emerald-400" />
+                <span>Etapa 2: Triagem & Distribuição de Raridades</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Arraste as cartas pendentes para as caixas de raridade abaixo, ou selecione cartas e clique na categoria para mover em lote.
+              </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 items-center">
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono mb-0.5">
-                  Raridade Principal
-                </label>
-                <select
-                  value={batchAssignRarity}
-                  onChange={(e) =>
-                    setBatchAssignRarity(e.target.value as CardClass)
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs font-bold text-white focus:outline-none focus:border-amber-400"
-                >
-                  {OFFICIAL_CLASSES.map((cls) => (
-                    <option key={cls} value={cls}>
-                      {cls}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono mb-0.5">
-                  Família / Classe
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: Slimes Tóxicos"
-                  value={batchAssignFamily}
-                  onChange={(e) => setBatchAssignFamily(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono mb-0.5">
-                  Bioma
-                </label>
-                <select
-                  value={batchAssignBiome}
-                  onChange={(e) => setBatchAssignBiome(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                >
-                  <option value="">Selecione um Bioma...</option>
-                  <option value="Floresta">Floresta</option>
-                  <option value="Deserto">Deserto</option>
-                  <option value="Neve">Neve</option>
-                  <option value="Vulcânico">Vulcânico</option>
-                  <option value="Pântano">Pântano</option>
-                  <option value="Reino Sombrio">Reino Sombrio</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono mb-0.5">
-                  Coleção Temática
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: Halloween, Deuses"
-                  value={batchAssignCollection}
-                  onChange={(e) => setBatchAssignCollection(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] text-slate-400 font-mono mb-0.5">
-                  Tipo de Entidade
-                </label>
-                <select
-                  value={batchAssignEntityType}
-                  onChange={(e) =>
-                    setBatchAssignEntityType(e.target.value as CardEntityType)
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                >
-                  <option value="Criatura">Criatura</option>
-                  <option value="Magia">Magia</option>
-                  <option value="Item">Item</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Excluir ${validSelectedCardIds.length} cartas selecionadas da Matriz e remover de qualquer booster?`
-                    )
-                  ) {
-                    validSelectedCardIds.forEach((id) => onDeleteCard(id));
-                    setSelectedCardIds([]);
-                    setIsMultiSelectMode(false);
-                  }
-                }}
-                className="px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Exclui todas as cartas selecionadas e limpa referências no jogo"
+                onClick={() => setPipelineStep(1)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Excluir Selecionadas</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Voltar</span>
               </button>
-
               <button
-                onClick={handleGenerateProceduralAttributesForSelected}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Gera atributos de combate (PV, Ataques, Mana) para esta versão na Matriz"
+                onClick={() => setPipelineStep(3)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md"
               >
-                <Dices className="w-3.5 h-3.5" />
-                <span>Gerar Versão Procedural</span>
-              </button>
-
-              <button
-                onClick={handleApplyBatchClassification}
-                className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>Aplicar Classificação</span>
+                <span>Avançar para Subgrupos</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
-        )}
 
-        {/* Main Navigation Row: Category Tabs (Left) + Category Actions & Search/Filter Toggle (Right) */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          {/* Scrollable Category & Pack Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-[220px]">
-            <button
-              onClick={() => setSelectedDeckId('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                selectedDeckId === 'ALL'
-                  ? 'bg-white text-slate-950 font-bold'
-                  : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              Todas ({cards.length})
-            </button>
-            {decks.map((d) => {
-              const count = cards.filter(
-                (c) => (c.deckId || 'deck-main') === d.id
-              ).length;
-              const isPackCategory = d.name.toLowerCase().startsWith('pack (');
-              const alreadyHasQtyInName = d.name
-                .toLowerCase()
-                .includes('carta');
+          {/* Interactive Drag & Drop Target Zones */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1">
+            {categoryTriageBoxes.map((cat) => {
+              const isOver = activeDropZone === cat.key;
+              const hasChecked = validSelectedCardIds.length > 0;
               return (
-                <button
-                  key={d.id}
-                  onClick={() => setSelectedDeckId(d.id)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                    selectedDeckId === d.id
-                      ? isPackCategory
-                        ? 'bg-amber-500 text-slate-950 font-bold'
-                        : 'bg-emerald-600 text-white'
-                      : isPackCategory
-                      ? 'bg-amber-950/30 border border-amber-500/40 text-amber-300 hover:bg-amber-900/40'
-                      : 'bg-slate-900 text-slate-400 hover:text-white'
+                <div
+                  key={cat.key}
+                  onDragOver={(e) => handleDragOverCategory(e, cat.key)}
+                  onDragLeave={handleDragLeaveCategory}
+                  onDrop={(e) => handleDropOnCategory(e, cat.key)}
+                  onClick={() => {
+                    if (hasChecked) {
+                      // Move all checked cards to this category on click!
+                      if (cat.key === 'Magia') {
+                        onReplaceCards(
+                          cards.map((c) =>
+                            validSelectedCardIds.includes(c.id)
+                              ? {
+                                  ...c,
+                                  entityType: 'Magia',
+                                  elementText: 'MAGIA',
+                                  magicManaCost: c.magicManaCost ?? 3,
+                                  pvNumber: undefined,
+                                  summonStaminaCost: undefined,
+                                  pvText: `MANA${c.magicManaCost ?? 3}`,
+                                  classificationState: 'Classificada',
+                                  editState: 'Classificada',
+                                  isNeutralMatrix: false,
+                                }
+                              : c
+                          )
+                        );
+                      } else {
+                        onReplaceCards(
+                          cards.map((c) =>
+                            validSelectedCardIds.includes(c.id)
+                              ? applyRarityToCardRecord(c, cat.key as CardClass)
+                              : c
+                          )
+                        );
+                      }
+                      setSelectedCardIds([]);
+                    }
+                  }}
+                  className={`p-2 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                    cat.bgClass
+                  } ${
+                    isOver
+                      ? 'border-emerald-400 ring-2 ring-emerald-400/60 scale-[1.03] shadow-lg'
+                      : hasChecked
+                      ? `${cat.borderClass} hover:border-white hover:scale-[1.02]`
+                      : cat.borderClass
                   }`}
                 >
-                  {alreadyHasQtyInName ? d.name : `${d.name} (${count})`}
-                </button>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-bold ${cat.textClass}`}>
+                        {cat.label}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-slate-950/80 border border-slate-700 text-[10px] font-mono tabular-nums text-white">
+                        {cat.count}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                      {cat.sublabel}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
+                    <span className="text-slate-400">
+                      {isOver ? 'Solte para mover!' : hasChecked ? 'Clique p/ Mover' : 'Solte aqui'}
+                    </span>
+                    {hasChecked && (
+                      <span className="text-emerald-400 font-bold">
+                        +{validSelectedCardIds.length}
+                      </span>
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
 
-          {/* Right Controls: Compact Search + Filter Toggle + New/Manage Categories */}
-          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-            <div className="relative w-44 sm:w-52">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar nome ou elemento..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-7 pr-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-slate-600"
-              />
+          {/* Step 2 filter toggle */}
+          <div className="flex items-center justify-between pt-1 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-300">Visualizar na Grade:</span>
+              <button
+                onClick={() => setStep2ShowOnlyUnclassified(true)}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
+                  step2ShowOnlyUnclassified
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                Apenas Pendentes ({unclassifiedCount})
+              </button>
+              <button
+                onClick={() => setStep2ShowOnlyUnclassified(false)}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
+                  !step2ShowOnlyUnclassified
+                    ? 'bg-slate-200 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                Todas as Cartas ({cards.length})
+              </button>
             </div>
 
-            <button
-              onClick={() => setShowAdvancedFilters((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-colors whitespace-nowrap ${
-                showAdvancedFilters || activeDropdownFiltersCount > 0
-                  ? 'bg-sky-500/20 border-sky-400/60 text-sky-200'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
-              }`}
-              title="Mostrar ou ocultar filtros avançados da galeria (Personagem, Raridade, Rank, Origem)"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-sky-400" />
-              <span>
-                Filtros
-                {activeDropdownFiltersCount > 0
-                  ? ` (${activeDropdownFiltersCount})`
-                  : ''}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setIsAddingDeck((prev) => !prev)}
-              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-emerald-400 flex items-center gap-1 whitespace-nowrap"
-              title="Criar uma nova Categoria ou Deck personalizado"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Categoria</span>
-            </button>
-
-            <button
-              onClick={() => setIsManagingDecks((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap border transition-colors ${
-                isManagingDecks
-                  ? 'bg-emerald-600/25 border-emerald-400 text-emerald-200'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
-              }`}
-              title="Abrir painel para renomear, transferir, esvaziar ou excluir Categorias, Pastas e Packs"
-            >
-              <FolderKanban className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Gerenciar ({decks.length})</span>
-            </button>
+            <div className="text-[11px] text-slate-400">
+              💡 Segure e arraste qualquer carta até a caixa de raridade.
+            </div>
           </div>
         </div>
+      )}
 
-        {isAddingDeck && (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newDeckName}
-              onChange={(e) => setNewDeckName(e.target.value)}
-              placeholder="Nome da nova Categoria / Deck..."
-              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-            />
-            <button
-              onClick={() => {
-                if (newDeckName.trim()) {
-                  const newId = onCreateDeck(newDeckName.trim());
-                  setSelectedDeckId(newId);
-                  setNewDeckName('');
-                  setIsAddingDeck(false);
-                }
-              }}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white"
-            >
-              Criar Categoria
-            </button>
-          </div>
-        )}
-
-        {/* ===================================================================
-            DEDICATED CATEGORY, FOLDER & PACK MANAGEMENT LIST
-           =================================================================== */}
-        {isManagingDecks && (
-          <div className="p-3 rounded-xl bg-[#10141F] border border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <FolderKanban className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-white">
-                  Lista de Gerenciamento de Categorias, Pastas & Packs ({decks.length})
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {(
-                  [
-                    { id: 'ALL', label: `Todas (${decks.length})` },
-                    {
-                      id: 'PACKS',
-                      label: `Packs (${
-                        decks.filter((d) =>
-                          d.name.toLowerCase().startsWith('pack (')
-                        ).length
-                      })`,
-                    },
-                    {
-                      id: 'CUSTOM',
-                      label: `Decks & Pastas (${
-                        decks.filter(
-                          (d) => !d.name.toLowerCase().startsWith('pack (')
-                        ).length
-                      })`,
-                    },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setDeckManagerFilter(tab.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
-                      deckManagerFilter === tab.id
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-900 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+      {galleryFlowMode === 'guided' && pipelineStep === 3 && (
+        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <Tag className="w-4 h-4 text-emerald-400" />
+                <span>Etapa 3: Subgrupos & Tags Temáticas</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Atribua Famílias, Biomas, Coleções e Tipos independentemente da raridade.
+              </p>
             </div>
 
-            <div className="max-h-52 overflow-y-auto overscroll-contain space-y-1.5 pr-1">
-              {decks
-                .filter((d) => {
-                  const isPack = d.name.toLowerCase().startsWith('pack (');
-                  if (deckManagerFilter === 'PACKS') return isPack;
-                  if (deckManagerFilter === 'CUSTOM') return !isPack;
-                  return true;
-                })
-                .map((deck) => {
-                  const deckCards = cards.filter(
-                    (c) => (c.deckId || 'deck-main') === deck.id
-                  );
-                  const isPack = deck.name.toLowerCase().startsWith('pack (');
-                  const isSystemDefault = deck.id === 'deck-main';
-                  const isActiveFilter = selectedDeckId === deck.id;
-                  const isEditingThis = editingDeckId === deck.id;
-
-                  // Summarize rarities inside this category
-                  const rarityCounts: Partial<Record<CardClass, number>> = {};
-                  deckCards.forEach((c) => {
-                    const cls = (c.cardClass || 'Lendária') as CardClass;
-                    rarityCounts[cls] = (rarityCounts[cls] || 0) + 1;
-                  });
-
-                  return (
-                    <div
-                      key={deck.id}
-                      className={`p-2 rounded-lg border flex items-center justify-between gap-2 flex-wrap transition-colors ${
-                        isActiveFilter
-                          ? 'bg-slate-800/90 border-emerald-500/70'
-                          : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      {/* Left: Type + Editable Name + Card & Rarity Breakdown */}
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span
-                          className={`text-[10px] font-extrabold uppercase shrink-0 ${
-                            isPack
-                              ? 'text-amber-300'
-                              : isSystemDefault
-                              ? 'text-emerald-300'
-                              : 'text-sky-300'
-                          }`}
-                        >
-                          {isPack ? 'Pack' : isSystemDefault ? 'Padrão' : 'Deck/Pasta'} ·
-                        </span>
-
-                        {isEditingThis ? (
-                          <div className="flex items-center gap-1 flex-1 min-w-[160px]">
-                            <input
-                              type="text"
-                              value={editingDeckName}
-                              onChange={(e) => setEditingDeckName(e.target.value)}
-                              className="flex-1 bg-slate-950 border border-emerald-500 rounded px-2 py-0.5 text-xs text-white focus:outline-none"
-                              autoFocus
-                            />
-                            <button
-                              onClick={() => {
-                                if (editingDeckName.trim()) {
-                                  onRenameDeck(deck.id, editingDeckName.trim());
-                                }
-                                setEditingDeckId(null);
-                              }}
-                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500"
-                              title="Salvar novo nome"
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => setEditingDeckId(null)}
-                              className="p-1 rounded bg-slate-800 text-slate-300 hover:text-white"
-                              title="Cancelar"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setSelectedDeckId(deck.id)}
-                            className="text-xs font-bold text-white hover:text-emerald-300 truncate text-left"
-                            title="Clique para filtrar as cartas desta categoria"
-                          >
-                            {deck.name}
-                          </button>
-                        )}
-
-                        <span className="text-[11px] font-mono tabular-nums text-slate-400 shrink-0">
-                          ({deckCards.length}{' '}
-                          {deckCards.length === 1 ? 'carta' : 'cartas'})
-                        </span>
-
-                        <div className="hidden xl:flex items-center gap-1.5 text-[10px] text-slate-400 font-mono tabular-nums">
-                          {Object.entries(rarityCounts).map(([rName, rCount], idx) => (
-                            <span key={rName}>
-                              {idx > 0 ? '· ' : ''}
-                              {rCount} {rName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Right: Direct Management Actions for this Category/Deck */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => setSelectedDeckId(deck.id)}
-                          className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${
-                            isActiveFilter
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                          }`}
-                        >
-                          {isActiveFilter ? 'Aberta' : 'Ver'}
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setEditingDeckId(deck.id);
-                            setEditingDeckName(deck.name);
-                          }}
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
-                          title="Renomear esta Categoria / Pack"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </button>
-
-                        {deckCards.length > 0 && (
-                          <button
-                            onClick={() => {
-                              setSelectedDeckId(deck.id);
-                              const ids = deckCards.map((c) => c.id);
-                              setSelectedCardIds(ids);
-                            }}
-                            className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-bold text-amber-300"
-                            title="Selecionar todas as cartas desta categoria para gerar um novo Pack Random"
-                          >
-                            Selecionar ({deckCards.length})
-                          </button>
-                        )}
-
-                        {deckCards.length > 0 && deck.id !== 'deck-main' && (
-                          <button
-                            onClick={() =>
-                              onMoveAllDeckCards(deck.id, 'deck-main')
-                            }
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-semibold text-slate-300"
-                            title="Mover todas as cartas desta categoria para o Deck Principal"
-                          >
-                            Mover p/ Principal
-                          </button>
-                        )}
-
-                        {deckCards.length > 0 && (
-                          <button
-                            onClick={() => onClearDeckCards(deck.id)}
-                            className="px-2 py-1 rounded bg-rose-950/50 hover:bg-rose-900/70 border border-rose-800/50 text-[10px] font-semibold text-rose-300"
-                            title="Excluir apenas as cartas de dentro desta categoria"
-                          >
-                            Esvaziar
-                          </button>
-                        )}
-
-                        {!isSystemDefault && (
-                          <button
-                            onClick={() => {
-                              if (selectedDeckId === deck.id) {
-                                setSelectedDeckId('ALL');
-                              }
-                              onDeleteDeck(deck.id, true);
-                            }}
-                            className="p-1 rounded bg-rose-950/60 hover:bg-rose-600 text-rose-300 hover:text-white transition-colors"
-                            title="Excluir esta Categoria/Pack e suas cartas"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPipelineStep(2)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Voltar</span>
+              </button>
+              <button
+                onClick={() => setPipelineStep(4)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md"
+              >
+                <span>Avançar para Diagnóstico</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
-        )}
 
-        {/* Collapsible Secondary Filters (Only shown when clicked or when a filter is active) */}
-        {(showAdvancedFilters || activeDropdownFiltersCount > 0) && (
-          <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-800/60">
-            <span className="text-[11px] font-semibold text-sky-300">
-              Filtrar Exibição:
+          {/* Quick Subgroups Batch Assignment Row */}
+          <div className="flex items-center gap-2 flex-wrap pt-1 bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
+            <span className="text-xs font-bold text-slate-300">
+              Atribuir aos Selecionados ({validSelectedCardIds.length || (activeCardId ? '1' : '0')}):
             </span>
 
+            {/* Biome Select */}
             <select
-              value={filterCharacterId}
-              onChange={(e) => setFilterCharacterId(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+              value={batchBiome}
+              onChange={(e) => setBatchBiome(e.target.value)}
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-emerald-300 font-semibold"
             >
-              <option value="ALL">Personagem: Todos</option>
-              {baseCharacters.map((ch) => (
-                <option key={ch.id} value={ch.id}>
-                  {ch.name.split(',')[0]}
+              <option value="">Bioma...</option>
+              {subgroupCatalog.biomes.map((b) => (
+                <option key={b} value={b}>
+                  Bioma: {b}
                 </option>
               ))}
+              <option value="__CLEAR__">(Remover Bioma)</option>
             </select>
 
+            {/* Family Select */}
             <select
-              value={filterClass}
-              onChange={(e) => setFilterClass(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+              value={batchFamily}
+              onChange={(e) => setBatchFamily(e.target.value)}
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200"
             >
-              <option value="ALL">Raridade: Todas</option>
-              <option value="Não classificada">
-                Não classificada ({unclassifiedCount})
-              </option>
-              {OFFICIAL_CLASSES.map((cls) => (
-                <option key={cls} value={cls}>
-                  {cls}
+              <option value="">Família...</option>
+              {subgroupCatalog.families.map((f) => (
+                <option key={f} value={f}>
+                  Família: {f}
                 </option>
               ))}
+              <option value="__CLEAR__">(Remover Família)</option>
             </select>
 
-            {distinctFamilies.length > 0 && (
-              <select
-                value={filterFamily}
-                onChange={(e) => setFilterFamily(e.target.value)}
-                className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
-              >
-                <option value="ALL">Família: Todas</option>
-                {distinctFamilies.map((fam) => (
-                  <option key={fam} value={fam}>
-                    {fam}
-                  </option>
-                ))}
-              </select>
-            )}
-
+            {/* Collection Select */}
             <select
-              value={filterBiome}
-              onChange={(e) => setFilterBiome(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+              value={batchCollection}
+              onChange={(e) => setBatchCollection(e.target.value)}
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-purple-300"
             >
-              <option value="ALL">Bioma: Todos</option>
-              {distinctBiomes.map((bio) => (
-                <option key={bio} value={bio}>
-                  {bio}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={filterThemeCollection}
-              onChange={(e) => setFilterThemeCollection(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
-            >
-              <option value="ALL">Coleção: Todas</option>
-              {distinctCollections.map((col) => (
+              <option value="">Coleção...</option>
+              {subgroupCatalog.collections.map((col) => (
                 <option key={col} value={col}>
-                  {col}
+                  Coleção: {col}
                 </option>
               ))}
+              <option value="__CLEAR__">(Limpar Coleções)</option>
             </select>
 
+            {/* Entity Type Select */}
             <select
-              value={filterEntityType}
-              onChange={(e) => setFilterEntityType(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+              value={batchEntityType}
+              onChange={(e) => setBatchEntityType(e.target.value as CardEntityType | '')}
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-sky-300 font-semibold"
             >
-              <option value="ALL">Tipo: Todos</option>
+              <option value="">Tipo...</option>
               <option value="Criatura">Criatura</option>
               <option value="Magia">Magia</option>
               <option value="Item">Item</option>
             </select>
 
-            <select
-              value={filterRank}
-              onChange={(e) => setFilterRank(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+            <button
+              onClick={handleApplyBatchClassifications}
+              disabled={!batchBiome && !batchFamily && !batchCollection && !batchEntityType}
+              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white transition-all shadow"
             >
-              <option value="ALL">Rank: Todos</option>
-              {OFFICIAL_RANKS.map((r) => (
-                <option key={r} value={r}>
-                  Rank {r}
-                </option>
-              ))}
-            </select>
+              Aplicar Tags
+            </button>
 
-            <select
-              value={filterOrigin}
-              onChange={(e) => setFilterOrigin(e.target.value)}
-              className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
-            >
-              <option value="ALL">Origem: Todas</option>
-              {(
-                [
-                  'Escaneamento',
-                  'Drop de Mapa',
-                  'Booster',
-                  'Pasta Importada',
-                  'Manual',
-                ] as CardOrigin[]
-              ).map((orig) => (
-                <option key={orig} value={orig}>
-                  {orig}
-                </option>
+            {/* Create new subgroup tag button */}
+            <div className="flex items-center gap-1 ml-auto">
+              {(['biome', 'family', 'collection'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  onClick={() => setNewSubgroupKind(kind)}
+                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 hover:text-white transition-colors"
+                >
+                  + Novo {kind === 'biome' ? 'Bioma' : kind === 'family' ? 'Família' : 'Coleção'}
+                </button>
               ))}
-            </select>
+            </div>
+          </div>
 
-            {hasActiveFilters && (
+          {/* Quick Create Subgroup Inline Modal */}
+          {newSubgroupKind && (
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-emerald-500/50 flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-400">
+                Criar novo {newSubgroupKind === 'biome' ? 'Bioma' : newSubgroupKind === 'family' ? 'Família' : 'Coleção'}:
+              </span>
+              <input
+                type="text"
+                value={newSubgroupValue}
+                onChange={(e) => setNewSubgroupValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveNewSubgroup()}
+                placeholder="Ex: Slimes Vulcânicos..."
+                autoFocus
+                className="px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-xs text-white flex-1"
+              />
+              <button
+                onClick={handleSaveNewSubgroup}
+                className="px-3 py-1 rounded bg-emerald-600 text-xs font-bold text-white"
+              >
+                Salvar
+              </button>
               <button
                 onClick={() => {
-                  setFilterCharacterId('ALL');
-                  setFilterClass('ALL');
-                  setFilterRank('ALL');
-                  setFilterOrigin('ALL');
-                  setFilterFamily('ALL');
-                  setFilterBiome('ALL');
-                  setFilterThemeCollection('ALL');
-                  setFilterEntityType('ALL');
-                  setSearchQuery('');
+                  setNewSubgroupKind(null);
+                  setNewSubgroupValue('');
                 }}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-400 transition-colors whitespace-nowrap cursor-pointer"
+                className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400"
               >
-                Limpar Filtros
+                Cancelar
               </button>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* 3. Massive Multi-Column Live Card Grid (Bounded Vertical Scroll) */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4">
-        {cards.length === 0 ? (
-          /* Clean Empty Gallery Hub */
-          <div className="h-full min-h-[300px] rounded-2xl border border-dashed border-slate-800 bg-[#0E1118]/60 flex flex-col items-center justify-center p-6 text-center">
-            <Layers className="w-10 h-10 text-emerald-400 mb-3 opacity-80" />
-            <h3 className="text-base font-bold text-white">
-              Galeria Pronta para Produção
-            </h3>
-            <p className="text-xs text-slate-400 max-w-md mt-1 leading-relaxed">
-              Escolha a <strong>Raridade desejada</strong> e a <strong>Qtd. de Cartas</strong> na barra acima e clique em <strong>Dar Random</strong> para já criar seu <strong>Pack ({rarityDisplayLabel}) #1</strong>, ou importe uma <strong>Pasta</strong>.
-            </p>
+      {galleryFlowMode === 'guided' && pipelineStep === 4 && (
+        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Etapa 4: Diagnóstico de Saúde & Validação de Boosters</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Checagem automática para abertura de Boosters de 9 Cartas oficiais e integridade do catálogo.
+              </p>
+            </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-5">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => folderInputRef.current?.click()}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-white flex items-center gap-2 transition-colors"
+                onClick={() => setPipelineStep(3)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
               >
-                <FolderUp className="w-4 h-4 text-amber-400" />
-                <span>
-                  Importar Pasta em {targetRarity === 'AUTO' ? 'Raridade Auto' : targetRarity}
-                </span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Voltar</span>
               </button>
 
               <button
-                onClick={() =>
-                  handleRollRandomPackFromSelectionOrCategory(6, true)
-                }
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-2 transition-colors"
+                onClick={handleExportMatrixJson}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-sky-300 flex items-center gap-1.5 transition-colors"
+                title="Exportar arquivo JSON com todos os dados da Matriz"
               >
-                <Dices className="w-4 h-4" />
-                <span>
-                  Gerar Pack ({rarityDisplayLabel}) #1 (6 Cartas)
-                </span>
+                <FileDown className="w-3.5 h-3.5" />
+                <span>Exportar JSON</span>
               </button>
 
               <button
                 onClick={onOpenBoosterModal}
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-xs font-bold text-slate-950 flex items-center gap-2 transition-colors"
+                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-black text-slate-950 flex items-center gap-1.5 transition-all shadow-md"
               >
-                <PackageOpen className="w-4 h-4" />
-                <span>Abrir Booster (9 Cartas)</span>
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>Abrir Loja & Testar Boosters</span>
               </button>
             </div>
           </div>
-        ) : filteredCards.length === 0 ? (
-          <div className="h-56 flex flex-col items-center justify-center text-center px-4 text-slate-500 text-xs">
-            <p>Nenhuma carta encontrada nesta categoria/filtro.</p>
-            <div className="flex items-center gap-3 mt-3">
+
+          {/* Diagnostic Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+            {/* Booster Requirements Check */}
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200">Requisitos de Booster (9 Cartas)</span>
+                  {isBoosterReady ? (
+                    <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-[10px] font-bold text-emerald-300">
+                      Apto
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-500/50 text-[10px] font-bold text-amber-300">
+                      Incompleto
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 mt-2 text-xs">
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Comuns (min 4):</span>
+                    <span className={commonCount >= 4 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {commonCount}/4 {commonCount >= 4 ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Raras (min 2):</span>
+                    <span className={rareCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {rareCount}/2 {rareCount >= 2 ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Magias (min 2):</span>
+                    <span className={magicCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {magicCount}/2 {magicCount >= 2 ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Rank Alto A/S (min 1):</span>
+                    <span className={highRankCount >= 1 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {highRankCount}/1 {highRankCount >= 1 ? '✓' : '✗'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Metadata Integrity Check */}
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-200">Integridade dos Metadados</span>
+                <div className="space-y-1 mt-2 text-xs">
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Ilustração vinculada:</span>
+                    <span className={cardsWithImage === cards.length ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {cardsWithImage}/{cards.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Bioma catalogado:</span>
+                    <span className="text-slate-200 font-mono">
+                      {cardsWithBiome}/{cards.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Família catalogada:</span>
+                    <span className="text-slate-200 font-mono">
+                      {cardsWithFamily}/{cards.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>• Não Classificadas restantes:</span>
+                    <span className={unclassifiedCount === 0 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {unclassifiedCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Distribution Summary */}
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-200">Distribuição do Baralho</span>
+                <div className="grid grid-cols-3 gap-1 mt-2 text-center text-[10px]">
+                  <div className="p-1 rounded bg-slate-800">
+                    <div className="text-slate-400">Comum</div>
+                    <div className="font-bold text-white mt-0.5">{commonCount}</div>
+                  </div>
+                  <div className="p-1 rounded bg-emerald-950/40">
+                    <div className="text-emerald-400">Rara</div>
+                    <div className="font-bold text-white mt-0.5">{rareCount}</div>
+                  </div>
+                  <div className="p-1 rounded bg-sky-950/40">
+                    <div className="text-sky-400">Magia</div>
+                    <div className="font-bold text-white mt-0.5">{magicCount}</div>
+                  </div>
+                  <div className="p-1 rounded bg-purple-950/40">
+                    <div className="text-purple-400">Épica</div>
+                    <div className="font-bold text-white mt-0.5">
+                      {cards.filter((c) => c.cardClass === 'Épica').length}
+                    </div>
+                  </div>
+                  <div className="p-1 rounded bg-amber-950/40">
+                    <div className="text-amber-400">Lendária</div>
+                    <div className="font-bold text-white mt-0.5">
+                      {cards.filter((c) => c.cardClass === 'Lendária').length}
+                    </div>
+                  </div>
+                  <div className="p-1 rounded bg-rose-950/40">
+                    <div className="text-rose-400">Mítica</div>
+                    <div className="font-bold text-white mt-0.5">
+                      {cards.filter((c) => c.cardClass === 'Mítica').length}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          4. NAVEGAÇÃO DE FILTROS TRADICIONAIS (MODO LIVRE OU ETAPA 3)
+         ===================================================================== */}
+      {(galleryFlowMode === 'free' || pipelineStep === 3) && (
+        <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0D1017] flex items-center justify-between gap-2 flex-wrap shrink-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1">
+            <button
+              onClick={() => setSelectedRarityTab('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                selectedRarityTab === 'ALL'
+                  ? 'bg-white text-slate-950'
+                  : 'bg-slate-900 text-slate-400 hover:text-white'
+              }`}
+            >
+              Todas ({cards.length})
+            </button>
+
+            <button
+              onClick={() => setSelectedRarityTab('UNCLASSIFIED')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                selectedRarityTab === 'UNCLASSIFIED'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-950/70'
+              }`}
+            >
+              <span>Não Classificadas</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-slate-950/80 text-[10px] font-mono tabular-nums text-amber-300">
+                {unclassifiedCount}
+              </span>
+            </button>
+
+            {enabledRarities.map((rarity) => {
+              const count = cards.filter((c) => c.cardClass === rarity).length;
+              const isSelected = selectedRarityTab === rarity;
+              return (
+                <button
+                  key={rarity}
+                  onClick={() => setSelectedRarityTab(rarity)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>{rarity}</span>
+                  <span className="text-[10px] opacity-75 font-mono tabular-nums">
+                    ({count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Box */}
+          <div className="flex items-center gap-1.5">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar por nome, bioma..."
+                className="pl-7 pr-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-44"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowSubgroupFilters((prev) => !prev)}
+              className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors ${
+                showSubgroupFilters
+                  ? 'bg-slate-800 border-slate-700 text-white'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+              title="Alternar filtros secundários de subgrupos"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Subgroup Filters Bar (Section 5 & 6) */}
+      {(galleryFlowMode === 'free' || pipelineStep === 3) && showSubgroupFilters && (
+        <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0A0D14] flex items-center gap-2 flex-wrap text-xs shrink-0">
+          <span className="font-semibold text-slate-400 text-[11px]">Subgrupos:</span>
+
+          <select
+            value={filterBiome}
+            onChange={(e) => setFilterBiome(e.target.value)}
+            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-emerald-300 font-semibold"
+          >
+            <option value="ALL">Todos os Biomas</option>
+            {subgroupCatalog.biomes.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterFamily}
+            onChange={(e) => setFilterFamily(e.target.value)}
+            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-slate-200"
+          >
+            <option value="ALL">Todas as Famílias</option>
+            {subgroupCatalog.families.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterCollection}
+            onChange={(e) => setFilterCollection(e.target.value)}
+            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-purple-300"
+          >
+            <option value="ALL">Todas as Coleções</option>
+            {subgroupCatalog.collections.map((col) => (
+              <option key={col} value={col}>
+                {col}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterEntityType}
+            onChange={(e) => setFilterEntityType(e.target.value)}
+            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-sky-300"
+          >
+            <option value="ALL">Todos os Tipos</option>
+            <option value="Criatura">Criatura</option>
+            <option value="Magia">Magia</option>
+            <option value="Item">Item</option>
+          </select>
+        </div>
+      )}
+
+      {/* Batch Selection Action Bar */}
+      <div className="px-4 py-1.5 border-b border-slate-800/80 bg-[#0C0F17] flex items-center justify-between gap-2 shrink-0 text-xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsMultiSelectMode((prev) => !prev)}
+            className={`px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 transition-colors ${
+              isMultiSelectMode
+                ? 'bg-amber-400 text-slate-950 font-bold'
+                : 'bg-slate-900 text-slate-400 hover:text-white'
+            }`}
+          >
+            {isMultiSelectMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+            <span>{isMultiSelectMode ? 'Modo Lote Ativo' : 'Seleção em Lote'}</span>
+          </button>
+
+          {isMultiSelectMode && (
+            <>
               <button
-                onClick={() =>
-                  handleRollRandomPackFromSelectionOrCategory(4, true)
-                }
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold"
+                onClick={handleSelectAllFiltered}
+                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
               >
-                Gerar Pack ({rarityDisplayLabel}) #{nextPackNumberPreview} (4 Cartas)
+                {filteredCards.length > 0 &&
+                filteredCards.every((c) => validSelectedCardIds.includes(c.id))
+                  ? 'Desmarcar Todos'
+                  : 'Selecionar Todos'}
               </button>
+              {validSelectedCardIds.length > 0 && (
+                <span className="text-amber-400 font-bold font-mono">
+                  {validSelectedCardIds.length} selecionados
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="text-slate-400 font-mono text-[11px]">
+          Exibindo {filteredCards.length} de {cards.length}
+        </div>
+      </div>
+
+      {/* =====================================================================
+          5. GRADE PRINCIPAL DE CARTAS (CARDS GRID)
+         ===================================================================== */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 bg-[#080A0F]">
+        {filteredCards.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-500">
+            <Layers className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
+            <p className="text-sm font-semibold text-slate-400">Nenhuma carta encontrada nesta exibição</p>
+            <p className="text-xs text-slate-600 mt-1 max-w-sm">
+              Alterne os filtros acima ou utilize a Etapa 1 para carregar uma pasta ou criar novas cartas.
+            </p>
+            <div className="mt-4 flex items-center gap-2">
               <button
                 onClick={() => {
-                  setSelectedDeckId('ALL');
-                  setFilterCharacterId('ALL');
-                  setFilterClass('ALL');
-                  setFilterRank('ALL');
-                  setFilterOrigin('ALL');
+                  setSelectedRarityTab('ALL');
+                  setStep2ShowOnlyUnclassified(false);
                   setSearchQuery('');
+                  setFilterBiome('ALL');
+                  setFilterFamily('ALL');
+                  setFilterCollection('ALL');
+                  setFilterEntityType('ALL');
                 }}
-                className="text-emerald-400 hover:underline font-medium"
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
               >
-                Limpar filtros
+                Limpar Todos os Filtros
+              </button>
+              <button
+                onClick={handleCreateNeutralMatrix}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Criar Matriz</span>
               </button>
             </div>
           </div>
         ) : (
-          <div className={`grid gap-3.5 pb-6 ${gridColsClass}`}>
+          <div className={`grid ${gridColsClass} gap-3`}>
             {filteredCards.map((card) => {
+              const unclassified = isCardUnclassified(card);
               const isSelectedOnStage = card.id === activeCardId;
+              const isChecked = validSelectedCardIds.includes(card.id);
               const multiSelectIndex = validSelectedCardIds.indexOf(card.id);
-              const isCheckedForPack = multiSelectIndex !== -1;
-              const cls = card.cardClass || 'Lendária';
-              const rnk = card.cardRank || card.rankBadgeText || 'S';
-              const stamina = card.summonStaminaCost ?? 5;
+              const isVersion = card.recordKind === 'version';
+              const isDraggingThis = draggedCardId === card.id;
 
               return (
                 <div
                   key={card.id}
-                  onPointerDown={() => handleCardPointerDown(card)}
-                  onPointerUp={handleCardPointerUpOrLeave}
-                  onPointerLeave={handleCardPointerUpOrLeave}
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(e, card.id)}
                   onClick={(e) => {
-                    if (longPressTriggeredRef.current) return;
-                    if (
-                      isMultiSelectMode ||
-                      e.shiftKey ||
-                      e.ctrlKey ||
-                      e.metaKey
-                    ) {
+                    if (isMultiSelectMode || e.shiftKey || e.ctrlKey || e.metaKey) {
                       toggleCardSelection(card.id);
                       return;
                     }
                     onSelectCard(card.id);
                   }}
-                  style={{
-                    contentVisibility: 'auto',
-                    containIntrinsicSize: '220px 360px',
-                  }}
-                  className={`group relative rounded-xl p-2.5 transition-colors cursor-pointer border flex flex-col ${
-                    isCheckedForPack
+                  className={`group relative rounded-xl p-2.5 transition-all cursor-pointer border flex flex-col ${
+                    isDraggingThis
+                      ? 'opacity-40 scale-95 border-emerald-400'
+                      : isChecked
                       ? 'bg-amber-950/25 border-amber-400 ring-2 ring-amber-400/50 shadow-lg'
                       : isSelectedOnStage
                       ? 'bg-slate-800/90 border-emerald-500 shadow-lg'
+                      : unclassified
+                      ? 'bg-[#14131A] border-amber-500/35 hover:border-amber-400/70'
                       : 'bg-[#121620] border-slate-800/80 hover:border-slate-700'
                   }`}
                 >
-                  {/* Multi-Select Checkbox Overlay (Top-Left of Card) */}
+                  {/* Batch Selection Button */}
                   <button
                     type="button"
                     onClick={(e) => toggleCardSelection(card.id, e)}
                     className={`absolute top-4 left-4 z-20 px-2 py-1 rounded-md flex items-center gap-1 text-[10px] font-extrabold transition-all shadow-md ${
-                      isCheckedForPack
+                      isChecked
                         ? 'bg-amber-400 text-slate-950 border border-amber-200'
-                        : 'bg-slate-950/80 text-slate-300 hover:text-white border border-slate-700/90 opacity-85 group-hover:opacity-100'
+                        : 'bg-slate-950/85 text-slate-300 hover:text-white border border-slate-700/90 opacity-85 group-hover:opacity-100'
                     }`}
-                    title="Selecionar carta para gerar Pack Random na raridade escolhida"
+                    title="Selecionar para ações em lote"
                   >
-                    {isCheckedForPack ? (
+                    {isChecked ? (
                       <>
                         <CheckSquare className="w-3.5 h-3.5 shrink-0" />
                         <span>#{multiSelectIndex + 1}</span>
@@ -2133,12 +1746,29 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     ) : (
                       <>
                         <Square className="w-3.5 h-3.5 shrink-0" />
-                        <span>Pack</span>
+                        <span>Lote</span>
                       </>
                     )}
                   </button>
 
-                  {/* Live Miniature Card Render (Softened outer corners, static visual without SMIL churn) */}
+                  {/* Top-Right Tag Badge */}
+                  <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
+                    {unclassified ? (
+                      <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[9px] font-extrabold uppercase shadow">
+                        Não Classificada
+                      </span>
+                    ) : isVersion ? (
+                      <span className="px-2 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-extrabold uppercase shadow">
+                        Versão
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded bg-slate-950/90 border border-emerald-500/50 text-emerald-300 text-[9px] font-extrabold uppercase shadow">
+                        {card.cardClass || 'Matriz'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Thumbnail Card Render */}
                   <div className="w-full aspect-[680/990] rounded-[7px] overflow-hidden bg-black relative pointer-events-none">
                     <CardFrameSVG
                       card={card}
@@ -2148,88 +1778,102 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     />
                   </div>
 
-                  {/* Clean Metadata Row */}
-                  <div className="mt-2.5 flex items-center justify-between gap-1">
+                  {/* Title & Rank Row */}
+                  <div className="mt-2 flex items-center justify-between gap-1">
                     <span className="text-xs font-bold text-white truncate">
                       {card.title}
                     </span>
                     <span className="text-xs font-mono tabular-nums font-bold text-amber-400 shrink-0">
-                      {rnk}
+                      {unclassified ? 'NEUTRA' : `Rank ${card.cardRank || card.rankBadgeText || '—'}`}
                     </span>
                   </div>
 
+                  {/* Subgroup Tags */}
+                  <div className="mt-1 flex items-center gap-1 flex-wrap min-h-[20px]">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[9px] font-semibold text-sky-300">
+                      {card.entityType || 'Criatura'}
+                    </span>
+                    {card.biome && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-950/50 border border-emerald-500/30 text-[9px] font-semibold text-emerald-300">
+                        {card.biome}
+                      </span>
+                    )}
+                    {card.family && (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[9px] text-slate-300 truncate max-w-[110px]">
+                        {card.family}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Rarity Selector Row */}
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className="mt-1.5 flex items-center justify-between gap-1 text-[11px] text-slate-400 font-mono tabular-nums"
                   >
                     <select
-                      value={cls}
-                      onChange={(e) =>
-                        onAssignCardClass(card.id, e.target.value as CardClass)
-                      }
-                      className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] font-sans font-semibold text-amber-300 focus:outline-none"
-                      title="Mudar Raridade Manualmente (Lendária e Mítica ativam Modo Premium automaticamente)"
+                      value={unclassified ? 'UNCLASSIFIED' : card.cardClass || 'UNCLASSIFIED'}
+                      onChange={(e) => {
+                        const nextVal = e.target.value as CardClass | 'UNCLASSIFIED';
+                        updateTargetCards([card.id], (c) => applyRarityToCardRecord(c, nextVal));
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-200"
                     >
-                      {OFFICIAL_CLASSES.map((cName) => (
-                        <option key={cName} value={cName}>
-                          {cName}
+                      <option value="UNCLASSIFIED">Não Classificada</option>
+                      {OFFICIAL_CLASSES.map((cls) => (
+                        <option key={cls} value={cls}>
+                          {cls}
                         </option>
                       ))}
                     </select>
-                    <span className="truncate">
-                      {card.pvText} · {stamina} Est.
+
+                    <span className="truncate text-[10px]">
+                      {unclassified
+                        ? 'Sem Atributos'
+                        : card.entityType === 'Magia'
+                        ? `Mana ${card.magicManaCost ?? 3}`
+                        : `${card.pvText} · ${card.summonStaminaCost ?? '—'} Est.`}
                     </span>
                   </div>
 
-                  {/* Card Management Footer: Deck selector + Info, Re-scan in selected Rarity, Duplicate, Delete */}
+                  {/* Card Footer Actions */}
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className="mt-1.5 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-1"
                   >
-                    <select
-                      value={card.deckId || 'deck-main'}
-                      onChange={(e) => onAssignCardDeck(card.id, e.target.value)}
-                      className="bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] text-slate-300 max-w-[95px] truncate focus:outline-none"
-                      title="Mover para outra Categoria / Deck"
-                    >
-                      {decks.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-
                     <div className="flex items-center gap-0.5">
                       <button
                         onClick={() => onInspectCard(card)}
                         className="p-1 rounded hover:bg-slate-700 text-slate-300 hover:text-white"
-                        title="Abrir Informativo Completo"
+                        title="Informativo da Carta"
                       >
                         <Info className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={(e) => handleRescanCharacterVersion(card, e)}
-                        className="p-1 rounded hover:bg-emerald-900/50 text-emerald-400"
-                        title={`Gerar nova versão random desta carta na raridade ${
-                          targetRarity === 'AUTO' ? 'Automática' : targetRarity
-                        }`}
+                        onClick={() => handleGenerateRandomVersionForCards([card])}
+                        disabled={unclassified}
+                        className="p-1 rounded hover:bg-indigo-900/50 text-indigo-400 disabled:opacity-30"
+                        title="Gerar Versão Aleatória"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => onDuplicateCard(card)}
                         className="p-1 rounded hover:bg-slate-700 text-slate-300 hover:text-white"
-                        title="Duplicar Carta"
+                        title="Duplicar"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => onDeleteCard(card.id)}
                         className="p-1 rounded hover:bg-rose-950/60 text-slate-400 hover:text-rose-400"
-                        title="Excluir Carta"
+                        title="Excluir"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                    </div>
+
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      #{card.id.slice(-4)}
                     </div>
                   </div>
                 </div>

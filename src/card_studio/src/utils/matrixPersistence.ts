@@ -2,9 +2,11 @@ import { CardData } from '../types/card';
 import {
   BaseCharacter,
   BoosterModel,
+  BoosterOpenHistoryEntry,
   CardClass,
   ClassBalanceTable,
   DeckCategory,
+  SubgroupCatalog,
 } from '../types/slimelands';
 
 export interface SlimelandsGameMatrixSnapshot {
@@ -15,6 +17,11 @@ export interface SlimelandsGameMatrixSnapshot {
   baseCharacters: BaseCharacter[];
   balanceTables: Record<CardClass, ClassBalanceTable>;
   boosterModels: BoosterModel[];
+  subgroupCatalog?: SubgroupCatalog;
+  playerInventory?: CardData[];
+  playerCoins?: number;
+  boosterStock?: Record<string, number>;
+  boosterHistory?: BoosterOpenHistoryEntry[];
   globalBackImageUrl: string | null;
   activeCardId: string;
   stageDraftCard?: CardData;
@@ -47,7 +54,7 @@ function openMatrixDB(): Promise<IDBDatabase> {
 export async function loadGameMatrixSnapshot(): Promise<SlimelandsGameMatrixSnapshot | null> {
   try {
     const db = await openMatrixDB();
-    return await new Promise<SlimelandsGameMatrixSnapshot | null>((resolve) => {
+    const idbSnap = await new Promise<SlimelandsGameMatrixSnapshot | null>((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.get(SNAPSHOT_KEY);
@@ -57,14 +64,19 @@ export async function loadGameMatrixSnapshot(): Promise<SlimelandsGameMatrixSnap
       };
       req.onerror = () => resolve(null);
     });
+    if (idbSnap) return idbSnap;
   } catch {
-    try {
-      const raw = window.localStorage.getItem(SNAPSHOT_KEY);
-      return raw ? (JSON.parse(raw) as SlimelandsGameMatrixSnapshot) : null;
-    } catch {
-      return null;
-    }
+    // Fallback to localStorage below
   }
+
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_KEY);
+    if (raw) return JSON.parse(raw) as SlimelandsGameMatrixSnapshot;
+  } catch {
+    // Ignore parse errors
+  }
+
+  return null;
 }
 
 export async function saveGameMatrixSnapshot(
@@ -80,10 +92,22 @@ export async function saveGameMatrixSnapshot(
       req.onerror = () => reject(req.error);
     });
   } catch {
-    try {
-      window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
-    } catch {
-      // Ignore quota errors if localStorage fallback is full
+    // Fallback handled below
+  }
+
+  try {
+    window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore quota errors if localStorage fallback is full
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('hestridia:matrix-updated', { detail: snapshot }));
+    if (window.parent && window.parent !== window) {
+      window.parent.dispatchEvent(new CustomEvent('hestridia:matrix-updated', { detail: snapshot }));
     }
+  } catch {
+    // Ignore cross-frame dispatch errors
   }
 }
+

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createMatrixCardTexture } from '../../screens/forge_v2/utils/HestridiaMatrixRenderer';
+import { createMatrixCardTexture, createMatrixCardBackTexture } from '../../screens/forge_v2/utils/HestridiaMatrixRenderer';
 
 /**
  * Procedural texture generator for authentic TCG Booster Pack foil packaging
@@ -381,6 +381,10 @@ function drawCrimpedFoil(ctx: CanvasRenderingContext2D, x: number, y: number, w:
 }
 
 export function createPokemonCardBackTexture(): THREE.CanvasTexture {
+  return createMatrixCardBackTexture();
+}
+
+export function createLegacyPokemonCardBackTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 720;
   canvas.height = 1200;

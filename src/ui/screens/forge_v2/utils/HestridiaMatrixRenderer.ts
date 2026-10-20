@@ -4,61 +4,300 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CardData, BottomStatPill } from '../../../../card_studio/src/types/card';
 import { CardFrameSVG } from '../../../../card_studio/src/components/CardFrameSVG';
 import { CardBackSVG } from '../../../../card_studio/src/components/CardBackSVG';
-import { loadGameMatrixSnapshot } from '../../../../card_studio/src/utils/matrixPersistence';
+import { INITIAL_CARDS } from '../../../../card_studio/src/utils/defaultCards';
+import {
+  loadGameMatrixSnapshot,
+  saveGameMatrixSnapshot,
+  SlimelandsGameMatrixSnapshot,
+} from '../../../../card_studio/src/utils/matrixPersistence';
+
+const SNAPSHOT_STORAGE_KEY = 'slimelands_active_matrix_v1';
+
+let cachedMatrixSnapshot: SlimelandsGameMatrixSnapshot | null = null;
+
+function readSnapshotFromLocalStorage(): SlimelandsGameMatrixSnapshot | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as SlimelandsGameMatrixSnapshot;
+  } catch {}
+  return null;
+}
+
+if (typeof window !== 'undefined') {
+  cachedMatrixSnapshot = readSnapshotFromLocalStorage();
+  loadGameMatrixSnapshot()
+    .then((snap) => {
+      if (snap) {
+        cachedMatrixSnapshot = snap;
+        try {
+          window.localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snap));
+        } catch {}
+      }
+    })
+    .catch(() => {});
+
+  window.addEventListener('hestridia:matrix-updated', ((ev: CustomEvent) => {
+    if (ev?.detail) {
+      cachedMatrixSnapshot = ev.detail as SlimelandsGameMatrixSnapshot;
+    } else {
+      cachedMatrixSnapshot = readSnapshotFromLocalStorage();
+    }
+  }) as EventListener);
+
+  window.addEventListener('storage', (ev) => {
+    if (ev.key === SNAPSHOT_STORAGE_KEY && ev.newValue) {
+      try {
+        cachedMatrixSnapshot = JSON.parse(ev.newValue);
+      } catch {}
+    }
+  });
+}
+
+export function convertMatrixCardToGameTemplate(cd: CardData): any {
+  const p1 = cd.pills?.[0];
+  const p2 = cd.pills?.[1];
+  const p3 = cd.pills?.[2];
+  const p4 = cd.pills?.[3];
+  const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
+  const atk1 = parseInt(p1?.mainText || '200') || 200;
+  const atk2 = parseInt(p2?.mainText || '350') || 350;
+  const atk3 = parseInt(p3?.mainText || '500') || 500;
+  const ultiDmg = parseInt(p4?.mainText || '650') || 650;
+
+  const clsLower = (cd.cardClass || '').toLowerCase();
+  const rankUpper = (cd.cardRank || cd.rankBadgeText || '').toUpperCase();
+  let preferredRarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common';
+  if (
+    rankUpper === 'S' ||
+    clsLower.includes('mítica') ||
+    clsLower.includes('mitica') ||
+    clsLower.includes('lendária') ||
+    clsLower.includes('lendaria')
+  ) {
+    preferredRarity = 'legendary';
+  } else if (
+    rankUpper === 'A' ||
+    clsLower.includes('épica') ||
+    clsLower.includes('epica') ||
+    clsLower.includes('limitada')
+  ) {
+    preferredRarity = 'epic';
+  } else if (
+    rankUpper === 'B' ||
+    clsLower.includes('rara') ||
+    clsLower.includes('incomum')
+  ) {
+    preferredRarity = 'rare';
+  }
+
+  const genAbilities = cd.generatedAbilities || [];
+
+  return {
+    id: cd.id,
+    name: cd.title,
+    image: cd.imageUrl || '',
+    imageUrl: cd.imageUrl || '',
+    animationUrl: cd.videoUrl || undefined,
+    cardBack: cd.backImageUrl || undefined,
+    baseAtk: atk1,
+    atk: atk1,
+    basePv: basePv,
+    pv: basePv,
+    maxPv: basePv,
+    manaCost: cd.summonStaminaCost || 2,
+    staminaCost: cd.summonStaminaCost || 2,
+    preferredRarity,
+    rarity: preferredRarity,
+    classId: (cd.elementText || 'FERRO').toLowerCase(),
+    flavorText: cd.loreBody,
+    deckId: cd.deckId,
+    family: cd.family,
+    biome: cd.biome,
+    collections: cd.collections,
+    attacks: [
+      {
+        name: genAbilities[0]?.name || 'GOLPE 1',
+        damage: atk1,
+        cost: parseInt(p1?.badgeValue || '1') || 1,
+        costType: 'stamina',
+        description: genAbilities[0]?.description || '',
+      },
+      {
+        name: genAbilities[1]?.name || 'GOLPE 2',
+        damage: atk2,
+        cost: parseInt(p2?.badgeValue || '2') || 2,
+        costType: 'stamina',
+        description: genAbilities[1]?.description || '',
+      },
+      {
+        name: genAbilities[2]?.name || 'GOLPE 3',
+        damage: atk3,
+        cost: parseInt(p3?.badgeValue || '3') || 3,
+        costType: 'mana',
+        description: genAbilities[2]?.description || '',
+      },
+    ],
+    specialAttack: {
+      name: cd.magicPrefix || genAbilities[3]?.name || 'GOLPE FINAL',
+      damage: ultiDmg,
+      cost: 0,
+      costType: 'mana',
+      description: cd.magicDescription || genAbilities[3]?.description || '',
+    },
+    cardData: cd,
+    matrixCard: cd,
+  };
+}
+
+function extractUniqueMatrixCards(snapshot: SlimelandsGameMatrixSnapshot | null): CardData[] {
+  if (!snapshot) {
+    return [...INITIAL_CARDS];
+  }
+  if (snapshot.isLibraryCleared) {
+    return [];
+  }
+  const combined: CardData[] = [];
+  const seenIds = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  const addCard = (c: CardData | undefined | null) => {
+    if (!c || typeof c !== 'object') return;
+    const id = String(c.id || '');
+    const titleKey = String(c.title || '').trim().toLowerCase();
+    if ((id && seenIds.has(id)) || (titleKey && seenTitles.has(titleKey))) return;
+    if (id) seenIds.add(id);
+    if (titleKey) seenTitles.add(titleKey);
+    combined.push(c);
+  };
+
+  if (Array.isArray(snapshot.cards)) {
+    snapshot.cards.forEach(addCard);
+  }
+  if (Array.isArray(snapshot.playerInventory)) {
+    snapshot.playerInventory.forEach(addCard);
+  }
+  if (combined.length === 0 && !snapshot.isLibraryCleared) {
+    INITIAL_CARDS.forEach(addCard);
+  }
+  return combined;
+}
+
+function mergeWithBaseTemplates(
+  matrixCards: CardData[],
+  baseTemplates: any[] = [],
+  isLibraryCleared: boolean = false
+): any[] {
+  if (isLibraryCleared) return [];
+  const matrixConverted = matrixCards.map(convertMatrixCardToGameTemplate);
+  const idSet = new Set(matrixConverted.map((c) => c.id));
+  const nameSet = new Set(
+    matrixConverted.map((c) => String(c.name || '').trim().toLowerCase())
+  );
+  const filteredBase = (baseTemplates || []).filter(
+    (b) =>
+      b &&
+      !idSet.has(b.id) &&
+      !nameSet.has(String(b.name || '').trim().toLowerCase())
+  );
+  return [...matrixConverted, ...filteredBase];
+}
+
+export function getMergedGameTemplatesSync(baseTemplates: any[] = []): any[] {
+  const snapshot = cachedMatrixSnapshot || readSnapshotFromLocalStorage();
+  if (snapshot) {
+    cachedMatrixSnapshot = snapshot;
+  }
+  const matrixCards = extractUniqueMatrixCards(snapshot);
+  return mergeWithBaseTemplates(
+    matrixCards,
+    baseTemplates,
+    Boolean(snapshot?.isLibraryCleared)
+  );
+}
+
+export function resolveMatrixOrGameCard(
+  nameOrId: string,
+  baseTemplates: any[] = []
+): any | null {
+  if (!nameOrId) return null;
+  const clean = String(nameOrId).trim().toLowerCase();
+  const pool = getMergedGameTemplatesSync(baseTemplates);
+  return (
+    pool.find(
+      (c) =>
+        c &&
+        (c.name === nameOrId ||
+          c.id === nameOrId ||
+          String(c.name || '').trim().toLowerCase() === clean ||
+          String(c.id || '').trim().toLowerCase() === clean ||
+          String(c.cardData?.id || '').trim().toLowerCase() === clean ||
+          String(c.cardData?.title || '').trim().toLowerCase() === clean)
+    ) || null
+  );
+}
 
 export async function getMergedGameTemplates(baseTemplates: any[] = []): Promise<any[]> {
   try {
     const snapshot = await loadGameMatrixSnapshot();
-    if (snapshot && Array.isArray(snapshot.cards) && snapshot.cards.length > 0) {
-      const matrixConverted = snapshot.cards.map((cd: CardData) => {
-        const p1 = cd.pills?.[0];
-        const p2 = cd.pills?.[1];
-        const p3 = cd.pills?.[2];
-        const p4 = cd.pills?.[3];
-        const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
-        const atk1 = parseInt(p1?.mainText || '200') || 200;
-        const atk2 = parseInt(p2?.mainText || '350') || 350;
-        const atk3 = parseInt(p3?.mainText || '500') || 500;
-        const ultiDmg = parseInt(p4?.mainText || '650') || 650;
-
-        return {
-          id: cd.id,
-          name: cd.title,
-          image: cd.imageUrl || '',
-          imageUrl: cd.imageUrl || '',
-          baseAtk: atk1,
-          basePv: basePv,
-          pv: basePv,
-          maxPv: basePv,
-          manaCost: cd.summonStaminaCost || 2,
-          staminaCost: 1,
-          preferredRarity: cd.cardRank === 'S' ? 'legendary' : cd.cardRank === 'A' ? 'epic' : cd.cardRank === 'B' ? 'rare' : 'common',
-          classId: (cd.elementText || 'FERRO').toLowerCase(),
-          flavorText: cd.loreBody,
-          attacks: [
-            { name: 'GOLPE 1', damage: atk1, cost: parseInt(p1?.badgeValue || '1') || 1, costType: 'stamina' },
-            { name: 'GOLPE 2', damage: atk2, cost: parseInt(p2?.badgeValue || '2') || 2, costType: 'stamina' },
-            { name: 'GOLPE 3', damage: atk3, cost: parseInt(p3?.badgeValue || '3') || 3, costType: 'mana' },
-          ],
-          specialAttack: {
-            name: cd.magicPrefix || 'GOLPE FINAL',
-            damage: ultiDmg,
-            cost: 0,
-            costType: 'mana',
-            description: cd.magicDescription || ''
-          },
-          cardData: cd
-        };
-      });
-
-      const idSet = new Set(matrixConverted.map(c => c.id));
-      const filteredBase = baseTemplates.filter(b => !idSet.has(b.id));
-      return [...matrixConverted, ...filteredBase];
+    if (snapshot) {
+      cachedMatrixSnapshot = snapshot;
     }
+    const activeSnap = snapshot || cachedMatrixSnapshot || readSnapshotFromLocalStorage();
+    const matrixCards = extractUniqueMatrixCards(activeSnap);
+    return mergeWithBaseTemplates(
+      matrixCards,
+      baseTemplates,
+      Boolean(activeSnap?.isLibraryCleared)
+    );
   } catch (err) {
     console.warn('Falha ao sincronizar cartas da matriz:', err);
   }
-  return baseTemplates;
+  return getMergedGameTemplatesSync(baseTemplates);
+}
+
+export async function upsertCardsIntoMatrixSnapshot(newCards: CardData[]): Promise<void> {
+  if (!Array.isArray(newCards) || newCards.length === 0) return;
+  try {
+    const snap =
+      (await loadGameMatrixSnapshot()) ||
+      cachedMatrixSnapshot ||
+      readSnapshotFromLocalStorage();
+    const existingCards = snap?.cards || [...INITIAL_CARDS];
+    const existingIds = new Set(existingCards.map((c) => c.id));
+    const existingTitles = new Set(
+      existingCards.map((c) => String(c.title || '').trim().toLowerCase())
+    );
+
+    const toAdd = newCards.filter(
+      (c) =>
+        c &&
+        !existingIds.has(c.id) &&
+        !existingTitles.has(String(c.title || '').trim().toLowerCase())
+    );
+    if (toAdd.length === 0) return;
+
+    const nextSnap: SlimelandsGameMatrixSnapshot = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      cards: [...toAdd, ...existingCards],
+      decks: snap?.decks || [],
+      baseCharacters: snap?.baseCharacters || [],
+      balanceTables: (snap?.balanceTables || {}) as any,
+      boosterModels: snap?.boosterModels || [],
+      subgroupCatalog: snap?.subgroupCatalog,
+      playerInventory: [...toAdd, ...(snap?.playerInventory || [])],
+      playerCoins: snap?.playerCoins ?? 1000,
+      boosterStock: snap?.boosterStock,
+      boosterHistory: snap?.boosterHistory,
+      globalBackImageUrl: snap?.globalBackImageUrl ?? null,
+      activeCardId: snap?.activeCardId || toAdd[0].id,
+      stageDraftCard: snap?.stageDraftCard,
+      isLibraryCleared: false,
+    };
+    cachedMatrixSnapshot = nextSnap;
+    await saveGameMatrixSnapshot(nextSnap);
+  } catch {}
 }
 
 export interface MatrixRenderOptions {
@@ -84,8 +323,17 @@ export function toMatrixCardData(raw: any): CardData {
     return raw as CardData;
   }
 
-  if (raw.cardData && raw.cardData.pills) {
-    return raw.cardData as CardData;
+  const embedded = raw.cardData || raw.matrixCard;
+  if (embedded && embedded.pills) {
+    const livePv = raw.pv ?? raw.pvNumber ?? embedded.pvNumber;
+    return {
+      ...embedded,
+      title: raw.name || embedded.title,
+      pvText: livePv !== undefined ? `PV${livePv}` : embedded.pvText,
+      pvNumber: livePv !== undefined ? Number(livePv) : embedded.pvNumber,
+      imageUrl: raw.image || raw.imageUrl || embedded.imageUrl,
+      backImageUrl: raw.cardBack || raw.backImageUrl || embedded.backImageUrl || null,
+    } as CardData;
   }
 
   const name = raw.title || raw.name || 'Guerreiro do Inverno';
@@ -381,5 +629,51 @@ export function createMatrixCardTexture(cardInput: any): THREE.CanvasTexture {
   return texture;
 }
 
+/**
+ * Cria uma CanvasTexture do Three.js renderizando 100% FIEL o CardBackSVG oficial da Matriz.
+ */
+export function createMatrixCardBackTexture(cardInput?: any): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 680;
+  canvas.height = 990;
+  const ctx = canvas.getContext('2d')!;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
 
+  const card = toMatrixCardData(cardInput || {});
 
+  const renderOfficialBackToCanvas = (targetCard: CardData) => {
+    try {
+      let svgString = renderMatrixCardBackSVG(targetCard);
+      if (!svgString.includes('xmlns=')) {
+        svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      if (!/width=/.test(svgString)) {
+        svgString = svgString.replace('<svg', '<svg width="680" height="990"');
+      }
+
+      const img = new Image();
+      const svgUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        texture.needsUpdate = true;
+      };
+      img.src = svgUri;
+    } catch (err) {
+      console.warn('Falha ao renderizar CardBackSVG oficial para textura:', err);
+    }
+  };
+
+  renderOfficialBackToCanvas(card);
+
+  if (card.backImageUrl && !card.backImageUrl.startsWith('data:')) {
+    ensureDataUrl(card.backImageUrl).then((dataUrl) => {
+      if (dataUrl && dataUrl.startsWith('data:')) {
+        renderOfficialBackToCanvas({ ...card, backImageUrl: dataUrl });
+      }
+    });
+  }
+
+  return texture;
+}

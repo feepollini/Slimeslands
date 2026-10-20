@@ -1,21 +1,24 @@
-import { CardData, BottomStatPill } from '../types/card';
+import { CardData, BottomStatPill, CardColorPalette } from '../types/card';
 import {
   BaseCharacter,
   BoosterModel,
   CardClass,
+  CardEntityType,
   CardOrigin,
   CardRank,
   CharacterAbilityTemplate,
   ClassBalanceTable,
   DeckCategory,
   GeneratedAbilityInstance,
+  MatrixRecordKind,
   ParryAttackerInput,
   SimulationSummary,
+  SubgroupCatalog,
 } from '../types/slimelands';
 import { DEFAULT_PRESET_PALETTES } from './colorExtractor';
 import { SAMPLE_ARTWORKS } from './defaultCards';
 
-export const RULES_VERSION = 'v1.4-slimelands';
+export const RULES_VERSION = 'v2.0-slimelands-matrix';
 
 export const OFFICIAL_CLASSES: CardClass[] = [
   'Comum',
@@ -28,29 +31,75 @@ export const OFFICIAL_CLASSES: CardClass[] = [
 
 export const OFFICIAL_RANKS: CardRank[] = ['S', 'A', 'B', 'C', 'D'];
 
+export const OFFICIAL_ENTITY_TYPES: CardEntityType[] = [
+  'Criatura',
+  'Magia',
+  'Item',
+];
+
+/**
+ * Shared Independent Secondary Subgroup Catalog (Sections 5 & 6).
+ * Subgroups are shared across all rarities without mixing cards of different rarities.
+ */
+export const DEFAULT_SUBGROUP_CATALOG: SubgroupCatalog = {
+  families: [
+    'Slimes Naturais',
+    'Slimes Tóxicos',
+    'Slimes Rochosos',
+    'Slimes Cromáticos',
+    'Slimes Vikings',
+    'Slimes Orientais',
+    'Slimes Divinos',
+    'Slimes Arcanos',
+    'Slimes Abissais',
+    'Slimes Vulcânicos',
+    'Feitiços Arcanos',
+    'Relíquias Ancestrais',
+  ],
+  biomes: [
+    'Floresta',
+    'Pântano',
+    'Deserto',
+    'Neve',
+    'Vulcânico',
+    'Reino Sombrio',
+    'Abismo Oceânico',
+    'Santuário Solar',
+  ],
+  collections: [
+    'Set Base Slimelands',
+    'Criaturas Sombrias',
+    'Halloween',
+    'Coleção Oriental',
+    'Coleção dos Deuses',
+    'Festival de Inverno',
+    'Coleção de Aniversário',
+  ],
+};
+
 export const DEFAULT_DECK_CATEGORIES: DeckCategory[] = [
   {
     id: 'deck-main',
-    name: 'Deck Principal',
-    description: 'Cartas ativas prontas para batalha no tabuleiro.',
+    name: 'Matriz Principal',
+    description: 'Modelos originais cadastrados na Matriz de Cartas.',
     accentColor: '#10B981',
   },
   {
     id: 'deck-slimes',
     name: 'Slimes Ancestrais',
-    description: 'Criaturas elementais escaneadas nas florestas e abismos.',
+    description: 'Criaturas elementais organizadas por família e bioma.',
     accentColor: '#3B82F6',
   },
   {
     id: 'deck-grimoire',
     name: 'Grimório de Magias',
-    description: 'Feitiços e encantamentos arcanos de suporte e destruição.',
+    description: 'Feitiços e encantamentos arcanos de suporte e reação.',
     accentColor: '#A855F7',
   },
   {
     id: 'deck-mythic',
     name: 'Relíquias & Míticas',
-    description: 'Versões de alto poder (Rank S/A, Lendárias, Míticas e Limitadas).',
+    description: 'Matrizes e versões de alto poder (Lendárias, Míticas e Limitadas).',
     accentColor: '#F59E0B',
   },
 ];
@@ -61,6 +110,170 @@ export const DEFAULT_DECK_CATEGORIES: DeckCategory[] = [
  */
 export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
   {
+    id: 'char-slime-verde',
+    name: 'Slime Verde',
+    description:
+      'Criatura elemental da floresta de Slimelands que canaliza seiva vital e ataques elásticos rápidos.',
+    imageUrl: SAMPLE_ARTWORKS.hestridiaForest,
+    entityType: 'Criatura',
+    element: 'TERRA',
+    matrixRarity: 'Comum',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Naturais',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands'],
+    allowedClasses: ['Comum'],
+    availableForDrops: true,
+    availableForScan: true,
+    availableForBoosters: true,
+    active: true,
+    isProvisional: false,
+    abilities: [
+      {
+        id: 'ab-verde-1',
+        name: 'Salto Elástico',
+        description: 'Investida rápida coberta de musgo vivo.',
+        tier: 'Básica',
+        unlockPriority: 1,
+      },
+      {
+        id: 'ab-verde-2',
+        name: 'Jato de Seiva',
+        description: 'Dispara seiva pressurizada que reduz a agilidade.',
+        tier: 'Intermediária',
+        unlockPriority: 2,
+      },
+    ],
+  },
+  {
+    id: 'char-slime-musgo',
+    name: 'Slime Musgo',
+    description:
+      'Camuflado entre raízes antigas da Floresta, absorve umidade para endurecer sua membrana.',
+    imageUrl: SAMPLE_ARTWORKS.hestridiaForest,
+    entityType: 'Criatura',
+    element: 'TERRA',
+    matrixRarity: 'Comum',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Naturais',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands'],
+    allowedClasses: ['Comum'],
+    availableForDrops: true,
+    availableForScan: true,
+    availableForBoosters: true,
+    active: true,
+    isProvisional: false,
+    abilities: [
+      {
+        id: 'ab-musgo-1',
+        name: 'Esporos de Musgo',
+        description: 'Libera partículas densas ao redor do alvo.',
+        tier: 'Básica',
+        unlockPriority: 1,
+      },
+      {
+        id: 'ab-musgo-2',
+        name: 'Raiz Prensora',
+        description: 'Prende os pés do adversário no solo úmido.',
+        tier: 'Intermediária',
+        unlockPriority: 2,
+      },
+    ],
+  },
+  {
+    id: 'char-slime-guardiao',
+    name: 'Slime Guardião',
+    description:
+      'Protetor veterano das clareiras sagradas da Floresta, dotado de núcleo cristalino resistente.',
+    imageUrl: SAMPLE_ARTWORKS.hestridiaForest,
+    entityType: 'Criatura',
+    element: 'TERRA',
+    matrixRarity: 'Rara',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Rochosos',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands'],
+    allowedClasses: ['Rara'],
+    availableForDrops: true,
+    availableForScan: true,
+    availableForBoosters: true,
+    active: true,
+    isProvisional: false,
+    abilities: [
+      {
+        id: 'ab-guard-1',
+        name: 'Escudo de Casca',
+        description: 'Golpeia com placas de madeira petrificada.',
+        tier: 'Básica',
+        unlockPriority: 1,
+      },
+      {
+        id: 'ab-guard-2',
+        name: 'Cravação Silvestre',
+        description: 'Ergue estacas naturais que perfuram a guarda.',
+        tier: 'Intermediária',
+        unlockPriority: 2,
+      },
+      {
+        id: 'ab-guard-3',
+        name: 'Sentinela do Bosque',
+        description: 'Impacto sísmico que protege aliados adjacentes.',
+        tier: 'Forte',
+        specialEffect: 'Reduz 1 de dano recebido no próximo turno.',
+        unlockPriority: 3,
+      },
+    ],
+  },
+  {
+    id: 'char-slime-venenoso',
+    name: 'Slime Venenoso',
+    description:
+      'Habita os charcos profundos do Pântano, destilando toxinas ácidas que corroem escudos.',
+    imageUrl: SAMPLE_ARTWORKS.abyssalLeviathan,
+    entityType: 'Criatura',
+    element: 'VENENO',
+    matrixRarity: 'Rara',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Tóxicos',
+    biome: 'Pântano',
+    collections: ['Set Base Slimelands', 'Criaturas Sombrias'],
+    allowedClasses: ['Rara'],
+    availableForDrops: true,
+    availableForScan: true,
+    availableForBoosters: true,
+    active: true,
+    isProvisional: false,
+    abilities: [
+      {
+        id: 'ab-ven-1',
+        name: 'Gota Corrosiva',
+        description: 'Ácido concentrado que enfraquece a armadura.',
+        tier: 'Básica',
+        unlockPriority: 1,
+      },
+      {
+        id: 'ab-ven-2',
+        name: 'Névoa do Pântano',
+        description: 'Cobre a arena com vapores venenosos densos.',
+        tier: 'Intermediária',
+        unlockPriority: 2,
+      },
+      {
+        id: 'ab-ven-3',
+        name: 'Erupção Tóxica',
+        description: 'Explosão de lodo ácido de alto alcance.',
+        tier: 'Forte',
+        specialEffect: 'Aplica Veneno por 2 turnos.',
+        unlockPriority: 3,
+      },
+    ],
+  },
+  {
     id: 'char-lumys',
     name: 'Lumys, o Slime Arcano',
     description:
@@ -68,7 +281,13 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     imageUrl: SAMPLE_ARTWORKS.hestridiaForest,
     entityType: 'Criatura',
     element: 'ARCANO',
-    allowedClasses: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+    matrixRarity: 'Lendária',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Arcanos',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands', 'Coleção dos Deuses'],
+    allowedClasses: ['Lendária'],
     availableForDrops: true,
     availableForScan: true,
     availableForBoosters: true,
@@ -112,11 +331,17 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     id: 'char-hestridia',
     name: 'Hetridia, Guardiã Silvestre',
     description:
-      'Guardiã da vida ancestral que percorre os bosques esquecidos de Slimelands, nutrindo as raízes primordiais.',
+      'Guardiã mítica da vida ancestral que percorre os bosques esquecidos de Slimelands, nutrindo as raízes primordiais.',
     imageUrl: SAMPLE_ARTWORKS.hestridiaForest,
     entityType: 'Criatura',
     element: 'TERRA',
-    allowedClasses: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+    matrixRarity: 'Mítica',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Divinos',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands', 'Coleção dos Deuses'],
+    allowedClasses: ['Mítica'],
     availableForDrops: true,
     availableForScan: true,
     availableForBoosters: true,
@@ -164,7 +389,13 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     imageUrl: SAMPLE_ARTWORKS.abyssalLeviathan,
     entityType: 'Criatura',
     element: 'AGUA',
-    allowedClasses: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+    matrixRarity: 'Lendária',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Abissais',
+    biome: 'Abismo Oceânico',
+    collections: ['Set Base Slimelands', 'Criaturas Sombrias'],
+    allowedClasses: ['Lendária'],
     availableForDrops: true,
     availableForScan: true,
     availableForBoosters: true,
@@ -212,7 +443,13 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     imageUrl: SAMPLE_ARTWORKS.solarArchangel,
     entityType: 'Criatura',
     element: 'FOGO',
-    allowedClasses: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+    matrixRarity: 'Limitada',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Slimes Vulcânicos',
+    biome: 'Vulcânico',
+    collections: ['Halloween', 'Criaturas Sombrias'],
+    allowedClasses: ['Limitada'],
     availableForDrops: true,
     availableForScan: true,
     availableForBoosters: true,
@@ -252,7 +489,7 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
       },
     ],
   },
-  // MAGIC CARDS (Separated from Creature classes/stats as required by Section 12)
+  // MAGIC CARDS (Separated from Creature classes/stats as required by Section 5.4 & 13)
   {
     id: 'mag-convergencia',
     name: 'Convergência Estelar de Slimelands',
@@ -261,6 +498,12 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     imageUrl: SAMPLE_ARTWORKS.abyssalLeviathan,
     entityType: 'Magia',
     element: 'MAGIA',
+    matrixRarity: 'Rara',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Feitiços Arcanos',
+    biome: 'Floresta',
+    collections: ['Set Base Slimelands'],
     allowedClasses: ['Comum', 'Rara', 'Lendária', 'Mítica'],
     availableForDrops: true,
     availableForScan: false,
@@ -288,6 +531,12 @@ export const INITIAL_BASE_CHARACTERS: BaseCharacter[] = [
     imageUrl: SAMPLE_ARTWORKS.solarArchangel,
     entityType: 'Magia',
     element: 'MAGIA',
+    matrixRarity: 'Comum',
+    classificationState: 'classified',
+    editState: 'configured',
+    family: 'Feitiços Arcanos',
+    biome: 'Pântano',
+    collections: ['Set Base Slimelands', 'Criaturas Sombrias'],
     allowedClasses: ['Comum', 'Rara', 'Lendária', 'Mítica'],
     availableForDrops: true,
     availableForScan: false,
@@ -755,8 +1004,10 @@ export const DEFAULT_CLASS_BALANCE_TABLES: Record<CardClass, ClassBalanceTable> 
   },
 };
 
+export const DEFAULT_BALANCE_TABLES = DEFAULT_CLASS_BALANCE_TABLES;
+
 /**
- * Default Official 9-Card Booster Model (Section 13 & 14):
+ * Default Official 9-Card Booster Models (Sections 12, 13 & 14):
  * - Slots 1 to 4: Comum (4)
  * - Slots 5 to 6: Rara (2)
  * - Slots 7 to 8: Magia (2)
@@ -770,9 +1021,91 @@ export const DEFAULT_BOOSTER_MODELS: BoosterModel[] = [
       'Pacote oficial de 9 cartas: 4 Comuns, 2 Raras, 2 Magias e 1 Carta Especial garantida de Rank Alto (A ou S).',
     totalCards: 9,
     active: true,
+    priceCoins: 150,
+    themeLabel: 'Geral · Todos os Biomas',
+    filters: {
+      rarities: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+      families: [],
+      biomes: [],
+      collections: [],
+      types: ['Criatura', 'Magia', 'Item'],
+      specificMatrixIds: [],
+    },
     specialSlotRankProbs: {
       S: 28,
       A: 72,
+      B: 0,
+      C: 0,
+      D: 0,
+    },
+    slots: [
+      { slotIndex: 1, label: 'Slot 1 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 2, label: 'Slot 2 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 3, label: 'Slot 3 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 4, label: 'Slot 4 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 5, label: 'Slot 5 · Rara', category: 'Rara', fixedClass: 'Rara', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 6, label: 'Slot 6 · Rara', category: 'Rara', fixedClass: 'Rara', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 7, label: 'Slot 7 · Magia', category: 'Magia', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 8, label: 'Slot 8 · Magia', category: 'Magia', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 9, label: 'Slot 9 · Especial Rank Alto (A/S)', category: 'Especial_Alto_Rank', allowedRanks: ['S', 'A'] },
+    ],
+  },
+  {
+    id: 'booster-floresta-9',
+    name: 'Booster Floresta',
+    description:
+      'Pack temático do Bioma Floresta: seleciona matrizes classificadas em Floresta (ex.: Slime Verde, Slime Musgo, Slime Guardião, Herisdia) e Magias.',
+    totalCards: 9,
+    active: true,
+    priceCoins: 180,
+    themeLabel: 'Bioma: Floresta',
+    filters: {
+      rarities: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+      families: [],
+      biomes: ['Floresta'],
+      collections: [],
+      types: ['Criatura', 'Magia'],
+      specificMatrixIds: [],
+    },
+    specialSlotRankProbs: {
+      S: 32,
+      A: 68,
+      B: 0,
+      C: 0,
+      D: 0,
+    },
+    slots: [
+      { slotIndex: 1, label: 'Slot 1 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 2, label: 'Slot 2 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 3, label: 'Slot 3 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 4, label: 'Slot 4 · Comum', category: 'Comum', fixedClass: 'Comum', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 5, label: 'Slot 5 · Rara', category: 'Rara', fixedClass: 'Rara', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 6, label: 'Slot 6 · Rara', category: 'Rara', fixedClass: 'Rara', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 7, label: 'Slot 7 · Magia', category: 'Magia', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 8, label: 'Slot 8 · Magia', category: 'Magia', allowedRanks: ['S', 'A', 'B', 'C', 'D'] },
+      { slotIndex: 9, label: 'Slot 9 · Especial Rank Alto (A/S)', category: 'Especial_Alto_Rank', allowedRanks: ['S', 'A'] },
+    ],
+  },
+  {
+    id: 'booster-pantano-sombrio-9',
+    name: 'Booster Pântano & Criaturas Sombrias',
+    description:
+      'Pack temático filtrado por Bioma Pântano / Reino Sombrio e Coleção Criaturas Sombrias.',
+    totalCards: 9,
+    active: true,
+    priceCoins: 220,
+    themeLabel: 'Pântano & Criaturas Sombrias',
+    filters: {
+      rarities: ['Comum', 'Rara', 'Épica', 'Lendária', 'Mítica', 'Limitada'],
+      families: ['Slimes Tóxicos', 'Slimes Cromáticos'],
+      biomes: ['Pântano', 'Reino Sombrio'],
+      collections: ['Criaturas Sombrias', 'Halloween'],
+      types: ['Criatura', 'Magia'],
+      specificMatrixIds: [],
+    },
+    specialSlotRankProbs: {
+      S: 35,
+      A: 65,
       B: 0,
       C: 0,
       D: 0,
@@ -793,7 +1126,6 @@ export const DEFAULT_BOOSTER_MODELS: BoosterModel[] = [
 
 /**
  * Generates stepped numerical values strictly inside [min, max] obeying `increment`.
- * Example: min=400, max=500, increment=5 -> 400, 405, 410 ... 500.
  */
 export function rollSteppedValue(min: number, max: number, increment: number): number {
   const safeMin = Math.min(min, max);
@@ -824,10 +1156,6 @@ export function pickWeighted<T>(items: { item: T; weight: number }[]): T {
   return valid[valid.length - 1].item;
 }
 
-/**
- * Auto-fills provisional fantasy content coherent with Worlds of Slimelands
- * when importing folders or creating characters with missing fields, without overwriting user edits.
- */
 const SLIME_TITLES = [
   'Slime Cristalina da Aurora',
   'Viscoso Abissal de Vórtex',
@@ -920,6 +1248,10 @@ export function ensureCoherentCharacterFields(
       partial.allowedClasses && partial.allowedClasses.length > 0
         ? partial.allowedClasses
         : ['Comum', 'Rara', 'Lendária', 'Mítica', 'Limitada'],
+    matrixRarity: partial.matrixRarity,
+    family: partial.family,
+    biome: partial.biome,
+    collections: partial.collections || [],
     availableForDrops: partial.availableForDrops ?? true,
     availableForScan: partial.availableForScan ?? true,
     availableForBoosters: partial.availableForBoosters ?? true,
@@ -934,7 +1266,6 @@ export function ensureCoherentCharacterFields(
 /**
  * Exact Parry Cost Calculator using integer half-points (Section 11).
  * Formula: Parry Cost = Attacker Mana * 0.5
- * Supports multiple attackers and verifies against available Stamina (max 9, milestones 3/6/9).
  */
 export function evaluateParryDefense(
   attackers: ParryAttackerInput[],
@@ -948,7 +1279,7 @@ export function evaluateParryDefense(
 
   const breakdown = attackers.map((atk) => {
     const safeMana = Math.max(0, Math.min(9, Math.round(atk.manaUsed)));
-    const parryHalfUnits = safeMana; // Since safeMana * 0.5 = safeMana half-units!
+    const parryHalfUnits = safeMana;
     const parryStaminaCost = parryHalfUnits / 2;
 
     if (atk.selectedToDefend) {
@@ -982,85 +1313,323 @@ export function evaluateParryDefense(
 }
 
 /**
- * SINGLE REUSABLE PROCEDURAL GENERATOR (Sections 1, 3, 4, 5, 6, 7, 8, 9, 10, 12, 17, 18)
- * Used across Map Scanning, Map Drops, Boosters, Folder Batch Imports, and Manual Instant Rolls.
+ * SECTION 3: IMPORTAÇÃO DE CARTAS NEUTRAS
+ * Creates an independent Matrix record in neutral state without rolling Rank, PV, Damage, Mana, Summon Cost, or random Rarity.
  */
-export interface ProceduralGenerationRequest {
-  character?: BaseCharacter;
-  charactersPool: BaseCharacter[];
+export function createNeutralMatrixCard(input: {
+  title: string;
+  imageUrl: string;
+  description?: string;
+  palette?: CardColorPalette;
+  deckId?: string;
+}): CardData {
+  const cleanTitle = (input.title || 'Carta Sem Nome').trim().toUpperCase();
+  const pal = input.palette || DEFAULT_PRESET_PALETTES[0];
+  const matrixId = `mtx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  const defaultBaseAbilities: CharacterAbilityTemplate[] = [
+    {
+      id: `${matrixId}-ab-1`,
+      name: 'Golpe Básico',
+      description: 'Habilidade inicial aguardando configuração na Matriz.',
+      tier: 'Básica',
+      unlockPriority: 1,
+      isProvisional: true,
+    },
+    {
+      id: `${matrixId}-ab-2`,
+      name: 'Técnica Especial',
+      description: 'Habilidade secundária da Matriz.',
+      tier: 'Intermediária',
+      unlockPriority: 2,
+      isProvisional: true,
+    },
+  ];
+
+  return {
+    id: matrixId,
+    recordKind: 'matrix',
+    classificationState: 'Não classificada',
+    editState: 'Importada / Neutra',
+    isNeutralMatrix: true,
+    title: cleanTitle,
+    pvText: 'PV—',
+    elementText: 'NEUTRA',
+    rankBadgeText: '—',
+    loreHeader: `${cleanTitle} · Matriz Não Classificada`,
+    loreBody:
+      input.description?.trim() ||
+      'Matriz importada em estado neutro. Classifique sua raridade, família, bioma, coleção e tipo antes de distribuir em packs.',
+    magicPrefix: '⚙️ Matriz Neutra (Sem Atributos Sorteados)',
+    magicDescription:
+      'Atributos variáveis (Rank, PV, Dano, Mana, Invocação) serão gerados apenas quando solicitado.',
+    showLoreBox: true,
+    loreBoxOpacity: 92,
+    loreBoxY: 724,
+    pillCount: 1,
+    dockAutoFit: true,
+    pills: [
+      { id: 'p1', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: 'NEUTRA' },
+      { id: 'p2', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: '—' },
+      { id: 'p3', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: '—' },
+      { id: 'p4', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: '—' },
+    ],
+    imageUrl: input.imageUrl,
+    videoUrl: null,
+    mediaType: 'image',
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0,
+    backgroundFill: 'dark',
+    autoAdaptColors: false,
+    frameTopColor: pal.frameTopColor,
+    frameMidColor: pal.frameMidColor,
+    frameBottomColor: pal.frameBottomColor,
+    strokeColor: pal.strokeColor,
+    strokeWidth: 2,
+    strokeGlow: 80,
+    elementTextColor: pal.elementTextColor,
+    rankCircleColor: pal.rankCircleColor,
+    extractedSwatches: [pal, ...DEFAULT_PRESET_PALETTES.slice(0, 4)],
+    isPremium: false,
+    prismaticIntensity: 60,
+    microGlitterIntensity: 50,
+    contourLightSpeed: 1.5,
+    parallaxDepth: 80,
+    autoShowcaseEnabled: false,
+    showcaseDurationSec: 5,
+    isRankChromatic: false,
+    isPvChromatic: false,
+    invertElementCapsule: true,
+    showcaseVfx: 'none',
+    showcaseVfxIntensity: 80,
+    vfxPlayOnNormalView: false,
+    backImageUrl: null,
+    backImageScale: 1,
+    backImageOffsetX: 0,
+    backImageOffsetY: 0,
+    deckId: input.deckId || 'deck-main',
+    entityType: 'Criatura',
+    origin: 'Importação de Pasta',
+    cardClass: undefined,
+    cardRank: undefined,
+    pvNumber: undefined,
+    maxDamage: undefined,
+    summonStaminaCost: undefined,
+    family: undefined,
+    biome: undefined,
+    collections: [],
+    baseAbilities: defaultBaseAbilities,
+    generatedAbilities: [],
+    createdAt: new Date().toISOString(),
+    rulesVersion: RULES_VERSION,
+  };
+}
+
+/**
+ * Builds a classified Matrix card from a BaseCharacter definition.
+ */
+export function createMatrixFromBaseCharacter(
+  char: BaseCharacter,
+  deckId = 'deck-main'
+): CardData {
+  const elementPaletteMap: Record<string, typeof DEFAULT_PRESET_PALETTES[0]> = {
+    TERRA: DEFAULT_PRESET_PALETTES[2],
+    AGUA: DEFAULT_PRESET_PALETTES[1],
+    FOGO: DEFAULT_PRESET_PALETTES[0],
+    ARCANO: DEFAULT_PRESET_PALETTES[3],
+    MAGIA: DEFAULT_PRESET_PALETTES[3],
+    LUZ: DEFAULT_PRESET_PALETTES[4],
+    VENENO: DEFAULT_PRESET_PALETTES[2],
+    SOMBRA: DEFAULT_PRESET_PALETTES[3],
+  };
+  const pal =
+    elementPaletteMap[char.element.toUpperCase()] || DEFAULT_PRESET_PALETTES[0];
+  const assignedRarity: CardClass =
+    char.matrixRarity || char.allowedClasses[0] || 'Comum';
+
+  return {
+    id: `mtx-${char.id}`,
+    recordKind: 'matrix',
+    classificationState: 'Classificada',
+    editState: 'Pronta para Packs',
+    isNeutralMatrix: false,
+    title: char.name.split(',')[0].trim(),
+    pvText: char.entityType === 'Magia' ? `MANA${char.magicManaCost ?? 3}` : 'PV—',
+    elementText: char.element.slice(0, 6).toUpperCase(),
+    rankBadgeText: '—',
+    loreHeader: `${char.name} · Matriz ${assignedRarity}`,
+    loreBody: char.description,
+    magicPrefix:
+      char.entityType === 'Magia'
+        ? `✨ Magia (${char.magicTarget || 'Campo'})`
+        : `🧬 Matriz Base (${char.abilities.length} Habilidades)`,
+    magicDescription:
+      char.abilities[0]?.specialEffect ||
+      char.abilities[0]?.description ||
+      char.description,
+    showLoreBox: true,
+    loreBoxOpacity: 92,
+    loreBoxY: 724,
+    pillCount: Math.min(4, Math.max(1, char.abilities.length)) as 1 | 2 | 3 | 4,
+    dockAutoFit: true,
+    pills: [
+      {
+        id: 'p1',
+        mode: 'text',
+        badgeValue: '1',
+        badgeColor: '#0084FF',
+        mainText: char.abilities[0]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 1',
+      },
+      {
+        id: 'p2',
+        mode: 'text',
+        badgeValue: '2',
+        badgeColor: '#10B981',
+        mainText: char.abilities[1]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 2',
+      },
+      {
+        id: 'p3',
+        mode: 'text',
+        badgeValue: '3',
+        badgeColor: '#9333EA',
+        mainText: char.abilities[2]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 3',
+      },
+      {
+        id: 'p4',
+        mode: 'text',
+        badgeValue: '4',
+        badgeColor: '#DF9A1E',
+        mainText: char.abilities[3]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 4',
+      },
+    ],
+    imageUrl: char.imageUrl ? char.imageUrl : null,
+    videoUrl: null,
+    mediaType: 'image',
+    imageScale: 1,
+    imageOffsetX: 0,
+    imageOffsetY: 0,
+    backgroundFill: 'dark',
+    autoAdaptColors: true,
+    frameTopColor: pal.frameTopColor,
+    frameMidColor: pal.frameMidColor,
+    frameBottomColor: pal.frameBottomColor,
+    strokeColor: pal.strokeColor,
+    strokeWidth: 2,
+    strokeGlow: 100,
+    elementTextColor: pal.elementTextColor,
+    rankCircleColor: pal.rankCircleColor,
+    extractedSwatches: DEFAULT_PRESET_PALETTES,
+    isPremium:
+      assignedRarity === 'Lendária' ||
+      assignedRarity === 'Mítica' ||
+      assignedRarity === 'Limitada',
+    prismaticIntensity: 100,
+    microGlitterIntensity: 100,
+    contourLightSpeed: 1.8,
+    parallaxDepth: 100,
+    autoShowcaseEnabled: false,
+    showcaseDurationSec: 5,
+    isRankChromatic:
+      assignedRarity === 'Mítica' ||
+      assignedRarity === 'Lendária' ||
+      assignedRarity === 'Limitada',
+    isPvChromatic:
+      assignedRarity === 'Mítica' ||
+      assignedRarity === 'Lendária' ||
+      assignedRarity === 'Limitada',
+    invertElementCapsule: true,
+    showcaseVfx: 'none',
+    showcaseVfxIntensity: 85,
+    vfxPlayOnNormalView: false,
+    backImageUrl: null,
+    backImageScale: 1,
+    backImageOffsetX: 0,
+    backImageOffsetY: 0,
+    baseCharacterId: char.id,
+    cardClass: assignedRarity,
+    cardRank: undefined,
+    entityType: char.entityType,
+    family: char.family,
+    biome: char.biome,
+    collections: char.collections || [],
+    baseAbilities: char.abilities,
+    generatedAbilities: [],
+    origin: 'Manual',
+    deckId,
+    createdAt: new Date().toISOString(),
+    rulesVersion: RULES_VERSION,
+    magicManaCost: char.magicManaCost,
+    magicTarget: char.magicTarget,
+    magicCondition: char.magicCondition,
+  };
+}
+
+/**
+ * SECTION 8, 9 & 10: GENERATE VERSION OR INSTANCE FROM A CLASSIFIED MATRIX
+ * Never re-rolls the Matrix's rarity, family, biome, collections, type, or base ability names.
+ * Only generates the variable numerical attributes (Rank, PV, Damage, Mana, Summon Cost)
+ * according to the Matrix's assigned Rarity and the Balance Table.
+ */
+export interface MatrixGenerationRequest {
+  matrix: CardData;
   balanceTables: Record<CardClass, ClassBalanceTable>;
-  origin: CardOrigin;
-  forcedClass?: CardClass;
+  targetRecordKind: 'version' | 'instance';
+  origin?: CardOrigin;
   forcedRank?: CardRank;
-  allowedClassesOverride?: CardClass[];
   allowedRanksOverride?: CardRank[];
-  onlyMagic?: boolean;
-  excludeMagic?: boolean;
   deckId?: string;
 }
 
-export function generateProceduralCard(req: ProceduralGenerationRequest): CardData {
+export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
   const {
-    charactersPool,
+    matrix,
     balanceTables,
-    origin,
-    forcedClass,
+    targetRecordKind,
+    origin = 'Booster',
     forcedRank,
-    allowedClassesOverride,
     allowedRanksOverride,
-    onlyMagic,
-    excludeMagic,
-    deckId = 'deck-main',
+    deckId,
   } = req;
 
-  // 1. Select eligible Base Character
-  let chosenChar = req.character;
-  if (!chosenChar) {
-    const eligibleChars = charactersPool.filter((c) => {
-      if (!c.active) return false;
-      if (onlyMagic && c.entityType !== 'Magia') return false;
-      if (excludeMagic && c.entityType === 'Magia') return false;
-      if (origin === 'Escaneamento' && !c.availableForScan) return false;
-      if (origin === 'Drop de Mapa' && !c.availableForDrops) return false;
-      if (origin === 'Booster' && !c.availableForBoosters) return false;
-      return true;
-    });
-    const pool = eligibleChars.length > 0 ? eligibleChars : charactersPool;
-    chosenChar = pool[Math.floor(Math.random() * pool.length)] || INITIAL_BASE_CHARACTERS[0];
+  // If this is an instance generation for a Booster and the admin enabled a Fixed Version on the matrix,
+  // clone the fixed attributes directly while assigning a unique instance ID!
+  if (
+    targetRecordKind === 'instance' &&
+    matrix.useFixedVersionInPacks &&
+    !matrix.isNeutralMatrix &&
+    matrix.cardRank &&
+    (matrix.pvNumber !== undefined || matrix.entityType !== 'Criatura')
+  ) {
+    return {
+      ...matrix,
+      id: `inst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      recordKind: 'instance',
+      sourceMatrixId: matrix.sourceMatrixId || matrix.id,
+      origin,
+      deckId: deckId || matrix.deckId,
+      generatedAbilities: matrix.generatedAbilities
+        ? matrix.generatedAbilities.map((ab) => ({ ...ab }))
+        : [],
+      pills: [
+        { ...matrix.pills[0] },
+        { ...matrix.pills[1] },
+        { ...matrix.pills[2] },
+        { ...matrix.pills[3] },
+      ],
+      createdAt: new Date().toISOString(),
+    };
   }
 
-  // 2. Determine enabled & eligible Classes for this character
-  const enabledClasses = OFFICIAL_CLASSES.filter((cls) => {
-    const table = balanceTables[cls];
-    if (!table || !table.enabled) return false;
-    if (!chosenChar!.allowedClasses.includes(cls)) return false;
-    if (allowedClassesOverride && !allowedClassesOverride.includes(cls)) return false;
-    return true;
-  });
+  // Rarity is strictly inherited from the Matrix (Section 4: "A raridade da matriz não deve ser sorteada novamente")
+  const matrixRarity: CardClass = matrix.cardClass || 'Comum';
+  const classTable = balanceTables[matrixRarity] || balanceTables.Comum;
+  const entityType: CardEntityType = matrix.entityType || 'Criatura';
+  const isCreature = entityType === 'Criatura';
+  const isMagicCard = entityType === 'Magia';
+  const isItemCard = entityType === 'Item';
 
-  const chosenClass: CardClass =
-    forcedClass && balanceTables[forcedClass]?.enabled
-      ? forcedClass
-      : (chosenChar.rarity && chosenChar.rarity !== 'Não classificada' && balanceTables[chosenChar.rarity as CardClass]?.enabled)
-      ? (chosenChar.rarity as CardClass)
-      : enabledClasses.length > 0
-      ? pickWeighted(
-          enabledClasses.map((cls) => {
-            const t = balanceTables[cls];
-            const weight =
-              origin === 'Escaneamento'
-                ? t.scanProbability
-                : origin === 'Drop de Mapa'
-                ? t.dropProbability
-                : t.boosterSpecialProbability;
-            return { item: cls, weight };
-          })
-        )
-      : 'Comum';
-
-  const classTable = balanceTables[chosenClass] || balanceTables.Comum;
-
-  // 3. Determine Rank (S, A, B, C, D)
+  // Determine Rank (S, A, B, C, D)
   const candidateRanks: CardRank[] =
     allowedRanksOverride && allowedRanksOverride.length > 0
       ? OFFICIAL_RANKS.filter((r) => allowedRanksOverride.includes(r))
@@ -1078,23 +1647,19 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
 
   const rankRule = classTable.ranks[chosenRank] || classTable.ranks.B;
 
-  // 4. Handle MAGIC CARDS vs CREATURE CARDS (Section 12)
-  const isMagicCard = chosenChar.entityType === 'Magia';
+  // Section 5.4: "Uma carta de Magia não deverá receber automaticamente PV ou custo de invocação de criatura."
+  const rolledPv = isCreature
+    ? rollSteppedValue(rankRule.pvMin, rankRule.pvMax, rankRule.pvIncrement)
+    : 0;
 
-  // Roll PV & Summon Cost for Creatures
-  const rolledPv = isMagicCard
-    ? 0
-    : rollSteppedValue(rankRule.pvMin, rankRule.pvMax, rankRule.pvIncrement);
+  const rolledSummonCost = isCreature
+    ? Math.max(1, Math.min(9, rollSteppedValue(rankRule.summonCostMin, rankRule.summonCostMax, 1)))
+    : isMagicCard
+    ? Math.max(1, Math.min(9, matrix.magicManaCost ?? 3))
+    : 0;
 
-  const rolledSummonCost = isMagicCard
-    ? Math.max(1, Math.min(9, chosenChar.magicManaCost ?? 3))
-    : Math.max(
-        1,
-        Math.min(9, rollSteppedValue(rankRule.summonCostMin, rankRule.summonCostMax, 1))
-      );
-
-  // 5. Determine number of abilities for this Class (Section 7)
-  const abilityCount = isMagicCard
+  // Determine number of abilities for this Rarity
+  const abilityCount = !isCreature
     ? 1
     : (Math.max(
         1,
@@ -1104,27 +1669,62 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
         )
       ) as 1 | 2 | 3 | 4);
 
-  // Select abilities from BaseCharacter sorted by unlockPriority (preserving identity)
-  const sortedTemplates = [...chosenChar.abilities].sort(
-    (a, b) => a.unlockPriority - b.unlockPriority
-  );
-  const selectedTemplates = sortedTemplates.slice(0, abilityCount);
+  // Preserve base ability names from the Matrix (Section 9: "Não substituir automaticamente os nomes das habilidades já cadastradas")
+  const baseTemplates: CharacterAbilityTemplate[] =
+    matrix.baseAbilities && matrix.baseAbilities.length > 0
+      ? [...matrix.baseAbilities].sort((a, b) => a.unlockPriority - b.unlockPriority)
+      : matrix.generatedAbilities && matrix.generatedAbilities.length > 0
+      ? matrix.generatedAbilities.map((ga, idx) => ({
+          id: ga.templateId || ga.id,
+          name: ga.name,
+          description: ga.description,
+          tier: ga.tier,
+          specialEffect: ga.specialEffect,
+          unlockPriority: (idx + 1) as 1 | 2 | 3 | 4,
+        }))
+      : [
+          {
+            id: `${matrix.id}-ab-1`,
+            name: isMagicCard ? matrix.title : 'Ataque Viscoso',
+            description: matrix.loreBody || 'Habilidade canalizada de Slimelands.',
+            tier: isMagicCard ? 'Magia' : 'Básica',
+            unlockPriority: 1,
+          },
+          {
+            id: `${matrix.id}-ab-2`,
+            name: 'Investida Elemental',
+            description: 'Segundo ataque da matriz.',
+            tier: 'Intermediária',
+            unlockPriority: 2,
+          },
+          {
+            id: `${matrix.id}-ab-3`,
+            name: 'Explosão de Núcleo',
+            description: 'Terceiro ataque da matriz.',
+            tier: 'Forte',
+            unlockPriority: 3,
+          },
+          {
+            id: `${matrix.id}-ab-4`,
+            name: 'Supremacia Ancestral',
+            description: 'Habilidade suprema da matriz.',
+            tier: 'Suprema',
+            unlockPriority: 4,
+          },
+        ];
+
+  const selectedTemplates = baseTemplates.slice(0, abilityCount);
   while (selectedTemplates.length < abilityCount) {
     const idx = selectedTemplates.length + 1;
     selectedTemplates.push({
-      id: `ab-auto-${idx}`,
-      name: `Ataque Elemental ${idx}`,
-      description: 'Golpe canalizado pela essência de Slimelands.',
+      id: `${matrix.id}-ab-auto-${idx}`,
+      name: `Habilidade ${idx}`,
+      description: 'Habilidade adicional liberada pela raridade.',
       tier: idx === 1 ? 'Básica' : idx === 2 ? 'Intermediária' : idx === 3 ? 'Forte' : 'Suprema',
       unlockPriority: idx as 1 | 2 | 3 | 4,
     });
   }
 
-  // 6. Distribute Damage & Mana Coherently across Abilities (Sections 8 & 9)
-  // Ability 1: Básica (Mana 1-2, ~30-45% of max)
-  // Ability 2: Intermediária (Mana 3-4, ~50-68% of max)
-  // Ability 3: Forte (Mana 5-6, ~72-86% of max)
-  // Ability 4: Suprema (Mana 7-9, ~88-100% of max)
   const tierDamageFactors: [number, number][] = [
     [0.28, 0.45],
     [0.48, 0.66],
@@ -1138,32 +1738,32 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
     [7, 9],
   ];
 
-  // Decide which ability index is Free (0 Mana) if guaranteedFreeAbility is active (e.g., Mítica)
   const freeIndex =
-    !isMagicCard && classTable.guaranteedFreeAbility
-      ? selectedTemplates.length - 1 // Make the signature/highest ability free (Chromatic ∞)
+    isCreature && classTable.guaranteedFreeAbility
+      ? selectedTemplates.length - 1
       : -1;
 
   const generatedAbilities: GeneratedAbilityInstance[] = selectedTemplates.map(
     (tpl, idx) => {
-      if (isMagicCard) {
-        const mana = Math.max(1, Math.min(9, chosenChar!.magicManaCost ?? 3));
+      if (!isCreature) {
+        const mana = isMagicCard
+          ? Math.max(1, Math.min(9, matrix.magicManaCost ?? 3))
+          : 0;
         return {
           id: `${tpl.id}-inst-${idx}`,
           templateId: tpl.id,
           name: tpl.name,
           description: tpl.description,
-          tier: 'Magia',
+          tier: isMagicCard ? 'Magia' : 'Básica',
           damage: 0,
           manaCost: mana,
-          isFree: false,
-          parryStaminaCost: (mana * 1) / 2,
+          isFree: isItemCard,
+          parryStaminaCost: mana * 0.5,
           specialEffect: tpl.specialEffect,
           unlockOrder: idx + 1,
         };
       }
 
-      // Scale factor based on slot position so multiple abilities always progress in damage
       const factorPair =
         abilityCount === 1
           ? [0.75, 1.0]
@@ -1206,8 +1806,7 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
     }
   );
 
-  // Ensure strictly increasing damage when there are multiple creature attacks
-  if (!isMagicCard && generatedAbilities.length > 1) {
+  if (isCreature && generatedAbilities.length > 1) {
     for (let i = 1; i < generatedAbilities.length; i++) {
       if (generatedAbilities[i].damage <= generatedAbilities[i - 1].damage) {
         generatedAbilities[i].damage = Math.min(
@@ -1218,11 +1817,10 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
     }
   }
 
-  const maxDamage = isMagicCard
-    ? 0
-    : Math.max(...generatedAbilities.map((a) => a.damage), 0);
+  const maxDamage = isCreature
+    ? Math.max(...generatedAbilities.map((a) => a.damage), 0)
+    : 0;
 
-  // 7. Map generated abilities onto the 4 BottomStatPills of the visual CardFrameSVG
   const badgePaletteByMana = (mana: number) => {
     if (mana <= 2) return '#0084FF';
     if (mana <= 4) return '#10B981';
@@ -1248,6 +1846,15 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
           mainText: 'MAGIA',
           isChromaticSpecial: ab.isFree,
         };
+      } else if (isItemCard) {
+        defaultPills[i] = {
+          id: `p${i + 1}`,
+          mode: 'stat',
+          badgeValue: 'ITEM',
+          badgeColor: '#F59E0B',
+          mainText: 'EQUIP',
+          isChromaticSpecial: false,
+        };
       } else {
         defaultPills[i] = {
           id: `p${i + 1}`,
@@ -1261,220 +1868,320 @@ export function generateProceduralCard(req: ProceduralGenerationRequest): CardDa
     }
   });
 
-  // Choose palette based on Element
-  const elementPaletteMap: Record<string, typeof DEFAULT_PRESET_PALETTES[0]> = {
-    TERRA: DEFAULT_PRESET_PALETTES[2],
-    AGUA: DEFAULT_PRESET_PALETTES[1],
-    FOGO: DEFAULT_PRESET_PALETTES[0],
-    ARCANO: DEFAULT_PRESET_PALETTES[3],
-    MAGIA: DEFAULT_PRESET_PALETTES[3],
-    LUZ: DEFAULT_PRESET_PALETTES[4],
-    VENENO: DEFAULT_PRESET_PALETTES[2],
-    SOMBRA: DEFAULT_PRESET_PALETTES[3],
-  };
-  const pal =
-    elementPaletteMap[chosenChar.element.toUpperCase()] || DEFAULT_PRESET_PALETTES[0];
-
   const isPremiumByDefault =
-    chosenClass === 'Lendária' ||
-    chosenClass === 'Mítica' ||
-    chosenClass === 'Limitada' ||
+    matrixRarity === 'Lendária' ||
+    matrixRarity === 'Mítica' ||
+    matrixRarity === 'Limitada' ||
     chosenRank === 'S';
 
   const topAbility = generatedAbilities[generatedAbilities.length - 1];
+  const prefixId = targetRecordKind === 'version' ? 'ver' : 'inst';
 
-  // 8. Build the complete CardData instance with the requested defaults (2px stroke, 100% glow, 100% prismatic, 100% glitter, 100% parallax, 100% keylight speed)
   return {
-    id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    title: chosenChar.name.split(',')[0].trim(),
-    pvText: isMagicCard ? `MANA${rolledSummonCost}` : `PV${rolledPv}`,
-    elementText: chosenChar.element.slice(0, 6).toUpperCase(),
+    ...matrix,
+    id: `${prefixId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    recordKind: targetRecordKind,
+    sourceMatrixId: matrix.sourceMatrixId || matrix.id,
+    classificationState: 'Classificada',
+    editState: targetRecordKind === 'version' ? 'Versão Aleatória' : 'Pronta para Packs',
+    isNeutralMatrix: false,
+    pvText: isMagicCard
+      ? `MANA${rolledSummonCost}`
+      : isItemCard
+      ? 'ITEM'
+      : `PV${rolledPv}`,
+    elementText:
+      matrix.elementText && matrix.elementText !== 'NEUTRA' && matrix.elementText !== 'MATRIZ'
+        ? matrix.elementText
+        : (matrix.biome || matrix.family || entityType).slice(0, 6).toUpperCase(),
     rankBadgeText: chosenRank,
-    loreHeader: `${chosenChar.name} · ${chosenClass} (Estamina ${rolledSummonCost})`,
-    loreBody: chosenChar.description,
+    loreHeader: isCreature
+      ? `${matrix.title} · ${matrixRarity} (Estamina ${rolledSummonCost})`
+      : `${matrix.title} · ${entityType} (${matrixRarity})`,
     magicPrefix: isMagicCard
-      ? `✨ Magia (${chosenChar.magicTarget || 'Campo'})`
+      ? `✨ Magia (${matrix.magicTarget || 'Campo'})`
+      : isItemCard
+      ? `🛡️ Item (${matrixRarity})`
       : `⚔️ ${topAbility.name} (${topAbility.isFree ? 'Custo 0 · ∞' : `${topAbility.manaCost} Mana`})`,
-    magicDescription:
-      topAbility.specialEffect || topAbility.description,
-    showLoreBox: true,
-    loreBoxOpacity: 92,
-    loreBoxY: 724,
+    magicDescription: topAbility.specialEffect || topAbility.description,
     pillCount: abilityCount,
-    dockAutoFit: true,
     pills: defaultPills,
-    imageUrl: chosenChar.imageUrl ? chosenChar.imageUrl : null,
-    videoUrl: null,
-    mediaType: 'image',
-    imageScale: 1,
-    imageOffsetX: 0,
-    imageOffsetY: 0,
-    backgroundFill: 'dark',
-    autoAdaptColors: true,
-    frameTopColor: pal.frameTopColor,
-    frameMidColor: pal.frameMidColor,
-    frameBottomColor: pal.frameBottomColor,
-    strokeColor: pal.strokeColor,
-    // Mandatory new user defaults: 2px contour & 100% shine/effects
-    strokeWidth: 2,
-    strokeGlow: 100,
-    elementTextColor: pal.elementTextColor,
-    rankCircleColor: pal.rankCircleColor,
-    extractedSwatches: DEFAULT_PRESET_PALETTES,
     isPremium: isPremiumByDefault,
-    prismaticIntensity: 100,
-    microGlitterIntensity: 100,
-    contourLightSpeed: 1.8,
-    parallaxDepth: 100,
-    autoShowcaseEnabled: false,
-    showcaseDurationSec: 5,
     isRankChromatic:
-      chosenClass === 'Mítica' ||
-      chosenClass === 'Lendária' ||
-      chosenClass === 'Limitada' ||
+      matrixRarity === 'Mítica' ||
+      matrixRarity === 'Lendária' ||
+      matrixRarity === 'Limitada' ||
       chosenRank === 'S',
     isPvChromatic:
-      chosenClass === 'Mítica' ||
-      chosenClass === 'Lendária' ||
-      chosenClass === 'Limitada',
-    invertElementCapsule: true,
-    showcaseVfx: 'none',
-    showcaseVfxIntensity: 85,
-    vfxPlayOnNormalView: false,
-    backImageUrl: null,
-    backImageScale: 1,
-    backImageOffsetX: 0,
-    backImageOffsetY: 0,
-    // Worlds of Slimelands Procedural Instance Fields
-    baseCharacterId: chosenChar.id,
-    cardClass: chosenClass,
+      matrixRarity === 'Mítica' ||
+      matrixRarity === 'Lendária' ||
+      matrixRarity === 'Limitada',
+    cardClass: matrixRarity,
     cardRank: chosenRank,
-    entityType: chosenChar.entityType,
-    pvNumber: rolledPv,
-    maxDamage,
-    summonStaminaCost: rolledSummonCost,
-    generatedAbilities,
+    entityType,
     origin,
-    deckId,
+    deckId: deckId || matrix.deckId || 'deck-main',
+    pvNumber: isCreature ? rolledPv : undefined,
+    maxDamage: isCreature ? maxDamage : undefined,
+    summonStaminaCost: isCreature ? rolledSummonCost : undefined,
+    generatedAbilities,
+    baseAbilities: baseTemplates,
     createdAt: new Date().toISOString(),
     rulesVersion: RULES_VERSION,
-    // Matrix Instance Links & Subgroups (Section 8)
-    rarity: chosenClass,
-    family: chosenChar.family,
-    biome: chosenChar.biome,
-    themeCollections: chosenChar.themeCollections,
-    isClassified: true,
-    isMatrixBlueprint: false,
-    matrixId: chosenChar.id,
-    versionId: `inst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
   };
 }
 
 /**
- * Generates an official 9-card Booster Pack using the exact same procedural engine (Section 13).
- * Automatically normalizes Special Slot (Slot 9) class probabilities across enabled classes.
+ * Legacy helper preserved for compatibility — builds a classified Matrix from a BaseCharacter and rolls its attributes.
+ */
+export interface ProceduralGenerationRequest {
+  character?: BaseCharacter;
+  charactersPool: BaseCharacter[];
+  balanceTables: Record<CardClass, ClassBalanceTable>;
+  origin: CardOrigin;
+  forcedClass?: CardClass;
+  forcedRank?: CardRank;
+  allowedClassesOverride?: CardClass[];
+  allowedRanksOverride?: CardRank[];
+  onlyMagic?: boolean;
+  excludeMagic?: boolean;
+  deckId?: string;
+}
+
+export function generateProceduralCard(req: ProceduralGenerationRequest): CardData {
+  const {
+    charactersPool,
+    balanceTables,
+    origin,
+    forcedClass,
+    forcedRank,
+    allowedClassesOverride,
+    allowedRanksOverride,
+    onlyMagic,
+    excludeMagic,
+    deckId = 'deck-main',
+  } = req;
+
+  let chosenChar = req.character;
+  if (!chosenChar) {
+    const eligibleChars = charactersPool.filter((c) => {
+      if (!c.active) return false;
+      if (onlyMagic && c.entityType !== 'Magia') return false;
+      if (excludeMagic && c.entityType === 'Magia') return false;
+      return true;
+    });
+    const pool = eligibleChars.length > 0 ? eligibleChars : charactersPool;
+    chosenChar = pool[Math.floor(Math.random() * pool.length)] || INITIAL_BASE_CHARACTERS[0];
+  }
+
+  const baseMatrix = createMatrixFromBaseCharacter(chosenChar, deckId);
+  if (forcedClass && balanceTables[forcedClass]?.enabled) {
+    baseMatrix.cardClass = forcedClass;
+  } else if (allowedClassesOverride && allowedClassesOverride.length > 0) {
+    const valid = allowedClassesOverride.filter((c) => balanceTables[c]?.enabled);
+    if (valid.length > 0 && (!baseMatrix.cardClass || !valid.includes(baseMatrix.cardClass))) {
+      baseMatrix.cardClass = valid[0];
+    }
+  }
+
+  return generateFromMatrix({
+    matrix: baseMatrix,
+    balanceTables,
+    targetRecordKind: 'instance',
+    origin,
+    forcedRank,
+    allowedRanksOverride,
+    deckId,
+  });
+}
+
+/**
+ * SECTION 12 & 13: PACK ELIGIBILITY FILTERING BY MATRIX CLASSIFICATIONS
+ * Queries classified Matrices without duplicating records.
+ */
+export function getEligibleMatricesForPack(
+  booster: BoosterModel,
+  matrixCatalog: CardData[],
+  balanceTables: Record<CardClass, ClassBalanceTable>
+): CardData[] {
+  const classifiedMatrices = matrixCatalog.filter((card) => {
+    if (card.recordKind === 'instance') return false;
+    if (card.classificationState === 'Não classificada' || card.isNeutralMatrix) return false;
+    if (!card.cardClass) return false;
+    const rarityTable = balanceTables[card.cardClass];
+    if (!rarityTable || !rarityTable.enabled) return false;
+    return true;
+  });
+
+  const filters = booster.filters;
+  if (!filters) return classifiedMatrices;
+
+  const filtered = classifiedMatrices.filter((card) => {
+    if (
+      filters.specificMatrixIds &&
+      filters.specificMatrixIds.length > 0 &&
+      !filters.specificMatrixIds.includes(card.id)
+    ) {
+      return false;
+    }
+    if (
+      filters.rarities &&
+      filters.rarities.length > 0 &&
+      card.cardClass &&
+      !filters.rarities.includes(card.cardClass)
+    ) {
+      return false;
+    }
+    if (
+      filters.biomes &&
+      filters.biomes.length > 0 &&
+      (!card.biome || !filters.biomes.includes(card.biome))
+    ) {
+      return false;
+    }
+    if (
+      filters.families &&
+      filters.families.length > 0 &&
+      (!card.family || !filters.families.includes(card.family))
+    ) {
+      return false;
+    }
+    if (
+      filters.collections &&
+      filters.collections.length > 0 &&
+      (!card.collections || !card.collections.some((c) => filters.collections!.includes(c)))
+    ) {
+      return false;
+    }
+    if (
+      filters.types &&
+      filters.types.length > 0 &&
+      card.entityType &&
+      !filters.types.includes(card.entityType)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return filtered.length > 0 ? filtered : classifiedMatrices;
+}
+
+/**
+ * Generates an official 9-card Booster Pack using Matrix references (Sections 12, 13 & 14).
+ * - Slots 1 to 4: Comum (4)
+ * - Slots 5 to 6: Rara (2)
+ * - Slots 7 to 8: Magia (2)
+ * - Slot 9: Carta especial de rank alto (A ou S) (1)
  */
 export function generateBoosterPack(
   booster: BoosterModel,
   charactersPool: BaseCharacter[],
   balanceTables: Record<CardClass, ClassBalanceTable>,
-  deckId = 'deck-main'
+  deckId = 'deck-main',
+  matrixCards: CardData[] = []
 ): CardData[] {
-  const packCards: CardData[] = [];
+  const fallbackMatrices = charactersPool
+    .filter((c) => c.active)
+    .map((c) => createMatrixFromBaseCharacter(c, deckId));
 
-  // 1. Filter out unclassified blueprints: only classified characters enter boosters (Section 3 & 12)
-  const classifiedPool = charactersPool.filter(
-    (c) => c.active && c.rarity !== 'Não classificada' && c.isClassified !== false
-  );
+  const combinedPool = [
+    ...matrixCards.filter((c) => c.recordKind !== 'instance'),
+    ...fallbackMatrices.filter(
+      (fb) =>
+        !matrixCards.some(
+          (m) =>
+            m.baseCharacterId === fb.baseCharacterId ||
+            m.title.toUpperCase() === fb.title.toUpperCase()
+        )
+    ),
+  ];
 
-  // 2. Filter by booster criteria if specified
-  const filteredPool = classifiedPool.filter((c) => {
-    if (booster.biomes && booster.biomes.length > 0 && c.biome && !booster.biomes.includes(c.biome)) return false;
-    if (booster.families && booster.families.length > 0 && c.family && !booster.families.includes(c.family)) return false;
-    if (booster.themeCollections && booster.themeCollections.length > 0) {
-      const match = c.themeCollections?.some((col) => booster.themeCollections!.includes(col));
-      if (!match) return false;
-    }
-    if (booster.matrixIds && booster.matrixIds.length > 0 && !booster.matrixIds.includes(c.id)) return false;
-    return true;
-  });
+  const eligibleMatrices = getEligibleMatricesForPack(booster, combinedPool, balanceTables);
 
-  const effectivePool = filteredPool.length > 0 
-    ? filteredPool 
-    : classifiedPool.length > 0 
-    ? classifiedPool 
-    : charactersPool;
-
-  const pickCharacterForCategory = (category: CardClass, onlyMagic?: boolean, excludeMagic?: boolean): BaseCharacter | undefined => {
-    const candidates = effectivePool.filter((c) => {
-      if (onlyMagic && c.entityType !== 'Magia') return false;
-      if (excludeMagic && c.entityType === 'Magia') return false;
-      if (c.rarity && c.rarity !== 'Não classificada') {
-        return c.rarity === category;
-      }
-      return c.allowedClasses.includes(category);
-    });
-    if (candidates.length > 0) {
-      return candidates[Math.floor(Math.random() * candidates.length)];
-    }
-    return undefined;
+  const pickRandomMatrix = (candidates: CardData[], fallbackAll: CardData[]): CardData => {
+    const pool =
+      candidates.length > 0
+        ? candidates
+        : fallbackAll.length > 0
+        ? fallbackAll
+        : fallbackMatrices;
+    return pool[Math.floor(Math.random() * pool.length)] || fallbackMatrices[0];
   };
+
+  const packCards: CardData[] = [];
 
   for (const slot of booster.slots) {
     if (slot.category === 'Comum') {
-      const chosenChar = pickCharacterForCategory('Comum', false, true);
+      const commonPool = eligibleMatrices.filter(
+        (m) => m.cardClass === 'Comum' && m.entityType !== 'Magia'
+      );
+      const fallbackCommon = combinedPool.filter(
+        (m) => m.cardClass === 'Comum' && m.entityType !== 'Magia' && !m.isNeutralMatrix
+      );
+      const chosenMatrix = pickRandomMatrix(commonPool, fallbackCommon);
       packCards.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: effectivePool,
+        generateFromMatrix({
+          matrix: { ...chosenMatrix, cardClass: chosenMatrix.cardClass || 'Comum' },
           balanceTables,
+          targetRecordKind: 'instance',
           origin: 'Booster',
-          forcedClass: 'Comum',
           allowedRanksOverride: slot.allowedRanks,
-          excludeMagic: true,
           deckId,
         })
       );
     } else if (slot.category === 'Rara') {
-      const chosenChar = pickCharacterForCategory('Rara', false, true);
+      const rarePool = eligibleMatrices.filter(
+        (m) => m.cardClass === 'Rara' && m.entityType !== 'Magia'
+      );
+      const fallbackRare = combinedPool.filter(
+        (m) => m.cardClass === 'Rara' && m.entityType !== 'Magia' && !m.isNeutralMatrix
+      );
+      const chosenMatrix = pickRandomMatrix(rarePool, fallbackRare);
       packCards.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: effectivePool,
+        generateFromMatrix({
+          matrix: { ...chosenMatrix, cardClass: chosenMatrix.cardClass || 'Rara' },
           balanceTables,
+          targetRecordKind: 'instance',
           origin: 'Booster',
-          forcedClass: 'Rara',
           allowedRanksOverride: slot.allowedRanks,
-          excludeMagic: true,
           deckId,
         })
       );
     } else if (slot.category === 'Magia') {
-      const magicCandidates = effectivePool.filter((c) => c.entityType === 'Magia');
-      const chosenChar = magicCandidates.length > 0 
-        ? magicCandidates[Math.floor(Math.random() * magicCandidates.length)]
-        : undefined;
-
+      const magicPool = eligibleMatrices.filter((m) => m.entityType === 'Magia');
+      const fallbackMagic = combinedPool.filter(
+        (m) => m.entityType === 'Magia' && !m.isNeutralMatrix
+      );
+      const chosenMatrix = pickRandomMatrix(magicPool, fallbackMagic);
       packCards.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: effectivePool,
+        generateFromMatrix({
+          matrix: { ...chosenMatrix, entityType: 'Magia' },
           balanceTables,
+          targetRecordKind: 'instance',
           origin: 'Booster',
-          onlyMagic: true,
           allowedRanksOverride: slot.allowedRanks,
           deckId,
         })
       );
     } else if (slot.category === 'Especial_Alto_Rank') {
-      // Slot 9: High Rank (A or S) across all enabled classes with normalized probabilities
+      const nonMagicEligible = eligibleMatrices.filter((m) => m.entityType !== 'Magia');
       const enabledClasses = OFFICIAL_CLASSES.filter(
+        (cls) =>
+          balanceTables[cls]?.enabled &&
+          balanceTables[cls].boosterSpecialProbability > 0 &&
+          nonMagicEligible.some((m) => m.cardClass === cls)
+      );
+      const fallbackEnabledClasses = OFFICIAL_CLASSES.filter(
         (cls) =>
           balanceTables[cls]?.enabled &&
           balanceTables[cls].boosterSpecialProbability > 0
       );
+      const activePoolClasses =
+        enabledClasses.length > 0 ? enabledClasses : fallbackEnabledClasses;
+
       const specialClass = pickWeighted(
-        enabledClasses.map((cls) => ({
+        activePoolClasses.map((cls) => ({
           item: cls,
           weight: balanceTables[cls].boosterSpecialProbability,
         }))
@@ -1486,30 +2193,32 @@ export function generateBoosterPack(
         }))
       );
 
-      const chosenChar = pickCharacterForCategory(specialClass, false, true);
+      const specialCandidates = nonMagicEligible.filter(
+        (m) => m.cardClass === specialClass
+      );
+      const chosenMatrix = pickRandomMatrix(specialCandidates, nonMagicEligible);
 
       packCards.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: effectivePool,
+        generateFromMatrix({
+          matrix: { ...chosenMatrix, cardClass: chosenMatrix.cardClass || specialClass },
           balanceTables,
+          targetRecordKind: 'instance',
           origin: 'Booster',
-          forcedClass: specialClass,
           forcedRank: specialRank,
-          excludeMagic: true,
           deckId,
         })
       );
     } else {
-      const forcedCls = slot.fixedClass || 'Comum';
-      const chosenChar = pickCharacterForCategory(forcedCls);
+      const chosenMatrix = pickRandomMatrix(eligibleMatrices, combinedPool);
       packCards.push(
-        generateProceduralCard({
-          character: chosenChar,
-          charactersPool: effectivePool,
+        generateFromMatrix({
+          matrix: {
+            ...chosenMatrix,
+            cardClass: slot.fixedClass || chosenMatrix.cardClass || 'Comum',
+          },
           balanceTables,
+          targetRecordKind: 'instance',
           origin: 'Booster',
-          forcedClass: slot.fixedClass,
           allowedRanksOverride: slot.allowedRanks,
           deckId,
         })

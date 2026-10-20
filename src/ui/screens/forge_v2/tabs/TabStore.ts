@@ -1,7 +1,12 @@
 import { StoreScreen } from '../../StoreScreen';
 import { ProgressionManager } from '../../../../core/ProgressionManager';
 import { CARD_TEMPLATES } from '../../../../core/constants';
-import { renderMatrixCardSVG } from '../utils/HestridiaMatrixRenderer';
+import {
+  renderMatrixCardSVG,
+  getMergedGameTemplatesSync,
+  getMergedGameTemplates,
+  resolveMatrixOrGameCard,
+} from '../utils/HestridiaMatrixRenderer';
 
 export interface StoreDeck {
   id: string;
@@ -155,12 +160,22 @@ export class TabStore {
 
   constructor(state: any, callbacks: any, core: any) {
     this.data = normalizeStoreData(state.storeItems);
-    this.templates = state.templates || [];
+    this.templates = getMergedGameTemplatesSync(state.templates || CARD_TEMPLATES);
     this.skills = state.skills || [];
     this.reRender = callbacks.reRender;
     this.showToast = callbacks.showToast;
     this.openMediaPicker = callbacks.openMediaPicker;
     this.saveJson = core.saveJson.bind(core);
+
+    getMergedGameTemplates(state.templates || CARD_TEMPLATES).then((merged) => {
+      if (merged && merged.length > 0) {
+        this.templates = merged;
+      }
+    });
+
+    window.addEventListener('hestridia:matrix-updated', () => {
+      this.templates = getMergedGameTemplatesSync(state.templates || CARD_TEMPLATES);
+    });
 
     // Garante que o módulo ativo e o índice da vitrine estejam sempre em sincronia
     const currentOrder = this.data.sectionOrder || DEFAULT_SECTION_ORDER;
@@ -190,11 +205,13 @@ export class TabStore {
   }
 
   private resolveCardObj(name: string): any {
-    if (this.templates && this.templates.length > 0) {
-      const found = this.templates.find((t: any) => t && t.name === name);
-      if (found) return found;
-    }
-    return (CARD_TEMPLATES as any[]).find((t: any) => t && t.name === name) || null;
+    if (!name) return null;
+    return (
+      resolveMatrixOrGameCard(name, [
+        ...(this.templates || []),
+        ...(CARD_TEMPLATES as any[]),
+      ]) || null
+    );
   }
 
   private getRarityColor(rarity: string): string {
@@ -215,10 +232,11 @@ export class TabStore {
 
   private getAllAvailableCards(): any[] {
     const cardMap = new Map<string, any>();
-    (CARD_TEMPLATES as any[]).forEach(c => {
-      if (c && c.name) cardMap.set(c.name, c);
-    });
-    (this.templates || []).forEach(c => {
+    const merged = getMergedGameTemplatesSync([
+      ...(this.templates || []),
+      ...(CARD_TEMPLATES as any[]),
+    ]);
+    merged.forEach((c) => {
       if (c && c.name) cardMap.set(c.name, c);
     });
     return Array.from(cardMap.values());
@@ -1648,13 +1666,16 @@ export class TabStore {
     saveBtn?.addEventListener('click', async () => {
       saveBtn.disabled = true;
       saveBtn.textContent = 'GRAVANDO...';
+      try {
+        localStorage.setItem('store_config_override', JSON.stringify(this.data));
+      } catch (_) {}
       const ok = await this.saveJson('/api/save-store', this.data);
       if (ok) {
         saveBtn.textContent = '✅ GRAVADO!';
         this.showToast('Configuração da Loja gravada com sucesso!');
       } else {
-        saveBtn.textContent = '❌ FALHA';
-        this.showToast('Falha ao gravar loja localmente', '#ef4444');
+        saveBtn.textContent = '✅ SALVO LOCAL!';
+        this.showToast('Configuração da Loja gravada localmente!');
       }
       setTimeout(() => { saveBtn.disabled = false; saveBtn.textContent = '💾 SALVAR LOJA'; }, 2000);
     });

@@ -4,12 +4,12 @@
     position: relative;
     width: 100%; /* Respect parent width */
     max-width: 340px; /* Cap for big view */
-    aspect-ratio: 1 / 1.7;
+    aspect-ratio: 680 / 990;
     margin: 0 auto;
-    border-radius: 2px;
+    border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 30px 60px rgba(0, 0, 0, 0.8);
-    background: #000;
+    background: transparent;
 }
 
 .premium-card-art {
@@ -327,11 +327,11 @@
 
 .art-card-box {
     width: 100%;
-    aspect-ratio: 1 / 1.6;
+    aspect-ratio: 680 / 990;
     position: relative;
-    border-radius: 2px;
+    border-radius: 12px;
     overflow: hidden;
-    background: #000;
+    background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
     flex-shrink: 0;
@@ -437,12 +437,12 @@
 .premium-card-container.hand-variant,
 .art-card-box {
     position: relative;
-    border-radius: 2px;
+    border-radius: 12px;
     overflow: hidden;
-    background: #000;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: transparent;
+    border: none;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.7);
-    aspect-ratio: 1 / 1.45; /* Unified ratio for Hand too */
+    aspect-ratio: 680 / 990; /* Unified 680x990 Matrix ratio */
 }
 
 .premium-card-container.hand-variant .premium-card-art,

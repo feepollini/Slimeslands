@@ -199,7 +199,7 @@
 .ars-card-slot {
     width: 100%;
     min-width: 50px;
-    aspect-ratio: 1/1.55;
+    aspect-ratio: 680 / 990;
 }
 
 .ars-save-section {
@@ -535,10 +535,10 @@
 
 .ars-thumb-art {
     width: 100%;
-    aspect-ratio: 2/3.1;
+    aspect-ratio: 680 / 990;
     background-size: cover;
     background-position: center;
-    border-radius: 6px;
+    border-radius: 8px;
     border: 2px solid #0e0903;
     position: relative;
     overflow: hidden;

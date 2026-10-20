@@ -11,7 +11,10 @@ import { StoreScreen } from './ui/screens/StoreScreen';
 import { TopHeader } from './ui/components/TopHeader';
 import { ProgressionManager } from './core/ProgressionManager';
 import { CARD_TEMPLATES, SKILL_POOL } from './core/constants';
-import { getMergedGameTemplates } from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
+import {
+  getMergedGameTemplates,
+  getMergedGameTemplatesSync,
+} from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
 
 import SCENARIOS from './core/scenarios.json';
 import { applyScenarioBackground, getActiveScenario } from './ui/utils/BackgroundUtils';
@@ -97,6 +100,9 @@ class HubApp {
 
     const profBtn = document.getElementById('btn-profile');
     if (profBtn) profBtn.onclick = () => this.switchTab('profile');
+
+    // Warm up Matrix Forge card snapshot
+    getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
 
     // Initial entry animation
     gsap.fromTo(this.container, { opacity: 0 }, { opacity: 1, duration: 0.5 });
@@ -186,7 +192,7 @@ class HubApp {
         this.navigate('battle.html');
       };
       this.currentArsenal = new ArsenalScreen(
-        CARD_TEMPLATES, SKILL_POOL, [],
+        getMergedGameTemplatesSync(CARD_TEMPLATES), SKILL_POOL, [],
         onConfirm,
         true // isPrepMode = expanded
       );
@@ -319,7 +325,7 @@ class HubApp {
       this.menu.bind();
     } else if (tab === 'arsenal') {
       applyScenarioBackground(getActiveScenario('arsenal', (SCENARIOS as any).arsenal));
-      this.currentArsenal = new ArsenalScreen(CARD_TEMPLATES, SKILL_POOL, [], undefined, false);
+      this.currentArsenal = new ArsenalScreen(getMergedGameTemplatesSync(CARD_TEMPLATES), SKILL_POOL, [], undefined, false);
       this.currentArsenal.render(container);
     } else if (tab === 'store') {
       applyScenarioBackground(getActiveScenario('store', (SCENARIOS as any).store));

@@ -25,6 +25,10 @@ interface CardFrameSVGProps {
    * between the gallery thumbnails and the featured stage preview card.
    */
   idScope?: string;
+  /**
+   * When true, renders the lore box using pure SVG <text> nodes instead of <foreignObject>
+   * so it can be reliably rasterized into a Three.js CanvasTexture.
+   */
   pureSvgText?: boolean;
 }
 
@@ -406,6 +410,11 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
       viewBox="0 0 680 990"
       className="w-full h-full select-none block overflow-hidden"
       style={{
+        width: '100%',
+        height: '100%',
+        display: 'block',
+        overflow: 'hidden',
+        userSelect: 'none',
         fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif",
       }}
     >
@@ -769,7 +778,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
               : 'transform 550ms cubic-bezier(0.16, 1, 0.3, 1)',
           }}
         >
-          {card.mediaType === 'video' && card.videoUrl && !pureSvgText ? (
+          {card.mediaType === 'video' && card.videoUrl ? (
             <foreignObject x="0" y="0" width="680" height="990">
               <video
                 src={card.videoUrl}
@@ -898,52 +907,51 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
             />
 
             {pureSvgText ? (
-              <g textAnchor="middle" fontFamily="'Plus Jakarta Sans', sans-serif">
+              <g pointerEvents="none">
                 {card.loreHeader && (
                   <text
                     x="336"
                     y="768"
-                    fontWeight="800"
-                    fontSize={loreHeaderFontSize}
-                    letterSpacing="-0.01em"
+                    textAnchor="middle"
                     fill="#FFFFFF"
+                    fontSize={loreHeaderFontSize}
+                    fontWeight="800"
+                    style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif" }}
                   >
-                    {card.loreHeader}
+                    {card.loreHeader.slice(0, 44)}
                   </text>
                 )}
                 {card.loreBody && (
                   <text
                     x="336"
-                    y={card.loreHeader ? 796 : 776}
-                    fontWeight="400"
-                    fontSize={loreBodyFontSize}
+                    y="804"
+                    textAnchor="middle"
                     fill="#F8FAFC"
+                    fontSize={loreBodyFontSize}
+                    fontWeight="400"
+                    style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif" }}
                   >
-                    {card.loreBody}
+                    {card.loreBody.slice(0, 62)}
                   </text>
                 )}
                 {(card.magicPrefix || card.magicDescription) && (
                   <text
                     x="336"
-                    y={card.loreHeader && card.loreBody ? 824 : 800}
-                    fontSize={loreBodyFontSize}
+                    y="842"
+                    textAnchor="middle"
                     fill="#FFFFFF"
+                    fontSize={loreBodyFontSize}
+                    fontWeight="700"
+                    style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif" }}
                   >
-                    {card.magicPrefix && (
-                      <tspan fontWeight="800">{card.magicPrefix}</tspan>
-                    )}
-                    {card.magicPrefix && card.magicDescription && (
-                      <tspan fontWeight="400"> — </tspan>
-                    )}
-                    {card.magicDescription && (
-                      <tspan fontWeight="400">{card.magicDescription}</tspan>
-                    )}
+                    {`${card.magicPrefix || ''}${card.magicPrefix && card.magicDescription ? ' — ' : ''}${card.magicDescription || ''}`.slice(0, 58)}
                   </text>
                 )}
               </g>
             ) : (
               <foreignObject x="120" y="734" width="432" height="144">
                 <div
+                  {...({ xmlns: 'http://www.w3.org/1999/xhtml' } as any)}
                   style={{
                     width: '100%',
                     height: '100%',

@@ -107,3 +107,7 @@ export const BLANK_TEMPLATE_CARD: CardData = {
 
 // Start with an empty gallery list (only the active template on stage when empty) — no 3 fake sample models!
 export const INITIAL_CARDS: CardData[] = [];
+
+export function createInitialPlayerInventory(): CardData[] {
+  return [];
+}

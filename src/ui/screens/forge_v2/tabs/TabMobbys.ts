@@ -4,6 +4,10 @@ import { CARD_TEMPLATES, SKILL_POOL, RARITIES } from '../../../../core/constants
 import { SoundManager } from '../../../utils/SoundManager';
 import { Card } from '../../../../core/GameEngine';
 import { isVideoUrl } from '../../../utils/BackgroundUtils';
+import {
+  getMergedGameTemplatesSync,
+  getMergedGameTemplates,
+} from '../utils/HestridiaMatrixRenderer';
 import '../../../styles/BossBattle.css';
 
 export class TabMobbys {
@@ -34,6 +38,9 @@ export class TabMobbys {
     this.previewCurrentHp = this.currentMobby.hp;
 
     this.initPreviewPlayerCards();
+    getMergedGameTemplates(CARD_TEMPLATES).then(() => {
+      this.initPreviewPlayerCards();
+    });
   }
 
   private autoSaveTimer: any = null;
@@ -56,15 +63,17 @@ export class TabMobbys {
   }
 
   private getTemplates(): any[] {
-    if (this.state && Array.isArray(this.state.templates) && this.state.templates.length > 0) {
-      return this.state.templates;
-    }
-    return CARD_TEMPLATES;
+    const base =
+      this.state && Array.isArray(this.state.templates) && this.state.templates.length > 0
+        ? this.state.templates
+        : CARD_TEMPLATES;
+    return getMergedGameTemplatesSync(base);
   }
 
   private initPreviewPlayerCards() {
     const templates = this.getTemplates();
     this.previewPlayerCards = templates.slice(0, 3).map((tmpl, idx) => ({
+      ...tmpl,
       id: (tmpl as any).id || `prev_c_${idx}`,
       name: tmpl.name,
       atk: tmpl.baseAtk || 12,
@@ -80,6 +89,7 @@ export class TabMobbys {
 
     // Bastante cartas na mão (6 cartas completas em leque)
     this.previewHandCards = templates.slice(3, 9).map((tmpl, idx) => ({
+      ...tmpl,
       id: (tmpl as any).id || `prev_h_${idx}`,
       name: tmpl.name,
       atk: tmpl.baseAtk || 14,

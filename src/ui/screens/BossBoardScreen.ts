@@ -2,6 +2,7 @@ import { Card } from '../../core/GameEngine';
 import { RARITIES, CARD_ABILITIES, getGlobalCardBack } from '../../core/constants';
 import type { Rarity } from '../../core/types';
 import { renderHandCardPremium, renderFieldCardPremium } from './forge_v2/utils/PremiumCardRenderer';
+import { renderMatrixCardBackSVG } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t } from '../../core/i18n';
 import { DuelControlsPanel } from '../components/DuelControlsPanel';
 import { Mobby } from '../../core/MobbyManager';
@@ -215,13 +216,23 @@ export class BossBoardScreen {
   }
 
   public renderStackSlot(id: string, count: number, imageUrl?: string, isDeck: boolean = false): string {
+    if (isDeck) {
+      return `
+        <div class="deck-back-slot" id="${id}-slot">
+          <div class="stack-fill" style="width:100%; height:100%; position:absolute; top:0; left:0; border-radius:10px; overflow:hidden;">
+            ${renderMatrixCardBackSVG()}
+          </div>
+          <div class="stack-count" id="count-${id}">${count}</div>
+        </div>
+      `;
+    }
     const fillStyle = imageUrl 
       ? `background-image:url('${imageUrl}'); background-size:cover; background-position:center;` 
       : `background:rgba(30,30,30,0.4);`;
-    const filter = !isDeck && imageUrl ? 'filter: saturate(0.8) brightness(0.8);' : '';
+    const filter = imageUrl ? 'filter: saturate(0.8) brightness(0.8);' : '';
     
     return `
-      <div class="${isDeck ? 'deck-back-slot' : 'sepulture-slot'}" id="${id}-slot">
+      <div class="sepulture-slot" id="${id}-slot">
         <div class="stack-fill" style="width:100%; height:100%; position:absolute; top:0; left:0; ${fillStyle} ${filter}"></div>
         <div class="stack-count" id="count-${id}">${count}</div>
       </div>

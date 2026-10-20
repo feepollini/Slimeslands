@@ -1,4 +1,4 @@
-import { loadGameMatrixSnapshot, saveGameMatrixSnapshot } from '../../../../card_studio/src/utils/matrixPersistence';
+import { loadGameMatrixSnapshot } from '../../../../card_studio/src/utils/matrixPersistence';
 import {
   generateBoosterPack,
   generateProceduralCard,
@@ -6,8 +6,14 @@ import {
   DEFAULT_CLASS_BALANCE_TABLES,
   INITIAL_BASE_CHARACTERS,
 } from '../../../../card_studio/src/utils/proceduralEngine';
-import { createPremiumCardTexture, PackCardData } from '../../../components/booster/pokemonTextures';
-import { toMatrixCardData, createMatrixCardTexture, ensureDataUrl } from './HestridiaMatrixRenderer';
+import { INITIAL_CARDS } from '../../../../card_studio/src/utils/defaultCards';
+import { PackCardData } from '../../../components/booster/pokemonTextures';
+import {
+  toMatrixCardData,
+  createMatrixCardTexture,
+  ensureDataUrl,
+  upsertCardsIntoMatrixSnapshot,
+} from './HestridiaMatrixRenderer';
 import { CARD_TEMPLATES } from '../../../../core/constants';
 import { CardData } from '../../../../card_studio/src/types/card';
 import { BaseCharacter } from '../../../../card_studio/src/types/slimelands';
@@ -99,15 +105,11 @@ export async function resolveBoosterCards(
     console.warn('Não foi possível ler snapshot da Matriz:', err);
   }
 
-  const isCleared =
-    Boolean(snapshot?.isLibraryCleared) ||
-    ((!snapshot?.cards || snapshot.cards.length === 0) &&
-      (!snapshot?.baseCharacters || snapshot.baseCharacters.length === 0) &&
-      (!providedTemplates || providedTemplates.length === 0));
+  const isCleared = Boolean(snapshot?.isLibraryCleared);
 
   const resolvedCards: PackCardData[] = [];
 
-  // Se a biblioteca da Matriz estiver limpa, não ressuscita cartas antigas nem resíduos
+  // Se a biblioteca da Matriz estiver explicitamente limpa, não ressuscita cartas antigas
   if (isCleared) {
     for (let i = 0; i < targetCount; i++) {
       resolvedCards.push(
@@ -125,10 +127,14 @@ export async function resolveBoosterCards(
     return resolvedCards;
   }
 
-  // Apenas cartas e blueprints reais da Matriz
+  // Cartas e blueprints reais da Matriz + catálogo do jogo
+  const activeMatrixCards =
+    snapshot?.cards && snapshot.cards.length > 0 ? snapshot.cards : INITIAL_CARDS;
   const allTemplates = [
     ...(providedTemplates || []),
-    ...(snapshot?.cards || []),
+    ...activeMatrixCards,
+    ...(snapshot?.playerInventory || []),
+    ...(CARD_TEMPLATES as any[]),
   ];
 
   const templateMap = new Map<string, any>();
@@ -141,7 +147,7 @@ export async function resolveBoosterCards(
   const baseCharacters: BaseCharacter[] =
     snapshot?.baseCharacters && snapshot.baseCharacters.length > 0
       ? snapshot.baseCharacters
-      : [];
+      : INITIAL_BASE_CHARACTERS;
 
   baseCharacters.forEach((bc) => {
     if (bc?.name) templateMap.set(bc.name.toLowerCase().trim(), bc);
@@ -158,12 +164,13 @@ export async function resolveBoosterCards(
       if ((match as any).family || (match as any).baseArchetype) {
         // É um blueprint procedural: gera a instância com rolagem de stats e raridade da matriz
         const balanceTables = snapshot?.balanceTables || DEFAULT_CLASS_BALANCE_TABLES;
-        const generated = generateProceduralCard(
-          match as BaseCharacter,
+        const generated = generateProceduralCard({
+          character: match as BaseCharacter,
+          charactersPool: baseCharacters,
           balanceTables,
-          (match as any).rarity !== 'Não classificada' ? (match as any).rarity : 'Comum',
-          'deck-inventory'
-        );
+          origin: 'Booster',
+          deckId: 'deck-inventory',
+        });
         resolvedCards.push(formatPackCardData(generated, resolvedCards.length));
       } else {
         // Carta existente do catálogo/matriz
@@ -215,12 +222,17 @@ export async function resolveBoosterCards(
       boosterModels[0];
 
     const balanceTables = snapshot?.balanceTables || DEFAULT_CLASS_BALANCE_TABLES;
-    const classifiedPool = baseCharacters.filter(
-      (c) => c.rarity !== 'Não classificada' && c.isClassified !== false
-    );
-    const pool = classifiedPool.length > 0 ? classifiedPool : baseCharacters;
+    const pool = baseCharacters.filter((c) => c.active !== false);
+    const matrixCards =
+      snapshot?.cards && snapshot.cards.length > 0 ? snapshot.cards : INITIAL_CARDS;
 
-    const generated = generateBoosterPack(matchingBooster, pool, balanceTables, 'deck-inventory');
+    const generated = generateBoosterPack(
+      matchingBooster,
+      pool.length > 0 ? pool : baseCharacters,
+      balanceTables,
+      'deck-inventory',
+      matrixCards
+    );
     for (let i = 0; i < remaining && i < generated.length; i++) {
       resolvedCards.push(formatPackCardData(generated[i], resolvedCards.length));
     }
@@ -256,17 +268,10 @@ export async function resolveBoosterCards(
   }
 
   // 4. Salva as novas cartas na Matriz / inventário do jogo apenas se não for biblioteca limpa
-  if (snapshot && !isCleared && resolvedCards.length > 0) {
+  if (!isCleared && resolvedCards.length > 0) {
     try {
       const cardsToPersist: CardData[] = resolvedCards.map((rc) => toMatrixCardData(rc));
-      const existing = snapshot.cards || [];
-      const updated = [...cardsToPersist, ...existing];
-      await saveGameMatrixSnapshot({
-        ...snapshot,
-        updatedAt: new Date().toISOString(),
-        cards: updated,
-        isLibraryCleared: false,
-      });
+      await upsertCardsIntoMatrixSnapshot(cardsToPersist);
     } catch (saveErr) {
       console.warn('Erro ao salvar cartas abertas na matriz:', saveErr);
     }

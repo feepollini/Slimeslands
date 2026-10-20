@@ -3,11 +3,12 @@
 .boss-grid-3x1 {
     display: grid !important;
     grid-template-columns: repeat(3, 1fr) !important;
-    grid-template-rows: 1.25fr 1fr !important;
-    gap: 7px 9px !important;
-    width: 96% !important;
-    max-height: 100% !important;
+    grid-template-rows: auto auto !important;
+    gap: 10px 10px !important;
+    width: 92% !important;
+    max-width: 350px !important;
     margin: 0 auto !important;
+    align-content: center !important;
 }
 
 /* O SLOT ÚNICO DO CHEFE NO TOPO: SEM CAIXA, SEM QUADRADO, DESCIDO MAIS UM POUCO */
@@ -169,11 +170,12 @@
 
 /* Container fixo da carta revelada */
 .boss-capture-card-wrap {
-    width: 270px;
-    height: 440px;
+    width: 280px;
+    aspect-ratio: 680 / 990;
+    height: auto;
     max-width: 85vw;
     max-height: 68vh;
-    border-radius: 12px;
+    border-radius: 14px;
     position: relative;
     box-sizing: border-box;
 }

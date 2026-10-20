@@ -18,6 +18,11 @@ import * as FX from './ui/utils/BattleAnimations';
 import { ENCHANTMENT_REGISTRY } from './core/enchantments';
 import { CARD_ABILITIES, getGlobalCardBack, CARD_TEMPLATES } from './core/constants';
 import { renderPremiumCard } from './ui/screens/forge_v2/utils/PremiumCardRenderer';
+import {
+  renderMatrixCardBackSVG,
+  getMergedGameTemplates,
+  resolveMatrixOrGameCard,
+} from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
 
 // Helper to cast FX functions
 const { spawnParticles, deathExplosion, spawnFloatingText, triggerAbilityAnim, animateCapsulePv } = FX;
@@ -89,7 +94,8 @@ class BossBattleApp {
 
   // ─── INIT ─────────────────────────────────────────────────────────────────
 
-  private init(starterTurn?: 'p' | 'e') {
+  private async init(starterTurn?: 'p' | 'e') {
+    await getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
     try {
       const raw = localStorage.getItem('battle_prep');
       if (raw) {
@@ -108,16 +114,27 @@ class BossBattleApp {
             value: s.value || 0
           }));
         }
-        if (data.cards) {
-          const pDeck = data.cards.map((c: any) => ({
-            ...c,
-            id: `p-${Math.random().toString(36).substr(2, 9)}`,
-            owner: 'p' as const,
-            atk: c.baseAtk || c.atk || 100,
-            pv: c.basePv || c.pv || 500,
-            maxPv: c.basePv || c.maxPv || 500,
-            rarity: c.preferredRarity || c.rarity || 'common'
-          }));
+        if (data.cards && data.cards.length > 0) {
+          const pDeck = data.cards.map((c: any) => {
+            const resolved = resolveMatrixOrGameCard(c?.name || c?.id || '', CARD_TEMPLATES) || c;
+            const atk = resolved.baseAtk || resolved.atk || c.baseAtk || c.atk || 100;
+            const pv = resolved.basePv || resolved.pv || c.basePv || c.pv || 500;
+            return {
+              ...resolved,
+              ...c,
+              id: `p-${Math.random().toString(36).substr(2, 9)}`,
+              owner: 'p' as const,
+              atk,
+              pv,
+              maxPv: pv,
+              rarity: resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
+              manaCost: resolved.manaCost ?? c.manaCost ?? 1,
+              staminaCost: resolved.staminaCost ?? c.staminaCost ?? 1,
+              attacks: resolved.attacks || c.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
+              specialAttack: resolved.specialAttack || c.specialAttack,
+              matrixCard: resolved.matrixCard || resolved.cardData || c.matrixCard || c.cardData,
+            };
+          });
           this.engine.initBattle(pDeck);
         } else {
           this.engine.initBattle();
@@ -402,9 +419,13 @@ class BossBattleApp {
     this.stopTimer();
     if (document.getElementById('boss-reward-showcase-overlay')) return;
 
-    // Carta recompensa definida na Forja
-    const tmpl = (CARD_TEMPLATES as any[]).find(c => c && c.name === this.mobby.rewardCardId) || CARD_TEMPLATES[0];
+    // Carta recompensa definida na Forja (resolvida pela Matriz)
+    const tmpl =
+      resolveMatrixOrGameCard(this.mobby.rewardCardId, CARD_TEMPLATES) ||
+      (CARD_TEMPLATES as any[]).find(c => c && c.name === this.mobby.rewardCardId) ||
+      CARD_TEMPLATES[0];
     const rewardCard: Card = {
+      ...tmpl,
       id: `reward-${Date.now()}`,
       name: tmpl?.name || 'Carta Ancestral',
       atk: tmpl?.baseAtk || 500,
@@ -426,9 +447,11 @@ class BossBattleApp {
     const bossEl = document.getElementById('mobby-sprite');
     const bossWrap = document.getElementById('boss-sprite-transform-wrap') || document.getElementById('boss-sprite-slot');
 
-    // Dimensões da carta final (imponente, maior e respeitando a tela)
-    const targetWidth = Math.min(300, window.innerWidth * 0.90);
-    const targetHeight = Math.min(480, window.innerHeight * 0.73);
+    // Dimensões da carta final na proporção exata 680:990 da Forja Matriz
+    const maxH = Math.min(460, window.innerHeight * 0.72);
+    const maxW = Math.min(316, window.innerWidth * 0.88);
+    const targetWidth = Math.min(maxW, Math.round(maxH * (680 / 990)));
+    const targetHeight = Math.round(targetWidth * (990 / 680));
     const targetLeft = (window.innerWidth - targetWidth) / 2;
     const targetTop = (window.innerHeight - targetHeight) / 2 - 35;
     const centerX = targetLeft + targetWidth / 2;
@@ -1411,7 +1434,8 @@ class BossBattleApp {
     for (let i = 0; i < count; i++) {
       const cardBack = document.createElement('div');
       cardBack.className = 'card-face';
-      cardBack.style.cssText = `position:absolute; bottom:0; width: 130px; height: 185px; background: url('${getGlobalCardBack()}') center/cover; border:2px solid; border-radius:12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.8); cursor:pointer; transform-origin:bottom center;`;
+      cardBack.style.cssText = `position:absolute; bottom:0; width: 130px; height: 189px; overflow:hidden; border-radius:12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.8); cursor:pointer; transform-origin:bottom center;`;
+      cardBack.innerHTML = renderMatrixCardBackSVG();
 
       const angle = startAngle + (i * angleStep);
       const distFromCenter = Math.abs(i - (count - 1) / 2);
@@ -1473,9 +1497,9 @@ class BossBattleApp {
 
     const rect = deckEl.getBoundingClientRect();
     const temp = document.createElement('div');
-    temp.className = 'card-face card-draw-anim';
-    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:100px; background:#1a1a1a; border:2px solid #fff; z-index:10000;`;
-    temp.innerHTML = `<div class="card-back-pattern"></div>`;
+    temp.className = 'card-face matrix-frame-mode card-draw-anim';
+    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:102px; aspect-ratio:680/990; border-radius:10px; overflow:hidden; z-index:10000;`;
+    temp.innerHTML = renderMatrixCardBackSVG();
     document.body.appendChild(temp);
 
     const handRect = handCont.getBoundingClientRect();

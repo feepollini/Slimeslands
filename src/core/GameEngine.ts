@@ -6,6 +6,7 @@
 import type { Card, Skill, GameState, AttackResult } from './types';
 import { SKILL_POOL, CARD_TEMPLATES, RARITY_POOL, ABILITY_POOL } from './constants';
 import { computeAttack, computeSkill, healingCardTick } from './CombatEngine';
+import { getMergedGameTemplatesSync } from '../ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
 
 export type { Card, Skill, GameState };
 export { SKILL_POOL };
@@ -46,7 +47,7 @@ export class GameEngine {
         this.board = Array(6).fill(null);
         this.hand = [];
         this.grave = [];
-        this.deck = pDeck || this.generateDeck('p', 12);
+        this.deck = pDeck && pDeck.length > 0 ? pDeck : this.generateDeck('p', 12);
         this.aiDeck = this.generateDeck('e', 12);
         this.inventory = SKILL_POOL.filter(s => !this.selectedSkills.find(ss => ss.id === s.id));
         this.activeSkills = [
@@ -64,75 +65,123 @@ export class GameEngine {
     }
 
     public generateDeck(owner: 'p' | 'e' = 'p', count: number = 30): Card[] {
-        return Array.from({ length: count }, (_, i) => {
-            const tmpl = CARD_TEMPLATES[Math.floor(Math.random() * CARD_TEMPLATES.length)];
-            // Pick rarity: prefer template's preferred, else random from pool
-            const rarity = tmpl.preferredRarity
-                ? (Math.random() < 0.6 ? tmpl.preferredRarity : RARITY_POOL[Math.floor(Math.random() * RARITY_POOL.length)])
-                : RARITY_POOL[Math.floor(Math.random() * RARITY_POOL.length)];
-            // Pick ability: template explicit ability OR rare+ cards get abilities OR 'none'
-            // Pick ability: rare+ cards get abilities OR 'none'
+        const allTemplates = getMergedGameTemplatesSync(CARD_TEMPLATES);
+        const pool = allTemplates.length > 0 ? allTemplates : CARD_TEMPLATES;
+
+        let chosenTemplates: any[] = [];
+        if (owner === 'p') {
+            try {
+                const rawPre = typeof localStorage !== 'undefined' ? localStorage.getItem('arsenal_predeck') : null;
+                if (rawPre) {
+                    const preData = JSON.parse(rawPre);
+                    if (Array.isArray(preData?.cards)) {
+                        const validNames = preData.cards.filter((n: any) => typeof n === 'string' && n.trim().length > 0);
+                        if (validNames.length > 0) {
+                            chosenTemplates = validNames
+                                .map((name: string) => pool.find((t: any) => t.name === name || t.title === name || t.id === name))
+                                .filter(Boolean);
+                        }
+                    }
+                }
+                if (chosenTemplates.length === 0 && typeof localStorage !== 'undefined') {
+                    for (const slotKey of ['arsenal_slot_0', 'arsenal_slot_1', 'arsenal_slot_2']) {
+                        const rawSlot = localStorage.getItem(slotKey);
+                        if (!rawSlot) continue;
+                        const slotData = JSON.parse(rawSlot);
+                        if (Array.isArray(slotData?.cards)) {
+                            const validNames = slotData.cards.filter((n: any) => typeof n === 'string' && n.trim().length > 0);
+                            if (validNames.length > 0) {
+                                chosenTemplates = validNames
+                                    .map((name: string) => pool.find((t: any) => t.name === name || t.title === name || t.id === name))
+                                    .filter(Boolean);
+                                if (chosenTemplates.length > 0) break;
+                            }
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
+
+        if (chosenTemplates.length === 0) {
+            chosenTemplates = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
+        }
+
+        return chosenTemplates.map((tmpl: any, i: number) => {
+            const rarity = tmpl.preferredRarity || tmpl.rarity || RARITY_POOL[Math.floor(Math.random() * RARITY_POOL.length)];
             const abilityPool = rarity === 'common'
                 ? ['none']
                 : ABILITY_POOL.filter(id => id !== 'none');
             const abilityId = tmpl.abilityId || (abilityPool[Math.floor(Math.random() * abilityPool.length)] as Card['abilityId']);
 
-            // ─── RULE OF THREE SCALE (Tiered Stats & Costs) ───
-            let pv = 0, atk = 0, playCost = 0, atkCount = 1, atkCost = 0;
-            const step = 10; // decimal variations
+            let pv = tmpl.basePv || tmpl.pv || 0;
+            let atk = tmpl.baseAtk || tmpl.atk || 0;
+            let playCost = tmpl.manaCost || tmpl.staminaCost || 0;
+            let atkCount = 1;
+            let atkCost = tmpl.staminaCost || 1;
+            const step = 10;
 
-            if (rarity === 'common') {
-                pv = Math.floor(Math.random() * (500 / step)) * step + step;
-                atk = Math.floor(Math.random() * (500 / step)) * step + step;
-                playCost = Math.floor(Math.random() * 3) + 1; // 1-3
-                atkCount = 1;
-                atkCost = Math.floor(Math.random() * 3) + 1; // 1-3
-            } else if (rarity === 'rare') {
-                pv = Math.floor(Math.random() * (500 / step)) * step + 510; // 510-1000
-                atk = Math.floor(Math.random() * (500 / step)) * step + 510;
-                playCost = Math.floor(Math.random() * 4) + 3; // 3-6
-                atkCount = 2;
-                atkCost = Math.floor(Math.random() * 4) + 3; // 3-6
-            } else { // epic
-                pv = Math.floor(Math.random() * (500 / step)) * step + 1010; // 1010-1500
-                atk = Math.floor(Math.random() * (500 / step)) * step + 1010;
-                playCost = Math.floor(Math.random() * 4) + 6; // 6-9
-                atkCount = 4;
-                atkCost = Math.floor(Math.random() * 4) + 6; // 6-9
+            if (!pv || !atk) {
+                if (rarity === 'common') {
+                    pv = pv || (Math.floor(Math.random() * (500 / step)) * step + step);
+                    atk = atk || (Math.floor(Math.random() * (500 / step)) * step + step);
+                    playCost = playCost || (Math.floor(Math.random() * 3) + 1);
+                    atkCount = 1;
+                    atkCost = Math.floor(Math.random() * 3) + 1;
+                } else if (rarity === 'rare') {
+                    pv = pv || (Math.floor(Math.random() * (500 / step)) * step + 510);
+                    atk = atk || (Math.floor(Math.random() * (500 / step)) * step + 510);
+                    playCost = playCost || (Math.floor(Math.random() * 4) + 3);
+                    atkCount = 2;
+                    atkCost = Math.floor(Math.random() * 4) + 3;
+                } else {
+                    pv = pv || (Math.floor(Math.random() * (500 / step)) * step + 1010);
+                    atk = atk || (Math.floor(Math.random() * (500 / step)) * step + 1010);
+                    playCost = playCost || (Math.floor(Math.random() * 4) + 6);
+                    atkCount = 4;
+                    atkCost = Math.floor(Math.random() * 4) + 6;
+                }
+            } else if (!playCost) {
+                playCost = rarity === 'legendary' || rarity === 'epic' ? 3 : rarity === 'rare' ? 2 : 1;
             }
 
-            const attacks: import('./types').AttackDef[] = [];
-            for (let j = 0; j < atkCount; j++) {
-                attacks.push({
-                    type: 'damage',
-                    name: j === 0 ? 'ATAQUE' : (j === 1 ? 'ESPECIAL' : (j === 2 ? 'SUPREMO' : 'EXECUÇÃO')),
-                    damage: Math.floor(atk * (1 + j * 0.2)), // scaling
-                    cost: atkCost,
-                    costType: (j % 2 === 0) ? 'stamina' : 'mana'
-                });
+            let attacks: import('./types').AttackDef[] = [];
+            if (Array.isArray(tmpl.attacks) && tmpl.attacks.length > 0) {
+                attacks = JSON.parse(JSON.stringify(tmpl.attacks));
+            } else {
+                for (let j = 0; j < atkCount; j++) {
+                    attacks.push({
+                        type: 'damage',
+                        name: j === 0 ? 'ATAQUE' : (j === 1 ? 'ESPECIAL' : (j === 2 ? 'SUPREMO' : 'EXECUÇÃO')),
+                        damage: Math.floor(atk * (1 + j * 0.2)),
+                        cost: atkCost,
+                        costType: (j % 2 === 0) ? 'stamina' : 'mana'
+                    });
+                }
             }
 
             return {
+                ...tmpl,
                 id: `card-${owner}-${i}-${Math.random().toString(36).substr(2, 5)}`,
-                name: tmpl.name,
+                name: tmpl.name || tmpl.title || `Carta ${i + 1}`,
                 atk, pv, maxPv: pv,
-                image: tmpl.image,
-                animationUrl: tmpl.animationUrl,
-                cardBack: tmpl.cardBack,
+                image: tmpl.image || tmpl.imageUrl || '/cards/03_toxico.png',
+                animationUrl: tmpl.animationUrl || tmpl.videoUrl,
+                cardBack: tmpl.cardBack || tmpl.backImageUrl,
                 rarity, abilityId, owner,
-                manaCost: playCost, // Play cost is always stamina? User said "invocação custa... da estamina"
-                staminaCost: playCost,
+                manaCost: tmpl.manaCost ?? playCost,
+                staminaCost: tmpl.staminaCost ?? playCost,
                 attacks,
-                // ... rest inherited from tmpl
+                specialAttack: tmpl.specialAttack ? JSON.parse(JSON.stringify(tmpl.specialAttack)) : undefined,
                 videoStart: tmpl.videoStart, videoEnd: tmpl.videoEnd,
-                flavorText: tmpl.flavorText, immersiveMode: tmpl.immersiveMode,
+                flavorText: tmpl.flavorText || tmpl.loreBody, immersiveMode: tmpl.immersiveMode,
                 nameStyle: tmpl.nameStyle, descStyle: tmpl.descStyle, 
                 abilityStyle: tmpl.abilityStyle, statsStyle: tmpl.statsStyle,
                 borderColor: tmpl.borderColor, borderWidth: tmpl.borderWidth,
                 glowColor: tmpl.glowColor, glowIntensity: tmpl.glowIntensity,
                 glowAnimated: tmpl.glowAnimated, borderRadius: tmpl.borderRadius,
                 fontFamily: tmpl.fontFamily, fontColor: tmpl.fontColor,
-                fontSizeBase: tmpl.fontSizeBase, hasVideoAttack: tmpl.hasVideoAttack
+                fontSizeBase: tmpl.fontSizeBase, hasVideoAttack: tmpl.hasVideoAttack,
+                matrixCard: tmpl.matrixCard || tmpl.cardData,
             };
         });
     }

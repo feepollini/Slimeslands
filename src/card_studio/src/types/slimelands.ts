@@ -6,8 +6,6 @@ export type CardClass =
   | 'Mítica'
   | 'Limitada';
 
-export type MatrixRarity = CardClass | 'Não classificada';
-
 export type CardRank = 'S' | 'A' | 'B' | 'C' | 'D';
 
 export type CardEntityType = 'Criatura' | 'Magia' | 'Item';
@@ -17,7 +15,34 @@ export type CardOrigin =
   | 'Escaneamento'
   | 'Drop de Mapa'
   | 'Booster'
-  | 'Pasta Importada';
+  | 'Loja'
+  | 'Pasta Importada'
+  | 'Importação de Pasta';
+
+export type MatrixRecordKind = 'matrix' | 'version' | 'instance';
+
+export type MatrixClassificationState =
+  | 'unclassified'
+  | 'classified'
+  | 'Não classificada'
+  | 'Classificada';
+
+export type MatrixEditState =
+  | 'neutral'
+  | 'provisional'
+  | 'configured'
+  | 'version_saved'
+  | 'Importada / Neutra'
+  | 'Classificada'
+  | 'Pronta para Packs'
+  | 'Versão Aleatória'
+  | 'Versão Manual';
+
+export interface SubgroupCatalog {
+  families: string[];
+  biomes: string[];
+  collections: string[];
+}
 
 export interface CharacterAbilityTemplate {
   id: string;
@@ -37,6 +62,14 @@ export interface BaseCharacter {
   imageUrl: string;
   entityType: CardEntityType;
   element: string;
+  // Primary Rarity in the Matrix (undefined when newly imported / unclassified)
+  matrixRarity?: CardClass;
+  classificationState?: MatrixClassificationState;
+  editState?: MatrixEditState;
+  // Independent Secondary Subgroups (Section 5 & 6)
+  family?: string;
+  biome?: string;
+  collections?: string[];
   abilities: CharacterAbilityTemplate[];
   allowedClasses: CardClass[];
   availableForDrops: boolean;
@@ -44,12 +77,7 @@ export interface BaseCharacter {
   availableForBoosters: boolean;
   active: boolean;
   isProvisional?: boolean;
-  rarity?: MatrixRarity;
-  family?: string;
-  biome?: string;
-  themeCollections?: string[];
-  isClassified?: boolean;
-  // Specific to Magic cards
+  // Specific to Magic / Item cards
   magicManaCost?: number;
   magicTarget?: string;
   magicCondition?: string;
@@ -104,20 +132,37 @@ export interface BoosterSlotConfig {
   allowedRanks: CardRank[];
 }
 
+export interface BoosterPackFilters {
+  biomes?: string[];
+  families?: string[];
+  collections?: string[];
+  allowedRarities?: CardClass[];
+  rarities?: CardClass[];
+  types?: CardEntityType[];
+  specificMatrixIds?: string[];
+}
+
 export interface BoosterModel {
   id: string;
   name: string;
   description: string;
+  themeLabel?: string;
+  accentColor?: string;
+  priceCoins?: number;
   totalCards: number; // Default 9
   active: boolean;
+  filters?: BoosterPackFilters;
   slots: BoosterSlotConfig[];
-  specialSlotRankProbs: Record<CardRank, number>; // Default A: 75%, S: 25%
-  // Pack filter criteria (references to matrices)
-  filterBiome?: string;
-  filterFamily?: string;
-  filterCollection?: string;
-  filterEntityType?: CardEntityType;
-  specificMatrixIds?: string[];
+  specialSlotRankProbs: Record<CardRank, number>; // Default A: 72%, S: 28%
+}
+
+export interface BoosterOpenHistoryEntry {
+  id: string;
+  boosterId: string;
+  boosterName: string;
+  openedAt: string;
+  instanceIds: string[];
+  cards: import('./card').CardData[];
 }
 
 export interface DeckCategory {

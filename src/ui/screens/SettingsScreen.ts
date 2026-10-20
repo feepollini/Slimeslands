@@ -1,13 +1,6 @@
 import { SoundManager } from '../utils/SoundManager';
 import { t, getLang, setLang, getSkipIntro, setSkipIntro, LANGS, Lang } from '../../core/i18n';
 
-// Forja/editor são ferramentas de desenvolvimento: visíveis só rodando local
-// (localhost). No deploy (Vercel) os botões nem são renderizados.
-function isLocalHost(): boolean {
-    const h = window.location.hostname;
-    return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
-}
-
 export class SettingsScreen {
     private onOpenForja: () => void;
     private onOpenForjaV2: () => void;
@@ -22,7 +15,7 @@ export class SettingsScreen {
     public render(container: HTMLElement) {
         const volSfx = SoundManager.sfxVolume * 100;
         const volAmbient = SoundManager.ambientVolume * 100;
-        const showForgeAccess = isLocalHost();
+        const showForgeAccess = true;
 
         container.innerHTML = `
             <div class="settings-screen" style="height: 100%; width: 100%; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; box-sizing: border-box; background: rgba(0,0,0,0.3); backdrop-filter: blur(10px); animation: fadeIn 0.5s ease;">

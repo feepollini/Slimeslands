@@ -272,16 +272,8 @@ export class BoosterPackViewer {
       });
     }
 
-    // Carrega verso global das cartas do jogo
-    const globalBackUrl = getGlobalCardBack();
-    if (globalBackUrl) {
-      texLoader.load(globalBackUrl, (loadedBack) => {
-        loadedBack.colorSpace = THREE.SRGBColorSpace;
-        loadedBack.needsUpdate = true;
-        cardBackMat.map = loadedBack;
-        cardBackMat.needsUpdate = true;
-      });
-    }
+    // O verso 3D já utiliza o CardBackSVG oficial da Matriz (que respeita backImageUrl ou verso Hestridia)
+
 
     const tearSilverMat = new THREE.MeshStandardMaterial({
       color: '#f8fafc',
@@ -576,9 +568,9 @@ export class BoosterPackViewer {
     const cardsMasterGroup = new THREE.Group();
     worldGroup.add(cardsMasterGroup);
 
-    const CW = 2.28;
-    const CH = 3.82;
-    const CARD_CORNER_RADIUS = 0.088;
+    const CW = 2.48;
+    const CH = 3.61;
+    const CARD_CORNER_RADIUS = 0.095;
 
     const createRoundedCardShape = (w: number, h: number, r: number) => {
       const shape = new THREE.Shape();

@@ -125,6 +125,11 @@ export const CardBackSVG: React.FC<CardBackSVGProps> = React.memo(({
       viewBox="0 0 680 990"
       className="w-full h-full select-none block overflow-hidden"
       style={{
+        width: '100%',
+        height: '100%',
+        display: 'block',
+        overflow: 'hidden',
+        userSelect: 'none',
         fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif",
       }}
     >

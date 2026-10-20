@@ -9,6 +9,8 @@ import { StorePack, StoreData, normalizeStoreData } from './TabStore';
 import { getGlobalCardBack } from '../../../../core/constants';
 import { renderMatrixCardSVG } from '../utils/HestridiaMatrixRenderer';
 import { loadGameMatrixSnapshot } from '../../../../card_studio/src/utils/matrixPersistence';
+import { INITIAL_CARDS } from '../../../../card_studio/src/utils/defaultCards';
+import { INITIAL_BASE_CHARACTERS } from '../../../../card_studio/src/utils/proceduralEngine';
 
 export class TabPacks {
   private data: StoreData;
@@ -78,6 +80,10 @@ export class TabPacks {
       this.syncMatrixTemplates();
     });
 
+    window.addEventListener('hestridia:matrix-updated', () => {
+      this.syncMatrixTemplates();
+    });
+
     // Garante que haja pelo menos 1 pack configurado
     if (!this.data.packs || this.data.packs.length === 0) {
       this.data.packs = [
@@ -103,7 +109,7 @@ export class TabPacks {
   private async syncMatrixTemplates() {
     try {
       const snapshot = await loadGameMatrixSnapshot();
-      if (!snapshot || snapshot.isLibraryCleared || ((!snapshot.cards || snapshot.cards.length === 0) && (!snapshot.baseCharacters || snapshot.baseCharacters.length === 0))) {
+      if (snapshot?.isLibraryCleared) {
         this.templates = [];
         this.isMatrixSynced = true;
         this.textureCache.forEach((t) => t.dispose());
@@ -136,60 +142,69 @@ export class TabPacks {
       const matrixCards: any[] = [];
       const seenNames = new Set<string>();
 
-      // 1. Cartas do estúdio Matriz
-      if (Array.isArray(snapshot.cards)) {
-        snapshot.cards.forEach((cd) => {
-          const name = cd.title || cd.name;
-          if (!name || seenNames.has(name.toLowerCase().trim())) return;
-          seenNames.add(name.toLowerCase().trim());
+      const addMatrixCardEntry = (cd: any) => {
+        if (!cd) return;
+        const name = cd.title || cd.name;
+        if (!name || seenNames.has(name.toLowerCase().trim())) return;
+        seenNames.add(name.toLowerCase().trim());
 
-          const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
-          const atk = parseInt(cd.pills?.[0]?.mainText || '200') || 200;
-          const rKey = cd.cardRank === 'S' ? 'legendary' : cd.cardRank === 'A' ? 'epic' : cd.cardRank === 'B' ? 'rare' : 'common';
+        const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
+        const atk = parseInt(cd.pills?.[0]?.mainText || '200') || 200;
+        const rKey = cd.cardRank === 'S' ? 'legendary' : cd.cardRank === 'A' ? 'epic' : cd.cardRank === 'B' ? 'rare' : 'common';
 
-          matrixCards.push({
-            id: cd.id,
-            name,
-            title: name,
-            image: cd.imageUrl || '',
-            imageUrl: cd.imageUrl || '',
-            baseAtk: atk,
-            basePv,
-            rarity: rKey,
-            preferredRarity: rKey,
-            family: (cd as any).family || (cd.elementText || 'Geral'),
-            biome: (cd as any).biome || 'Geral',
-            cardData: cd,
-          });
+        matrixCards.push({
+          id: cd.id,
+          name,
+          title: name,
+          image: cd.imageUrl || '',
+          imageUrl: cd.imageUrl || '',
+          baseAtk: atk,
+          basePv,
+          rarity: rKey,
+          preferredRarity: rKey,
+          family: (cd as any).family || (cd.elementText || 'Geral'),
+          biome: (cd as any).biome || 'Geral',
+          cardData: cd,
         });
+      };
+
+      // 1. Cartas do estúdio Matriz (ou INITIAL_CARDS caso ainda não haja snapshot persistido)
+      const activeCards =
+        snapshot?.cards && snapshot.cards.length > 0 ? snapshot.cards : INITIAL_CARDS;
+      activeCards.forEach(addMatrixCardEntry);
+
+      if (Array.isArray(snapshot?.playerInventory)) {
+        snapshot!.playerInventory!.forEach(addMatrixCardEntry);
       }
 
       // 2. Personagens / Blueprints da Matriz (classificados)
-      if (Array.isArray(snapshot.baseCharacters)) {
-        snapshot.baseCharacters.forEach((bc) => {
-          if (bc.isClassified === false || bc.rarity === 'Não classificada') return;
-          const name = bc.name;
-          if (!name || seenNames.has(name.toLowerCase().trim())) return;
-          seenNames.add(name.toLowerCase().trim());
+      const activeBaseChars =
+        snapshot?.baseCharacters && snapshot.baseCharacters.length > 0
+          ? snapshot.baseCharacters
+          : INITIAL_BASE_CHARACTERS;
+      activeBaseChars.forEach((bc: any) => {
+        if (bc.isClassified === false || bc.rarity === 'Não classificada') return;
+        const name = bc.name;
+        if (!name || seenNames.has(name.toLowerCase().trim())) return;
+        seenNames.add(name.toLowerCase().trim());
 
-          const rKey = bc.rarity === 'Mítica' || bc.rarity === 'Lendária' ? 'legendary' : bc.rarity === 'Épica' ? 'epic' : bc.rarity === 'Rara' ? 'rare' : 'common';
+        const rKey = bc.rarity === 'Mítica' || bc.rarity === 'Lendária' ? 'legendary' : bc.rarity === 'Épica' ? 'epic' : bc.rarity === 'Rara' ? 'rare' : 'common';
 
-          matrixCards.push({
-            id: bc.id,
-            name,
-            title: name,
-            image: bc.imageUrl || '',
-            imageUrl: bc.imageUrl || '',
-            baseAtk: bc.stats?.baseDamage || 200,
-            basePv: bc.stats?.baseHealth || 400,
-            rarity: rKey,
-            preferredRarity: rKey,
-            family: bc.family || 'Geral',
-            biome: bc.biome || 'Geral',
-            baseCharacter: bc,
-          });
+        matrixCards.push({
+          id: bc.id,
+          name,
+          title: name,
+          image: bc.imageUrl || '',
+          imageUrl: bc.imageUrl || '',
+          baseAtk: bc.stats?.baseDamage || 200,
+          basePv: bc.stats?.baseHealth || 400,
+          rarity: rKey,
+          preferredRarity: rKey,
+          family: bc.family || 'Geral',
+          biome: bc.biome || 'Geral',
+          baseCharacter: bc,
         });
-      }
+      });
 
       this.templates = matrixCards;
       this.isMatrixSynced = true;

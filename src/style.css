@@ -19,12 +19,21 @@
     --border-premium: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
+@layer theme, base, components, utilities;
+
+@layer base {
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
+    }
+
+    #forge-matrix-mount,
+    #forge-matrix-mount * {
+        user-select: auto;
+    }
 }
 
 body {
@@ -451,28 +460,32 @@ body {
 .board-grid-hifi {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 7px 9px;
+    grid-template-rows: repeat(2, auto);
+    gap: 10px 10px;
     background: transparent;
     padding: 0;
     border: none;
     box-shadow: none;
-    width: 96%;
-    max-height: 100%;
+    width: 92%;
+    max-width: 350px;
     margin: 0 auto;
+    align-content: center;
 }
 
 .slot {
-    aspect-ratio: 1 / 1.78; /* Altura equilibrada sem alongar demais */
+    aspect-ratio: 680 / 990; /* Proporcional ao novo formato 680x990 das cartas da Forja Matriz */
+    width: 100%;
+    height: auto;
     background: rgba(0, 0, 0, 0.5);
     border: 2px dashed rgba(212, 175, 55, 0.28);
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     transition: 0.3s;
     box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.65);
+    overflow: hidden;
 }
 
 .slot.highlight {
@@ -753,10 +766,10 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
 
 .sepulture-slot,
 .deck-back-slot {
-    width: 65px;
-    aspect-ratio: 1 / 1.85;
+    width: 66px;
+    aspect-ratio: 680 / 990;
     background: rgba(40, 40, 40, 0.8);
-    border-radius: 2px;
+    border-radius: 8px;
     border: 1.5px solid var(--metal);
     position: relative;
     overflow: hidden;
@@ -1202,7 +1215,7 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
 
 .mulligan-card {
     width: 70px;
-    aspect-ratio: 2/3;
+    aspect-ratio: 680 / 990;
     cursor: pointer;
     transition: 0.3s;
 }
@@ -1239,8 +1252,8 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
 
 .hand-card-hifi {
     position: absolute;
-    width: 100px;
-    aspect-ratio: 1 / 1.85;
+    width: 104px;
+    aspect-ratio: 680 / 990;
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     cursor: pointer;
     transform-origin: bottom center;
@@ -1492,6 +1505,12 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
     border: 2px solid white;
 }
 
+.card-face.matrix-frame-mode {
+    border: none !important;
+    background: transparent !important;
+    border-radius: 12px;
+}
+
 .card-label {
     position: absolute;
     bottom: 5px;
@@ -1541,7 +1560,7 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
 
 .carousel-card {
     flex: 0 0 180px;
-    aspect-ratio: 2/3;
+    aspect-ratio: 680 / 990;
     scroll-snap-align: center;
     transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     cursor: pointer;
@@ -1634,7 +1653,7 @@ body:has(.inline-action-bar.active) .attack-prompt-handle {
 
 .fullscreen-art {
     width: 100%;
-    aspect-ratio: 2/3;
+    aspect-ratio: 680 / 990;
     background-size: cover;
     background-position: center;
     border-radius: 12px;

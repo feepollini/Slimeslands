@@ -23,13 +23,16 @@ import { ShowcaseVfxType } from './types/vfx';
 import {
   BaseCharacter,
   BoosterModel,
+  BoosterOpenHistoryEntry,
   CardClass,
   ClassBalanceTable,
   DeckCategory,
+  SubgroupCatalog,
 } from './types/slimelands';
 import {
   INITIAL_CARDS,
   BLANK_TEMPLATE_CARD,
+  createInitialPlayerInventory,
 } from './utils/defaultCards';
 import {
   DEFAULT_PRESET_PALETTES,
@@ -43,6 +46,7 @@ import {
   DEFAULT_BOOSTER_MODELS,
   DEFAULT_CLASS_BALANCE_TABLES,
   DEFAULT_DECK_CATEGORIES,
+  DEFAULT_SUBGROUP_CATALOG,
   INITIAL_BASE_CHARACTERS,
   OFFICIAL_CLASSES,
   ensureCoherentCharacterFields,
@@ -88,6 +92,19 @@ export default function App() {
   const [boosterModels, setBoosterModels] = useState<BoosterModel[]>(
     DEFAULT_BOOSTER_MODELS
   );
+  const [subgroupCatalog, setSubgroupCatalog] = useState<SubgroupCatalog>(
+    DEFAULT_SUBGROUP_CATALOG
+  );
+  const [playerInventory, setPlayerInventory] = useState<CardData[]>(() =>
+    createInitialPlayerInventory(INITIAL_CARDS)
+  );
+  const [playerCoins, setPlayerCoins] = useState<number>(1000);
+  const [boosterStock, setBoosterStock] = useState<Record<string, number>>({
+    'booster-standard-9': 2,
+    'booster-floresta-9': 1,
+    'booster-pantano-sombrio-9': 1,
+  });
+  const [boosterHistory, setBoosterHistory] = useState<BoosterOpenHistoryEntry[]>([]);
   const [isMatrixHydrated, setIsMatrixHydrated] = useState(false);
 
   // Hydrate persistent Game Matrix on startup so nothing is lost on reload
@@ -99,16 +116,15 @@ export default function App() {
         if (snapshot.isLibraryCleared) {
           setCards([]);
           setBaseCharacters([]);
-          setDecks(DEFAULT_DECK_CATEGORIES);
         } else {
-          if (Array.isArray(snapshot.cards)) {
+          if (Array.isArray(snapshot.cards) && snapshot.cards.length > 0) {
             setCards(snapshot.cards);
           }
-          if (Array.isArray(snapshot.baseCharacters)) {
+          if (
+            Array.isArray(snapshot.baseCharacters) &&
+            snapshot.baseCharacters.length > 0
+          ) {
             setBaseCharacters(snapshot.baseCharacters);
-          }
-          if (Array.isArray(snapshot.decks) && snapshot.decks.length > 0) {
-            setDecks(snapshot.decks);
           }
         }
         if (snapshot.stageDraftCard) {
@@ -120,6 +136,9 @@ export default function App() {
         if (snapshot.globalBackImageUrl !== undefined) {
           setGlobalBackImageUrl(snapshot.globalBackImageUrl);
         }
+        if (Array.isArray(snapshot.decks) && snapshot.decks.length > 0) {
+          setDecks(snapshot.decks);
+        }
         if (snapshot.balanceTables) {
           setBalanceTables(snapshot.balanceTables);
         }
@@ -129,6 +148,21 @@ export default function App() {
         ) {
           setBoosterModels(snapshot.boosterModels);
         }
+        if (snapshot.subgroupCatalog) {
+          setSubgroupCatalog(snapshot.subgroupCatalog);
+        }
+        if (Array.isArray(snapshot.playerInventory)) {
+          setPlayerInventory(snapshot.playerInventory);
+        }
+        if (typeof snapshot.playerCoins === 'number') {
+          setPlayerCoins(snapshot.playerCoins);
+        }
+        if (snapshot.boosterStock) {
+          setBoosterStock(snapshot.boosterStock);
+        }
+        if (Array.isArray(snapshot.boosterHistory)) {
+          setBoosterHistory(snapshot.boosterHistory);
+        }
       }
       setIsMatrixHydrated(true);
     });
@@ -137,7 +171,7 @@ export default function App() {
     };
   }, []);
 
-  // Automatically persist Game Matrix whenever cards, decks, characters, or settings change
+  // Automatically persist Game Matrix whenever cards, inventory, settings change
   useEffect(() => {
     if (!isMatrixHydrated) return;
     const timer = window.setTimeout(() => {
@@ -152,6 +186,11 @@ export default function App() {
         baseCharacters,
         balanceTables,
         boosterModels,
+        subgroupCatalog,
+        playerInventory,
+        playerCoins,
+        boosterStock,
+        boosterHistory,
         isLibraryCleared: cards.length === 0 && baseCharacters.length === 0,
       });
     }, 180);
@@ -166,6 +205,11 @@ export default function App() {
     baseCharacters,
     balanceTables,
     boosterModels,
+    subgroupCatalog,
+    playerInventory,
+    playerCoins,
+    boosterStock,
+    boosterHistory,
   ]);
 
   // Ensure any generated or edited card with artwork is registered in the Game Matrix baseCharacters pool
@@ -205,7 +249,13 @@ export default function App() {
   const [isGalleryExpandedWide, setIsGalleryExpandedWide] = useState(false);
   const [ecosystemModalOpen, setEcosystemModalOpen] = useState(false);
   const [ecosystemModalSection, setEcosystemModalSection] = useState<
-    'generator' | 'boosters' | 'characters' | 'balance' | 'parry-sim'
+    | 'boosters'
+    | 'inventory-board'
+    | 'packs-admin'
+    | 'characters'
+    | 'balance'
+    | 'parry-sim'
+    | 'generator'
   >('boosters');
   const [inspectedCard, setInspectedCard] = useState<CardData | null>(null);
 
@@ -673,7 +723,6 @@ export default function App() {
         )
       );
 
-      // Purga a carta de todos os boosters salvos
       try {
         const purgeFromPacks = (packs: any[]) => {
           packs.forEach((p: any) => {
@@ -711,14 +760,12 @@ export default function App() {
   };
 
   const handleClearAllCardsAndAssets = () => {
-    // 1. Zera todas as cartas, personagens registrados e decks de pacotes da Matriz
     setCards([]);
     setBaseCharacters([]);
     setDecks(DEFAULT_DECK_CATEGORIES);
     setStageDraftCard(BLANK_TEMPLATE_CARD);
     setActiveCardId(BLANK_TEMPLATE_CARD.id);
 
-    // 2. Persiste imediatamente o snapshot completamente zerado no IndexedDB e LocalStorage
     saveGameMatrixSnapshot({
       version: 1,
       updatedAt: new Date().toISOString(),
@@ -730,10 +777,14 @@ export default function App() {
       baseCharacters: [],
       balanceTables,
       boosterModels,
+      subgroupCatalog,
+      playerInventory: [],
+      playerCoins,
+      boosterStock,
+      boosterHistory,
       isLibraryCleared: true,
     });
 
-    // 3. Purga cartas fixas em todos os boosters salvos na Forja V2 (localStorage)
     try {
       const forgePersistRaw = localStorage.getItem('forge_v2_persistence');
       if (forgePersistRaw) {
@@ -759,7 +810,6 @@ export default function App() {
       }
     } catch (_) {}
 
-    // 3.5. Purga imediatamente no store.json real no disco via /api/save-store
     try {
       fetch('/src/core/store.json')
         .then((res) => res.json())
@@ -779,7 +829,6 @@ export default function App() {
         .catch(() => {});
     } catch (_) {}
 
-    // 4. Dispara evento global absoluto para atingir a aba booster e qualquer outra tela
     window.dispatchEvent(new CustomEvent('matrix_library_cleared'));
   };
 
@@ -853,72 +902,64 @@ export default function App() {
           TOP BAR (Retracts completely in Full Mode)
          ===================================================================== */}
       <header
-        className={`border-b bg-[#090b0e] px-4 flex items-center justify-between gap-4 shrink-0 z-30 transition-all duration-300 ease-out ${
+        className={`border-b bg-[#0D0F14] px-5 flex items-center justify-between gap-8 shrink-0 z-30 transition-all duration-500 ease-out ${
           isFullscreenShowcase
             ? 'h-0 max-h-0 py-0 opacity-0 -translate-y-full border-transparent pointer-events-none overflow-hidden'
-            : 'h-11 border-slate-800/60 opacity-100 translate-y-0'
+            : 'h-14 border-slate-800/80 opacity-100 translate-y-0'
         }`}
       >
-        {/* Zone 1: Sub-Header Badge */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-extrabold tracking-wider text-purple-300 bg-purple-950/50 border border-purple-500/30 px-2 py-0.5 rounded-md font-['Outfit',sans-serif]">
-            ESTÚDIO MATRIZ
-          </span>
-        </div>
+        {/* Zone 1: Brand Title */}
+        <span className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0 font-['Outfit',sans-serif]">
+          Worlds of Slimelands
+        </span>
 
         {/* Zone 2: Clean Single-Line Navigation Links */}
-        <nav className="hidden md:flex items-center gap-2 text-xs font-medium text-slate-300">
+        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
           <button
             onClick={() => setIsGalleryExpandedWide((prev) => !prev)}
-            className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all whitespace-nowrap shrink-0"
+            className="hover:text-white transition-colors whitespace-nowrap shrink-0"
           >
-            {isGalleryExpandedWide ? '📁 Compactar' : '📂 Expandir Galeria'}
+            {isGalleryExpandedWide ? 'Compactar Galeria' : 'Expandir Galeria'}
           </button>
           <button
             onClick={() => {
               setEcosystemModalSection('boosters');
               setEcosystemModalOpen(true);
             }}
-            className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all whitespace-nowrap shrink-0"
+            className="hover:text-white transition-colors whitespace-nowrap shrink-0 text-amber-300 font-bold"
           >
-            📦 Boosters (9 Cartas)
+            Loja & Boosters (9 Cartas)
           </button>
           <button
             onClick={() => {
-              setEcosystemModalSection('generator');
+              setEcosystemModalSection('inventory-board');
               setEcosystemModalOpen(true);
             }}
-            className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all whitespace-nowrap shrink-0"
+            className="hover:text-white transition-colors whitespace-nowrap shrink-0 text-emerald-400 font-bold"
           >
-            ⚡ Drops & Scans
-          </button>
-          <button
-            onClick={() => {
-              setEcosystemModalSection('characters');
-              setEcosystemModalOpen(true);
-            }}
-            className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all whitespace-nowrap shrink-0"
-          >
-            👤 Personagens
+            Inventário & Tabuleiro ({playerInventory.length})
           </button>
           <button
             onClick={() => {
               setEcosystemModalSection('balance');
               setEcosystemModalOpen(true);
             }}
-            className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all whitespace-nowrap shrink-0"
+            className="hover:text-white transition-colors whitespace-nowrap shrink-0"
           >
-            ⚖️ Regras & Parry
+            Regras & Balanceamento
           </button>
         </nav>
 
         {/* Zone 3: Primary Action */}
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handleInstantRandomRoll}
-            className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white transition-all whitespace-nowrap shrink-0 shadow-sm"
+            onClick={() => {
+              setEcosystemModalSection('boosters');
+              setEcosystemModalOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-extrabold text-slate-950 transition-colors whitespace-nowrap shrink-0"
           >
-            🎲 Gerar Random
+            Abrir Booster (9 Cartas)
           </button>
         </div>
       </header>
@@ -1059,6 +1100,8 @@ export default function App() {
               setBaseCharacters((prev) => [...prev, ...newChars])
             }
             balanceTables={balanceTables}
+            subgroupCatalog={subgroupCatalog}
+            onUpdateSubgroupCatalog={setSubgroupCatalog}
             isExpandedWide={isGalleryExpandedWide}
             onToggleExpandedWide={() =>
               setIsGalleryExpandedWide((prev) => !prev)
@@ -1824,6 +1867,51 @@ export default function App() {
         isOpen={ecosystemModalOpen}
         initialSection={ecosystemModalSection}
         onClose={() => setEcosystemModalOpen(false)}
+        matrixCards={cards}
+        playerInventory={playerInventory}
+        onUpdatePlayerInventory={(nextInv) => {
+          const resolved =
+            typeof nextInv === 'function' ? nextInv(playerInventory) : nextInv;
+          setPlayerInventory(resolved);
+          // Sync newly obtained cards into Matrix gallery & game store_owned so Deck/Store/Battle have them
+          setCards((prevCards) => {
+            const existingIds = new Set(prevCards.map((c) => c.id));
+            const existingTitles = new Set(
+              prevCards.map((c) => (c.title || '').trim().toLowerCase())
+            );
+            const brandNew = resolved.filter(
+              (c) =>
+                !existingIds.has(c.id) &&
+                !existingTitles.has((c.title || '').trim().toLowerCase())
+            );
+            if (brandNew.length === 0) return prevCards;
+            const withBack = brandNew.map((c) => ({
+              ...c,
+              backImageUrl: c.backImageUrl || globalBackImageUrl || null,
+            }));
+            syncCardsIntoGameMatrixCharacters(withBack);
+            try {
+              const rawOwned = localStorage.getItem('store_owned');
+              const owned = rawOwned
+                ? JSON.parse(rawOwned)
+                : { cards: [], decks: [], artifacts: [] };
+              if (!Array.isArray(owned.cards)) owned.cards = [];
+              withBack.forEach((c) => {
+                if (c.title && !owned.cards.includes(c.title)) {
+                  owned.cards.push(c.title);
+                }
+              });
+              localStorage.setItem('store_owned', JSON.stringify(owned));
+            } catch (_) {}
+            return [...withBack, ...prevCards];
+          });
+        }}
+        playerCoins={playerCoins}
+        onUpdatePlayerCoins={setPlayerCoins}
+        boosterStock={boosterStock}
+        onUpdateBoosterStock={setBoosterStock}
+        boosterHistory={boosterHistory}
+        onUpdateBoosterHistory={setBoosterHistory}
         baseCharacters={baseCharacters}
         onUpdateBaseCharacters={setBaseCharacters}
         balanceTables={balanceTables}
@@ -1831,19 +1919,13 @@ export default function App() {
         boosterModels={boosterModels}
         onUpdateBoosterModels={setBoosterModels}
         decks={decks}
-        onGrantCardsToInventory={(newCards, selectFirst) => {
-          const cardsWithBack = newCards.map((c) => ({
-            ...c,
-            backImageUrl: c.backImageUrl || globalBackImageUrl || null,
-          }));
-          syncCardsIntoGameMatrixCharacters(cardsWithBack);
-          setCards((prev) => [...cardsWithBack, ...prev]);
-          if (selectFirst && cardsWithBack[0]) {
-            setActiveCardId(cardsWithBack[0].id);
-            setIsFlipped(false);
-          }
-        }}
+        subgroupCatalog={subgroupCatalog}
+        onUpdateSubgroupCatalog={setSubgroupCatalog}
         onInspectCard={(card) => setInspectedCard(card)}
+        onSelectCardForStudio={(cardId) => {
+          setActiveCardId(cardId);
+          setIsFlipped(false);
+        }}
       />
     </div>
   );

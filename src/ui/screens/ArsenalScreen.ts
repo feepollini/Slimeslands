@@ -6,7 +6,13 @@ import { bindLongPress } from '../utils/InputUtils';
 import { SoundManager } from '../utils/SoundManager';
 import { thumbFor } from '../utils/thumb';
 import { openCardViewer, cardViewerNav, isCardViewerOpen } from '../components/CardViewer';
-import { renderMatrixCardSVG, renderMatrixCardBackSVG } from './forge_v2/utils/HestridiaMatrixRenderer';
+import {
+    renderMatrixCardSVG,
+    renderMatrixCardBackSVG,
+    getMergedGameTemplatesSync,
+    getMergedGameTemplates,
+    resolveMatrixOrGameCard,
+} from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t as i18nT, tx as i18nTx } from '../../core/i18n';
 
 export class ArsenalScreen {
@@ -46,7 +52,7 @@ export class ArsenalScreen {
         onConfirm?: (cards: any[], artifacts: Skill[], board: string) => void,
         isPrepMode: boolean = false
     ) {
-        this.templates = templates;
+        this.templates = getMergedGameTemplatesSync(templates);
         this.artifacts = artifacts;
         this.boards = boards;
         this.onConfirm = onConfirm;
@@ -72,6 +78,10 @@ export class ArsenalScreen {
         this.loadSlotData(this.currentSlot);
 
         window.addEventListener('keydown', this.handleGlobalKeys.bind(this));
+        window.addEventListener('hestridia:matrix-updated', () => {
+            this.templates = getMergedGameTemplatesSync(templates);
+            this.loadSlotData(this.currentSlot);
+        });
     }
 
     private renderPreDeck(): string {
@@ -210,6 +220,19 @@ export class ArsenalScreen {
 
         this.bind(container);
         this.observeLazyBg(container);
+
+        if (!container.dataset.matrixArsenalSynced) {
+            container.dataset.matrixArsenalSynced = '1';
+            getMergedGameTemplates(this.templates).then((merged) => {
+                if (merged && merged.length !== this.templates.length) {
+                    this.templates = merged;
+                    this.loadSlotData(this.currentSlot);
+                    if (container.isConnected) {
+                        this.render(container);
+                    }
+                }
+            });
+        }
     }
 
     private getCardsList(): any[] {
@@ -882,7 +905,9 @@ export class ArsenalScreen {
         const savedPre = localStorage.getItem(key) || localStorage.getItem('arsenal_predeck');
         if (savedPre) {
             const data = JSON.parse(savedPre);
-            this.preDeckCards = data.cards.map((name: string) => this.templates.find(t => t.name === name) || null);
+            this.preDeckCards = data.cards.map((name: string) =>
+                name ? (this.templates.find(t => t.name === name || t.id === name) || resolveMatrixOrGameCard(name, this.templates) || null) : null
+            );
             this.preDeckArtifacts = data.artifacts.map((id: string) => this.artifacts.find(a => a.id === id) || null);
             this.selectedBoard = data.board || (this.boards[0] || '');
         } else {

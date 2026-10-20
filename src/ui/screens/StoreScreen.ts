@@ -4,7 +4,12 @@ import { ProgressionManager } from '../../core/ProgressionManager';
 import { SoundManager } from '../utils/SoundManager';
 import { thumbFor } from '../utils/thumb';
 import { openCardViewer } from '../components/CardViewer';
-import { renderMatrixCardSVG } from './forge_v2/utils/HestridiaMatrixRenderer';
+import {
+  renderMatrixCardSVG,
+  getMergedGameTemplatesSync,
+  getMergedGameTemplates,
+  resolveMatrixOrGameCard,
+} from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t } from '../../core/i18n';
 import storeData from '../../core/store.json';
 import { BoosterPackViewer } from '../components/booster/BoosterPackViewer';
@@ -33,8 +38,15 @@ export class StoreScreen {
   private customTemplates: any[] = [];
 
   constructor(customData?: any) {
-    const d: any = customData || storeData || {};
-    this.customTemplates = d.templates || [];
+    let localOverride: any = null;
+    if (!customData) {
+      try {
+        const raw = localStorage.getItem('store_config_override');
+        if (raw) localOverride = JSON.parse(raw);
+      } catch (_) {}
+    }
+    const d: any = customData || localOverride || storeData || {};
+    this.customTemplates = getMergedGameTemplatesSync(d.templates || CARD_TEMPLATES);
     this.boosterDisplayMode = (d.boosterDisplayMode === 'split') ? 'split' : 'carousel';
 
     this.data = {
@@ -77,23 +89,12 @@ export class StoreScreen {
 
   private resolveCard(name: string): any {
     if (!name) return null;
-    if (this.customTemplates && this.customTemplates.length > 0) {
-      const found = this.customTemplates.find(c => c && (c.name === name || c.id === name));
-      if (found) return found;
-      const clean = String(name).trim().toLowerCase();
-      const foundClean = this.customTemplates.find(c => c && (
-        String(c.name || '').trim().toLowerCase() === clean ||
-        String(c.id || '').trim().toLowerCase() === clean
-      ));
-      if (foundClean) return foundClean;
-    }
-    const clean = String(name).trim().toLowerCase();
-    return (CARD_TEMPLATES as any[]).find(c => c && (
-      c.name === name ||
-      c.id === name ||
-      String(c.name || '').trim().toLowerCase() === clean ||
-      String(c.id || '').trim().toLowerCase() === clean
-    )) || null;
+    return (
+      resolveMatrixOrGameCard(name, [
+        ...(this.customTemplates || []),
+        ...(CARD_TEMPLATES as any[]),
+      ]) || null
+    );
   }
 
   private getOwned(): { cards: string[]; decks: string[]; artifacts: string[] } {
@@ -1079,6 +1080,15 @@ export class StoreScreen {
     </style>
     `;
     this.bind(container);
+
+    if (!container.dataset.matrixStoreSynced) {
+      container.dataset.matrixStoreSynced = '1';
+      getMergedGameTemplates(CARD_TEMPLATES).then((merged) => {
+        if (merged && merged.length > 0) {
+          this.customTemplates = merged;
+        }
+      });
+    }
   }
 
   private toast(container: HTMLElement, msg: string, ok: boolean = true) {

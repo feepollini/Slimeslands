@@ -1,11 +1,14 @@
 import { ShowcaseVfxType } from './vfx';
 import {
   CardClass,
-  MatrixRarity,
   CardRank,
   CardEntityType,
   CardOrigin,
   GeneratedAbilityInstance,
+  MatrixRecordKind,
+  MatrixClassificationState,
+  MatrixEditState,
+  CharacterAbilityTemplate,
 } from './slimelands';
 
 export interface BottomStatPill {
@@ -31,7 +34,7 @@ export interface CardColorPalette {
 export interface CardData {
   id: string;
   title: string;
-  pvText: string; // e.g. "PV500" rendered vertically
+  pvText: string; // e.g. "PV500" rendered vertically (or "MATRIZ" when neutral unclassified)
   elementText: string; // e.g. "TERRA" rendered vertically inside the white pill
   rankBadgeText: string; // e.g. "S" inside the colored circle below element
   loreHeader: string;
@@ -41,6 +44,7 @@ export interface CardData {
   showLoreBox: boolean;
   loreBoxOpacity: number; // 0 to 100
   loreBoxY: number; // Vertical position adjustment (default 725)
+  loreTextScale?: number; // 70 to 135
   pillCount: 1 | 2 | 3 | 4; // Variable number of bottom capsules (1, 2, 3, or 4)
   dockAutoFit: boolean; // Whether the bottom recessed dock contour shrinks to hug the active capsules or stays full-width
   pills: [BottomStatPill, BottomStatPill, BottomStatPill, BottomStatPill];
@@ -83,26 +87,33 @@ export interface CardData {
   backImageScale?: number;
   backImageOffsetX?: number;
   backImageOffsetY?: number;
-  // Worlds of Slimelands Procedural Metadata & Production Management
+  // Worlds of Slimelands Matrix, Subgroups, Versions & Instances (Sections 1 to 19)
+  recordKind?: MatrixRecordKind; // 'matrix' | 'version' | 'instance'
+  sourceMatrixId?: string;       // ID of the original Matrix when recordKind is 'version' or 'instance'
+  classificationState?: MatrixClassificationState; // 'unclassified' | 'classified'
+  editState?: MatrixEditState;   // 'neutral' | 'provisional' | 'configured' | 'version_saved'
+  isNeutralMatrix?: boolean;     // True when newly imported into the Matrix without generated attributes
+  useFixedVersionInPacks?: boolean; // Optional version flag if admin wants fixed distribution
+  // Secondary Subgroups (Independent of Rarity — Sections 5 & 6)
+  family?: string;               // e.g. 'Slimes Tóxicos', 'Slimes Rochosos', 'Slimes Naturais'
+  biome?: string;                // e.g. 'Floresta', 'Pântano', 'Vulcânico', 'Neve'
+  collections?: string[];        // Multiple thematic collections allowed simultaneously!
+  matrixAbilities?: CharacterAbilityTemplate[]; // Base ability definitions on the Matrix
+  // Procedural & Instance Metadata
   baseCharacterId?: string;
-  cardClass?: MatrixRarity;
-  cardRank?: CardRank;
-  entityType?: CardEntityType;
+  cardClass?: CardClass;         // Primary Rarity (undefined when unclassified)
+  cardRank?: CardRank;           // Rolled or fixed Rank (undefined when neutral matrix)
+  entityType?: CardEntityType;   // 'Criatura' | 'Magia' | 'Item'
   pvNumber?: number;
   maxDamage?: number;
-  summonStaminaCost?: number;      // 1 to 9 Stamina
+  summonStaminaCost?: number;    // 1 to 9 Stamina
   generatedAbilities?: GeneratedAbilityInstance[];
+  baseAbilities?: CharacterAbilityTemplate[];
+  magicManaCost?: number;
+  magicTarget?: string;
+  magicCondition?: string;
   origin?: CardOrigin;
   deckId?: string;
   createdAt?: string;
   rulesVersion?: string;
-  // Matrix Blueprint & Classification Subgroups
-  rarity?: MatrixRarity;
-  family?: string;
-  biome?: string;
-  themeCollections?: string[];
-  isClassified?: boolean;
-  isMatrixBlueprint?: boolean;
-  matrixId?: string;
-  versionId?: string;
 }

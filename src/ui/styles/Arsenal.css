@@ -426,6 +426,38 @@
     color: #ffe9a8;
 }
 
+/* BOTÃO CIRCULAR DISCRETO PARA PILHAR CÓPIAS */
+.ars-stack-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #2b1f13, #150d06);
+    border: 2px solid #0e0903;
+    color: rgba(255, 233, 168, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 236, 190, 0.2), 0 2px 4px rgba(0, 0, 0, 0.5);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.ars-stack-btn:hover {
+    color: #ffd700;
+    border-color: rgba(212, 175, 55, 0.6);
+    transform: scale(1.08);
+}
+
+.ars-stack-btn.active {
+    background: linear-gradient(180deg, #ffe27a, #d4af37 65%, #9a7414);
+    color: #2b1600;
+    border-color: #0e0903;
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
 .ars-tabs {
     display: flex;
     padding: 0 15px;
@@ -652,6 +684,38 @@
     z-index: 10;
     letter-spacing: 0.5px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5), 0 0 10px rgba(212, 175, 55, 0.5);
+}
+
+.ars-deck-badge.partial {
+    background: linear-gradient(180deg, #5a4128, #2a1c0d);
+    color: #ffe9a8;
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+/* BADGE DE CÓPIAS PILHADAS */
+.ars-stack-badge {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: linear-gradient(180deg, #2a1f10, #120c06);
+    border: 1.5px solid #ffd700;
+    color: #ffd76a;
+    font-size: 0.52rem;
+    font-weight: 950;
+    padding: 2px 6px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 215, 0, 0.35);
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+}
+
+.ars-card-thumb.stacked .ars-thumb-art {
+    box-shadow: 3px 3px 0 rgba(212, 175, 55, 0.35), 6px 6px 0 rgba(0, 0, 0, 0.55), 0 4px 0 rgba(0, 0, 0, 0.5);
 }
 
 /* TABS */

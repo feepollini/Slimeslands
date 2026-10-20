@@ -4,9 +4,11 @@ import { ProgressionManager } from '../../core/ProgressionManager';
 import { SoundManager } from '../utils/SoundManager';
 import { thumbFor } from '../utils/thumb';
 import { openCardViewer } from '../components/CardViewer';
+import { renderMatrixCardSVG } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t } from '../../core/i18n';
 import storeData from '../../core/store.json';
 import { BoosterPackViewer } from '../components/booster/BoosterPackViewer';
+import { resolveBoosterCards } from './forge_v2/utils/boosterResolver';
 
 // Vitrine da loja no GAME: banner slider, diárias rotativas, raras,
 // decks completos e pacotes. Lê src/core/store.json (forja v2).
@@ -156,11 +158,11 @@ export class StoreScreen {
   }
 
   private cardCell(offer: any, currency: string, owned: boolean, key: string): string {
-    const c = this.resolveCard(offer.card);
-    const art = c && c.image ? `background-image:url('${c.image}');` : 'background:rgba(255,255,255,0.05);';
+    const c = this.resolveCard(offer.card) || { name: offer.card, image: '' };
     return `
       <div class="store-sec" style="background:linear-gradient(180deg, rgba(58,42,21,0.9), rgba(20,13,6,0.9)); border:3px solid #0e0903; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
-        <div class="store-view-card" data-view-name="${this.esc(offer.card)}" data-view-cur="${currency}" style="aspect-ratio:3/4; ${art} background-size:cover; background-position:center; position:relative; cursor:pointer; box-shadow:inset 0 0 0 2px rgba(212,175,55,0.55);">
+        <div class="store-view-card" data-view-name="${this.esc(offer.card)}" data-view-cur="${currency}" style="aspect-ratio:680/990; position:relative; cursor:pointer; overflow:hidden; border-radius:10px;">
+          ${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}
           ${owned ? `<div style="position:absolute; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; font-size:2.4rem;">✓</div>` : ''}
         </div>
         <div style="padding:7px 6px 8px 6px; display:flex; flex-direction:column; gap:5px; align-items:stretch; text-align:center;">
@@ -199,7 +201,7 @@ export class StoreScreen {
       this.cardCell(o, 'gold', owned.cards.includes(o.card), 'daily:' + o.card)).join('');
   }
 
-  private rareTilesHtml(owned: { cards: string[]; decks: string[] }): string {
+  private rareTilesHtml(owned: { cards: string[]; decks: string[] }): string[] {
     if (this.data.rare.length === 0) {
       return Array.from({ length: this.rarePageSize }).map(() => this.ghostCell());
     }
@@ -264,13 +266,10 @@ export class StoreScreen {
               <button class="store-strip-scroll-left" data-deck="${this.esc(deck.id)}" style="position:absolute; left:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">‹</button>
               <div class="store-deck-cards-strip" id="deck-strip-${this.esc(deck.id)}" style="flex:1; display:flex; gap:8px; overflow-x:auto; padding:6px 18px; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x; scroll-behavior:smooth;">
                 ${cards.map((n: string, ci: number) => {
-                  const c = this.resolveCard(n);
-                  const art = c && c.image ? `background-image:url('${c.image}');` : 'background:rgba(255,255,255,0.06);';
+                  const c = this.resolveCard(n) || { name: n, image: '' };
                   return `
-                    <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:88px; border-radius:6px; border:2px solid #d4af37; ${art} background-size:cover; background-position:center; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
-                      <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.85); font-size:0.48rem; font-weight:900; color:#ffe9a8; text-align:center; padding:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                        ${this.esc(n)}
-                      </div>
+                    <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:90px; border-radius:6px; overflow:hidden; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
+                      ${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}
                     </div>
                   `;
                 }).join('')}
@@ -413,7 +412,7 @@ export class StoreScreen {
     const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
     const unitPrice = Number(activePack.price) || 0;
     const totalPrice = unitPrice * this.boosterQty;
-    const priceText = totalPrice === 0 ? 'GRÁTIS' : `${curIcon} ${totalPrice}`;
+    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
 
     return `
       <div style="display:flex; align-items:center; justify-content:center; gap:10px; width:100%; max-width:320px; margin:14px auto 0 auto; box-sizing:border-box;">
@@ -424,9 +423,7 @@ export class StoreScreen {
 
         <!-- Cápsula Gamer de Compra / Abertura -->
         <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:44px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.75rem; letter-spacing:1.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 0 16px rgba(0,180,216,0.4), inset 0 1px 0 rgba(255,255,255,0.3); white-space:nowrap; padding:0 16px;">
-          <span>✨ ${t('st.open3d')}</span>
-          <span style="opacity:0.6;">·</span>
-          <span style="color:#ffe066; font-weight:950; text-shadow:0 1px 2px #000;">${priceText}</span>
+          <span>${btnText}</span>
         </button>
       </div>
     `;
@@ -488,7 +485,7 @@ export class StoreScreen {
     const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
     const unitPrice = Number(activePack.price) || 0;
     const totalPrice = unitPrice * this.boosterQty;
-    const priceText = totalPrice === 0 ? 'GRÁTIS' : `${curIcon} ${totalPrice}`;
+    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
 
     return `
       <div style="display:flex; flex-direction:row; align-items:center; justify-content:center; gap:14px; width:100%; padding:4px 0 16px 0; box-sizing:border-box;">
@@ -522,9 +519,7 @@ export class StoreScreen {
             </button>
 
             <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:40px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.7rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 14px rgba(0,180,216,0.4); white-space:nowrap; padding:0 12px;">
-              <span>✨ ${t('st.open3d')}</span>
-              <span style="opacity:0.6;">·</span>
-              <span style="color:#ffe066; font-weight:950;">${priceText}</span>
+              <span>${btnText}</span>
             </button>
           </div>
         </div>
@@ -766,7 +761,7 @@ export class StoreScreen {
     const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
     const unitPrice = Number(activePack.price) || 0;
     const totalPrice = unitPrice * this.boosterSplitQty;
-    const priceText = totalPrice === 0 ? 'GRÁTIS' : `${curIcon} ${totalPrice}`;
+    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
 
     return `
       <!-- CABEÇALHO DA SECÇÃO MÓDULO 2 (SPLIT) -->
@@ -817,9 +812,7 @@ export class StoreScreen {
             </button>
 
             <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:34px; border-radius:999px; border:1.5px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.65rem; letter-spacing:0.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 0 10px rgba(0,180,216,0.35); white-space:nowrap; padding:0 8px; overflow:hidden;">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">✨ ${t('st.open')}</span>
-              <span style="opacity:0.5;">·</span>
-              <span style="color:#ffe066; font-weight:950; flex-shrink:0;">${priceText}</span>
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${btnText}</span>
             </button>
           </div>
         </div>
@@ -1260,7 +1253,7 @@ export class StoreScreen {
     this.bindBoosterSplit(container);
   }
 
-  private openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
+  private async openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
     const pack = this.data.packs.find((p: any) => p.id === packId);
     if (!pack) {
       this.toast(container, 'Booster não encontrado na vitrine', false);
@@ -1272,108 +1265,34 @@ export class StoreScreen {
     const totalPrice = unitPrice * quantity;
     if (totalPrice > 0 && !this.spend(container, cur, totalPrice)) return;
 
-    const cardsPerPack = Math.max(1, Math.min(15, pack.cardsCount || 3));
-    const totalCount = cardsPerPack * quantity;
-    const cards: any[] = [];
-
-    const getRarityKey = (t: any): 'common' | 'rare' | 'legendary' => {
-      const r = String(t?.preferredRarity || '').toLowerCase();
-      if (r.includes('leg') || r.includes('mit')) return 'legendary';
-      if (r.includes('rar') || r.includes('epi')) return 'rare';
-      return 'common';
-    };
-
-    if (pack.mode === 'special' && pack.fixedCards && pack.fixedCards.length > 0) {
-      // Embaralha a lista p/ cada abertura variar (ciclo sem repetir até esgotar)
-      const bag = [...pack.fixedCards];
-      for (let i = bag.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [bag[i], bag[j]] = [bag[j], bag[i]];
-      }
-      for (let i = 0; i < totalCount; i++) {
-        const cardName = bag[i % bag.length];
-        const tmpl = this.resolveCard(cardName);
-        cards.push({
-          id: `card_${i}_${Date.now()}`,
-          name: tmpl?.name || cardName,
-          rarity: tmpl ? getRarityKey(tmpl) : 'rare',
-          atk: tmpl?.baseAtk ?? 3,
-          pv: tmpl?.basePv ?? 5,
-          mana: tmpl?.manaCost ?? 1,
-          stamina: tmpl?.staminaCost ?? 1,
-          image: tmpl?.image || '',
-          tpl: tmpl || null
-        });
-      }
-    } else {
-      const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
-      const legRate = Number(rates.legendary) || 5;
-      const rareRate = Number(rates.rare) || 25;
-
-      const legPool = (pack.cardGroups?.legendary && pack.cardGroups.legendary.length > 0)
-        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.legendary!.includes(t.name))
-        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'legendary');
-      const rarePool = (pack.cardGroups?.rare && pack.cardGroups.rare.length > 0)
-        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.rare!.includes(t.name))
-        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'rare');
-      const comPool = (pack.cardGroups?.common && pack.cardGroups.common.length > 0)
-        ? (CARD_TEMPLATES as any[]).filter(t => pack.cardGroups!.common!.includes(t.name))
-        : (CARD_TEMPLATES as any[]).filter(t => getRarityKey(t) === 'common');
-
-      for (let i = 0; i < totalCount; i++) {
-        const roll = Math.random() * 100;
-        let targetRarity: 'common' | 'rare' | 'legendary' = 'common';
-        let pool = comPool;
-
-        if (roll < legRate) {
-          targetRarity = 'legendary';
-          pool = legPool.length > 0 ? legPool : (rarePool.length > 0 ? rarePool : CARD_TEMPLATES as any[]);
-        } else if (roll < (legRate + rareRate)) {
-          targetRarity = 'rare';
-          pool = rarePool.length > 0 ? rarePool : CARD_TEMPLATES as any[];
-        } else {
-          targetRarity = 'common';
-          pool = comPool.length > 0 ? comPool : CARD_TEMPLATES as any[];
-        }
-
-        const fallback = CARD_TEMPLATES[Math.floor(Math.random() * CARD_TEMPLATES.length)];
-        const picked = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : fallback;
-
-        cards.push({
-          id: `card_${y}_${Date.now()}`,
-          name: picked?.name || `Criatura #${y + 1}`,
-          rarity: targetRarity,
-          atk: picked?.baseAtk ?? Math.floor(Math.random() * 6 + 1),
-          pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
-          mana: picked?.manaCost ?? 1,
-          stamina: picked?.staminaCost ?? 1,
-          image: picked?.image || '',
-          tpl: picked || null
-        });
-      }
-    }
-
     try {
-    new BoosterPackViewer({
-      theme: pack.theme || 'charizard',
-      customTitle: quantity > 1 ? `${pack.name} (${quantity}x)` : pack.name,
-      customBack: pack.customBack || 'silver',
-      customFrontUrl: pack.customFront,
-      cards: cards,
-      onComplete: (revealedCards) => {
-        const owned = this.getOwned();
-        revealedCards.forEach(c => {
-          if (!owned.cards.includes(c.name)) {
-            owned.cards.push(c.name);
-            this.markCardOwned(container, c.name);
-          }
-        });
-        this.saveOwned(owned);
-      this.toast(container, `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas reveladas!`);
-      }
-    });
+      this.toast(container, `Abrindo ${pack.name}...`);
+      const resolvedCards = await resolveBoosterCards(pack, this.customTemplates);
+
+      new BoosterPackViewer({
+        theme: pack.theme || 'charizard',
+        customBack: (pack.customBack as any) || 'silver',
+        customFrontUrl: pack.customFront || pack.frontImageUrl || undefined,
+        customBackUrl: pack.customBackUrl || pack.backImageUrl || undefined,
+        customTitle: quantity > 1 ? `${pack.name} (${quantity}x)` : pack.name,
+        quantity,
+        cards: resolvedCards,
+        onComplete: (revealedCards) => {
+          const owned = this.getOwned();
+          revealedCards.forEach((c) => {
+            const cardName = c.name || c.id;
+            owned.cards.push(cardName);
+            this.markCardOwned(container, cardName);
+          });
+          this.saveOwned(owned);
+          this.toast(
+            container,
+            `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas adicionadas ao seu inventário!`
+          );
+        },
+      });
     } catch (err) {
-      this.toast(container, 'Falha ao abrir: ' + String((err as Error)?.message || err).slice(0, 90), false);
+      this.toast(container, 'Falha ao abrir booster 3D: ' + String((err as Error)?.message || err).slice(0, 90), false);
     }
   }
 
@@ -1381,7 +1300,6 @@ export class StoreScreen {
     const offer = [...this.data.dailyPool, ...this.data.rare].find((o: any) => o.card === cardName);
     if (!offer) return false;
     const owned = this.getOwned();
-    if (owned.cards.includes(cardName)) return false;
     if (!this.spend(container, currency, offer.price)) return false;
     owned.cards.push(cardName);
     this.saveOwned(owned);

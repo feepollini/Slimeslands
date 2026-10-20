@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { defineConfig, Plugin } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 function cardEditorPlugin(): Plugin {
     return {
@@ -10,6 +12,29 @@ function cardEditorPlugin(): Plugin {
             server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
 
                 const urlPath = req.url?.split('?')[0];
+
+                // ─── Entrega Imediata de Arquivos de /cards/ do Disco ───
+                if (urlPath?.startsWith('/cards/') && req.method === 'GET') {
+                    const filename = urlPath.replace('/cards/', '');
+                    const filePath = path.resolve(process.cwd(), 'public/cards', decodeURIComponent(filename));
+                    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                        const ext = path.extname(filePath).toLowerCase();
+                        const mimeTypes: Record<string, string> = {
+                            '.png': 'image/png',
+                            '.jpg': 'image/jpeg',
+                            '.jpeg': 'image/jpeg',
+                            '.webp': 'image/webp',
+                            '.gif': 'image/gif',
+                            '.mp4': 'video/mp4',
+                            '.webm': 'video/webm',
+                            '.mov': 'video/quicktime'
+                        };
+                        res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+                        res.setHeader('Cache-Control', 'public, max-age=3600');
+                        res.end(fs.readFileSync(filePath));
+                        return;
+                    }
+                }
 
                 // ─── API: List Available Images ──────────────────────────
                 if (urlPath === '/api/images' && req.method === 'GET') {
@@ -26,6 +51,17 @@ function cardEditorPlugin(): Plugin {
                         res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown' }));
                     }
                     return;
+                }
+
+                // ─── API: Load Card Database ─────────────────────────────
+                if ((urlPath === '/api/cards' || urlPath === '/api/load-cards') && req.method === 'GET') {
+                    const outPath = path.resolve(process.cwd(), 'src/core/cards.json');
+                    if (fs.existsSync(outPath)) {
+                        res.setHeader('Content-Type', 'application/json');
+                        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                        res.end(fs.readFileSync(outPath, 'utf8'));
+                        return;
+                    }
                 }
 
                 // ─── API: Save Card Database ─────────────────────────────
@@ -55,6 +91,25 @@ function cardEditorPlugin(): Plugin {
                         try {
                             const data = JSON.parse(body);
                             const outPath = path.resolve(process.cwd(), 'src/core/store.json');
+                            fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf8');
+                            res.setHeader('Content-Type', 'application/json');
+                            res.end(JSON.stringify({ success: true }));
+                        } catch (err: unknown) {
+                            res.statusCode = 500;
+                            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
+                        }
+                    });
+                    return;
+                }
+
+                // ─── API: Save Mobbys Database ───────────────────────────
+                if (urlPath === '/api/save-mobbys' && req.method === 'POST') {
+                    let body = '';
+                    req.on('data', (chunk: any) => { body += chunk.toString(); });
+                    req.on('end', () => {
+                        try {
+                            const data = JSON.parse(body);
+                            const outPath = path.resolve(process.cwd(), 'src/core/mobbys.json');
                             fs.writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf8');
                             res.setHeader('Content-Type', 'application/json');
                             res.end(JSON.stringify({ success: true }));
@@ -184,52 +239,7 @@ function cardEditorPlugin(): Plugin {
                     return;
                 }
 
-                // ─── API: Upload Media File ───────────────────────────────
-                if (urlPath === '/api/upload-media' && req.method === 'POST') {
-                    const chunks: Buffer[] = [];
-                    req.on('data', chunk => chunks.push(chunk));
-                    req.on('end', () => {
-                        try {
-                            const buffer = Buffer.concat(chunks);
-                            const boundaryStr = req.headers['content-type']?.split('boundary=')[1];
-                            if (!boundaryStr) throw new Error('No boundary found');
-                            const boundary = Buffer.from('--' + boundaryStr);
 
-                            let startIdx = buffer.indexOf(boundary);
-                            const savedFiles: string[] = [];
-
-                            while (startIdx !== -1) {
-                                startIdx += boundary.length;
-                                const nextBoundary = buffer.indexOf(boundary, startIdx);
-                                if (nextBoundary === -1) break;
-
-                                const partBuffer = buffer.subarray(startIdx, nextBoundary);
-                                const headerEnd = partBuffer.indexOf(Buffer.from('\r\n\r\n'));
-                                if (headerEnd === -1) continue;
-
-                                const fileData = partBuffer.subarray(headerEnd + 4, partBuffer.length - 2); // Exclude trailing \r\n
-                                const headerStr = partBuffer.subarray(0, headerEnd).toString();
-                                const filenameMatch = headerStr.match(/filename="(.+?)"/);
-
-                                if (filenameMatch && fileData.length > 0) {
-                                    const filename = filenameMatch[1].replace(/[^a-zA-Z0-9.\-_]/g, '_');
-                                    const outPath = path.resolve(process.cwd(), `public/cards/${filename}`);
-                                    fs.writeFileSync(outPath, fileData);
-                                    savedFiles.push(`/cards/${filename}`);
-                                }
-
-                                startIdx = nextBoundary;
-                            }
-
-                            res.setHeader('Content-Type', 'application/json');
-                            res.end(JSON.stringify({ success: true, urls: savedFiles }));
-                        } catch (err: unknown) {
-                            res.statusCode = 500;
-                            res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
-                        }
-                    });
-                    return;
-                }
 
                 // ─── API: Save Base64 Thumbnail ───────────────────────────
                 if (urlPath === '/api/save-image' && req.method === 'POST') {
@@ -468,25 +478,47 @@ function cardEditorPlugin(): Plugin {
 
                             if (contentType.includes('multipart/form-data')) {
                                 const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-                                const boundary = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]) : '';
-                                const rawStr = fullBuffer.toString('binary');
-                                const filenameMatch = rawStr.match(/filename="([^"]+)"/);
-                                const origName = filenameMatch ? filenameMatch[1] : `upload_${Date.now()}.png`;
-                                const safeName = path.basename(origName).replace(/[^a-zA-Z0-9._-]/g, '_');
+                                const boundaryToken = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]).trim() : '';
+                                const boundaryBuf = Buffer.from('--' + boundaryToken);
+                                const savedUrls: string[] = [];
 
-                                // Localiza cabeçalho do multipart e o payload binário
-                                const headerEnd = fullBuffer.indexOf(Buffer.from('\r\n\r\n'));
-                                const boundaryBuf = Buffer.from(`\r\n--${boundary}`);
-                                const payloadEnd = boundary ? fullBuffer.indexOf(boundaryBuf, headerEnd + 4) : fullBuffer.length;
-                                
-                                const fileData = (headerEnd !== -1 && payloadEnd !== -1 && payloadEnd > headerEnd + 4)
-                                    ? fullBuffer.slice(headerEnd + 4, payloadEnd)
-                                    : fullBuffer;
+                                if (boundaryToken) {
+                                    let cur = fullBuffer.indexOf(boundaryBuf);
+                                    while (cur !== -1) {
+                                        const next = fullBuffer.indexOf(boundaryBuf, cur + boundaryBuf.length);
+                                        if (next === -1) break;
 
-                                const filePath = path.join(dir, safeName);
-                                fs.writeFileSync(filePath, fileData);
+                                        const part = fullBuffer.subarray(cur + boundaryBuf.length, next);
+                                        const headerEnd = part.indexOf(Buffer.from('\r\n\r\n'));
+                                        if (headerEnd !== -1) {
+                                            const headerText = part.subarray(0, headerEnd).toString('utf8');
+                                            const fnMatch = headerText.match(/filename="([^"]+)"/i);
+                                            if (fnMatch) {
+                                                const origName = fnMatch[1];
+                                                const safeName = `${Date.now()}_${path.basename(origName).replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                                                let endPos = part.length;
+                                                if (part[endPos - 1] === 0x0a) endPos--;
+                                                if (part[endPos - 1] === 0x0d) endPos--;
+
+                                                const fileBytes = part.subarray(headerEnd + 4, endPos);
+                                                if (fileBytes.length > 0) {
+                                                    fs.writeFileSync(path.join(dir, safeName), fileBytes);
+                                                    savedUrls.push(`/cards/${safeName}`);
+                                                }
+                                            }
+                                        }
+                                        cur = next;
+                                    }
+                                }
+
+                                if (savedUrls.length === 0) {
+                                    const fallbackName = `upload_${Date.now()}.png`;
+                                    fs.writeFileSync(path.join(dir, fallbackName), fullBuffer);
+                                    savedUrls.push(`/cards/${fallbackName}`);
+                                }
+
                                 res.setHeader('Content-Type', 'application/json');
-                                res.end(JSON.stringify({ success: true, url: `/cards/${safeName}`, urls: [`/cards/${safeName}`] }));
+                                res.end(JSON.stringify({ success: true, url: savedUrls[0], urls: savedUrls }));
                                 return;
                             }
 
@@ -497,6 +529,7 @@ function cardEditorPlugin(): Plugin {
                             res.end(JSON.stringify({ success: true, url: `/cards/${fallbackName}`, urls: [`/cards/${fallbackName}`] }));
                         } catch (err: unknown) {
                             res.statusCode = 500;
+                            res.setHeader('Content-Type', 'application/json');
                             res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
                         }
                     });
@@ -510,7 +543,19 @@ function cardEditorPlugin(): Plugin {
 }
 
 export default defineConfig({
-    plugins: [cardEditorPlugin()],
+    plugins: [cardEditorPlugin(), react(), tailwindcss()],
+    server: {
+        watch: {
+            ignored: [
+                '**/src/core/*.json',
+                '**/src/core/mobbys.json',
+                '**/src/core/cards.json',
+                '**/src/core/store.json',
+                '**/src/core/scenarios.json',
+                '**/public/cards/**'
+            ]
+        }
+    },
     build: {
         rollupOptions: {
             input: {
@@ -518,9 +563,10 @@ export default defineConfig({
                 hub: path.resolve(__dirname, 'hub.html'),
                 editor: path.resolve(__dirname, 'editor.html'),
                 battle: path.resolve(__dirname, 'battle.html'),
+                boss_battle: path.resolve(__dirname, 'boss_battle.html'),
                 arsenal: path.resolve(__dirname, 'arsenal.html'),
                 store: path.resolve(__dirname, 'store.html'),
-                forge: path.resolve(__dirname, 'forge.html'),
+                forge: path.resolve(__dirname, 'forge.html')
             }
         }
     }

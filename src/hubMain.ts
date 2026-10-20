@@ -10,10 +10,11 @@ import { BottomNav, TabId } from './ui/components/BottomNav';
 import { StoreScreen } from './ui/screens/StoreScreen';
 import { TopHeader } from './ui/components/TopHeader';
 import { ProgressionManager } from './core/ProgressionManager';
-
 import { CARD_TEMPLATES, SKILL_POOL } from './core/constants';
+import { getMergedGameTemplates } from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
+
 import SCENARIOS from './core/scenarios.json';
-import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
+import { applyScenarioBackground, getActiveScenario } from './ui/utils/BackgroundUtils';
 import { SoundManager } from './ui/utils/SoundManager';
 import { autoFullscreen, setFullscreenPref } from './ui/utils/fullscreen';
 
@@ -44,7 +45,7 @@ class HubApp {
       this.togglePrepMode(true);
     });
     this.settings = new SettingsScreen(() => {
-      this.navigate('editor.html');
+      this.navigate('forge.html');
     }, () => {
       this.navigate('forge.html');
     }, () => {
@@ -89,7 +90,7 @@ class HubApp {
         enjinCoin: playerData.enjinCoin ?? 0
     });
 
-    applyScenarioBackground((SCENARIOS as any).lobby);
+    applyScenarioBackground(getActiveScenario('lobby', (SCENARIOS as any).lobby));
     SoundManager.playAmbient('lobby');
     this.renderShell();
     this.switchTab('battle', true);
@@ -179,7 +180,7 @@ class HubApp {
     this.updateUIComponents();
 
     if (active) {
-      applyScenarioBackground((SCENARIOS as any).preparation);
+      applyScenarioBackground(getActiveScenario('preparation', (SCENARIOS as any).preparation));
       const onConfirm = (cards: any[], skills: any[], board: string) => {
         localStorage.setItem('battle_prep', JSON.stringify({ cards, skills, board }));
         this.navigate('battle.html');
@@ -313,45 +314,34 @@ class HubApp {
     SoundManager.playAmbient(soundKey);
 
     if (tab === 'battle') {
-      applyScenarioBackground((SCENARIOS as any).lobby);
+      applyScenarioBackground(getActiveScenario('lobby', (SCENARIOS as any).lobby));
       container.innerHTML = this.menu.render();
       this.menu.bind();
     } else if (tab === 'arsenal') {
-      applyScenarioBackground((SCENARIOS as any).arsenal);
+      applyScenarioBackground(getActiveScenario('arsenal', (SCENARIOS as any).arsenal));
       this.currentArsenal = new ArsenalScreen(CARD_TEMPLATES, SKILL_POOL, [], undefined, false);
       this.currentArsenal.render(container);
     } else if (tab === 'store') {
-      applyScenarioBackground((SCENARIOS as any).store);
+      applyScenarioBackground(getActiveScenario('store', (SCENARIOS as any).store));
       const store = new StoreScreen();
       store.render(container, { headerSpace: true });
     } else if (tab === 'profile') {
-      applyScenarioBackground((SCENARIOS as any).lobby);
+      applyScenarioBackground(getActiveScenario('lobby', (SCENARIOS as any).lobby));
       const profile = new ProfileScreen(() => this.switchTab('settings'));
       profile.render(container);
     } else if (tab === 'map') {
-      applyScenarioBackground((SCENARIOS as any).map);
+      applyScenarioBackground(getActiveScenario('map', (SCENARIOS as any).map));
       const screen = new MapScreen();
       screen.render(container);
     } else if (tab === 'academy') {
-      applyScenarioBackground((SCENARIOS as any).academy);
+      applyScenarioBackground(getActiveScenario('academy', (SCENARIOS as any).academy));
       const screen = new AcademyScreen();
       screen.render(container);
     } else if (tab === 'settings') {
-      applyScenarioBackground((SCENARIOS as any).lobby);
+      applyScenarioBackground(getActiveScenario('lobby', (SCENARIOS as any).lobby));
       this.settings.render(container);
     }
   }
 }
 
-const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-const isBrowserReload = (navEntry && navEntry.type === 'reload') ||
-  (typeof (performance as any).navigation !== 'undefined' && (performance as any).navigation.type === 1);
-
-// Reload volta para a intro, exceto com "pular intro" ativado nos Ajustes
-let skipIntro = false;
-try { skipIntro = localStorage.getItem('low_skip_intro') === '1'; } catch {}
-if (isBrowserReload && !skipIntro) {
-  window.location.replace('index.html');
-} else {
-  new HubApp();
-}
+new HubApp();

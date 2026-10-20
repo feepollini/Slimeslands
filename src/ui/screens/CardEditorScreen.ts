@@ -30,7 +30,7 @@ export class CardEditorScreen {
   private assetRegistry: Record<string, { category?: string; shop?: any }> = {};
 
   private selectedIndex: number = 0;
-  private currentMode: EditorMode = 'cards';
+  private currentMode: EditorMode = 'habilidades';
   private cardSubMode: 'basico' | 'aparencia' | 'estetica' | 'efeitos' = 'basico';
   private onExit: () => void;
   private boardRenderer = new BoardScreen();
@@ -96,7 +96,7 @@ export class CardEditorScreen {
         <header class="editor-header">
           <button id="btn-back-editor" class="editor-btn-secondary">◀ VOLTAR</button>
           <div class="editor-tabs">
-            <button class="editor-tab ${this.currentMode === 'cards' ? 'active' : ''}" data-mode="cards">CARTAS</button>
+            <button class="editor-tab disabled" data-mode="cards" disabled style="opacity: 0.35; cursor: not-allowed; text-decoration: line-through;" title="Aba Cartas desativada">CARTAS (DESATIVADO)</button>
             <button class="editor-tab ${this.currentMode === 'habilidades' ? 'active' : ''}" data-mode="habilidades">HABILIDADES</button>
             <button class="editor-tab ${this.currentMode === 'artefatos' ? 'active' : ''}" data-mode="artefatos">ARTEFATOS</button>
             <button class="editor-tab ${this.currentMode === 'assets' ? 'active' : ''}" data-mode="assets">GALERIA</button>
@@ -1300,7 +1300,7 @@ export class CardEditorScreen {
     document.getElementById('btn-back-editor')?.addEventListener('click', () => this.onExit());
 
     // Tabs
-    document.querySelectorAll('.editor-tab').forEach(el => {
+    document.querySelectorAll('.editor-tab:not(.disabled)').forEach(el => {
       el.addEventListener('click', (e) => {
         this.currentMode = (e.currentTarget as HTMLElement).dataset.mode as any;
         this.reRender();

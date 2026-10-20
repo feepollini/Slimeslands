@@ -1,0 +1,6 @@
+{
+  "name": "Hestridia Card Frame Studio",
+  "description": "Editor de frames de cartas TCG ultra-fiel com adaptação automática de cores do frame e contorno a partir da arte da carta.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,232 @@
+/* ─── TABULEIRO 3x1 (DUPLICADO DO OFICIAL) ─── */
+
+.boss-grid-3x1 {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    grid-template-rows: 1.25fr 1fr !important;
+    gap: 7px 9px !important;
+    width: 96% !important;
+    max-height: 100% !important;
+    margin: 0 auto !important;
+}
+
+/* O SLOT ÚNICO DO CHEFE NO TOPO: SEM CAIXA, SEM QUADRADO, DESCIDO MAIS UM POUCO */
+.boss-single-slot-wrap,
+#boss-sprite-slot,
+#prev-boss-sprite-slot {
+    grid-column: 1 / span 3;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    height: 100%;
+    min-height: 175px;
+    max-height: 230px;
+    margin-top: 36px !important; /* Descer a PNG mais um pouco conforme solicitado */
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+
+/* ASSET PNG COM ANIMAÇÃO DE GELATINA (AUMENTADO) */
+.boss-jelly-asset {
+    max-height: 185px !important; /* Aumentar um pouco a PNG conforme solicitado */
+    max-width: 275px !important;
+    object-fit: contain;
+    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.95));
+    transform-origin: bottom center;
+    animation: bossJellyIdle 3.2s infinite ease-in-out;
+    background: transparent !important;
+}
+
+@keyframes bossJellyIdle {
+    0%, 100% { transform: scale(1, 1); }
+    35% { transform: scale(1.05, 0.95); }
+    70% { transform: scale(0.97, 1.03); }
+}
+
+.boss-aura-fx {
+    position: absolute;
+    bottom: 0px;
+    width: 160px;
+    height: 35px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.45) 0%, rgba(231, 76, 60, 0.18) 50%, transparent 75%);
+    filter: blur(10px);
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* FILTRO VERMELHO AO SER ATACADA: ESTRITAMENTE SOBRE A PNG (SEM QUADRADO) */
+.boss-hit-red-silhouette {
+    animation: mobbyHitRedOnly 0.45s ease-out forwards !important;
+}
+
+@keyframes mobbyHitRedOnly {
+    0% {
+        filter: drop-shadow(0 0 25px #ff1a1a) brightness(1.7) sepia(1) saturate(8) hue-rotate(-50deg) !important;
+    }
+    40% {
+        filter: drop-shadow(0 0 16px #ff3333) brightness(1.4) sepia(0.6) saturate(4) hue-rotate(-30deg) !important;
+    }
+    100% {
+        filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.95)) brightness(1) !important;
+    }
+}
+
+/* QUANDO O MOBBY ATACA (INVESTIDA DE GELATINA) */
+.boss-jelly-attack {
+    animation: bossLungeAnim 0.5s ease-in-out forwards !important;
+}
+
+@keyframes bossLungeAnim {
+    0% { transform: scale(1) translateY(0); }
+    30% { transform: scale(0.85, 1.15) translateY(-20px); }
+    60% { transform: scale(1.2, 0.8) translateY(120px); filter: brightness(1.5) drop-shadow(0 0 25px #ff4444); }
+    80% { transform: scale(1.05, 0.95) translateY(35px); }
+    100% { transform: scale(1, 1) translateY(0); }
+}
+
+/* ─── CONTAINER RETRATO DE PREVIEW NA FORJA (ESPELHO DA BATALHA) ─── */
+.forge-portrait-phone-frame {
+    width: 405px;
+    height: 875px;
+    max-height: calc(100vh - 110px);
+    aspect-ratio: 9 / 19.5;
+    background: #000;
+    border-radius: 42px;
+    border: 4px solid rgba(255, 215, 0, 0.75);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.95), 0 0 30px rgba(255, 215, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    margin: 0 auto;
+}
+
+/* Dynamic Island / Notch moderno */
+.forge-portrait-phone-notch {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 96px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.95);
+    border-radius: 14px;
+    z-index: 120;
+    pointer-events: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+.forge-portrait-phone-frame .game-header {
+    transform: translateY(18px) !important;
+    padding: 0 10px !important;
+}
+
+.forge-portrait-phone-frame .board-area {
+    margin-top: 10px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.forge-portrait-phone-frame .management-hifi {
+    margin-top: 4px;
+    z-index: 20;
+}
+
+.forge-portrait-phone-frame .hand-area-hifi {
+    z-index: 25;
+    margin-bottom: 8px;
+}
+
+/* ─── ANIMAÇÃO CINEMATOGRÁFICA DE DERROTA E RECOMPENSA DO CHEFE ─── */
+.boss-reward-showcase-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: auto;
+}
+
+.boss-reward-showcase-overlay.active {
+    opacity: 1;
+}
+
+/* Container fixo da carta revelada */
+.boss-capture-card-wrap {
+    width: 270px;
+    height: 440px;
+    max-width: 85vw;
+    max-height: 68vh;
+    border-radius: 12px;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.boss-capture-card-wrap .premium-card-container {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    aspect-ratio: auto !important;
+}
+
+/* Botão COLETAR pulsante - Centralizado e com identidade visual nobre */
+.btn-collect-reward-pulse {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #ffd700 0%, #ffae19 50%, #b8860b 100%);
+    border: 2px solid #ffffff;
+    color: #0b0710;
+    font-family: 'Cinzel', 'Outfit', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 950;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 13px 42px;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.85), 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 1px 1px #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: box-shadow 0.2s, filter 0.2s;
+    animation: pulseCollect 1.6s infinite ease-in-out;
+}
+
+.btn-collect-reward-pulse:hover {
+    box-shadow: 0 0 45px rgba(255, 215, 0, 1), 0 14px 35px rgba(0, 0, 0, 0.9), inset 0 1px 1px #fff;
+    filter: brightness(1.15);
+}
+
+.btn-collect-reward-pulse:active {
+    transform: translateX(-50%) scale(0.96) !important;
+}
+
+@keyframes pulseCollect {
+    0%, 100% {
+        box-shadow: 0 0 22px rgba(255, 215, 0, 0.65), 0 8px 22px rgba(0, 0, 0, 0.7);
+        transform: translateX(-50%) scale(1);
+    }
+    50% {
+        box-shadow: 0 0 40px rgba(255, 215, 0, 1), 0 12px 30px rgba(255, 160, 0, 0.7);
+        transform: translateX(-50%) scale(1.05);
+    }
+}
+

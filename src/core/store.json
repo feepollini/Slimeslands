@@ -291,37 +291,7 @@
       },
       "published": true,
       "customFront": "/cards/Batalha_dos_slimes_fant_sticos.png",
-      "fixedCards": [
-        "Trio de Ladr es Slimes no Be",
-        "10 lava",
-        "04 obsidiana",
-        "05 gelo",
-        "06 areia",
-        "11 vento",
-        "Slime vulc nico martela a bi",
-        "12 relampago",
-        "07 mercurio",
-        "Slime colosso arranca coluna",
-        "16 abissal",
-        "Slime alquimista desviando d",
-        "Slime ninja roxo desliza sob",
-        "Slime obsidiana escala torre",
-        "Slime de Fogo em Investida E",
-        "Slime ametista lan a fragmen",
-        "19 musgo",
-        "20 eclipse",
-        "13 lunar",
-        "Slime violeta lan a espiral ",
-        "Slime lavanda tocando instru",
-        "Slime coral invoca drag o de",
-        "Slime de cobre na engrenagem",
-        "Guardi o mbar das ampulhetas",
-        "Slime cido saltando no esgot",
-        "Slime oce nico surfando na c",
-        "Slime pirata ndigo sob a tem",
-        "Slime rosa invertido entre c",
-        "17 fumaca"
-      ]
+      "fixedCards": []
     }
   ],
   "sectionOrder": [

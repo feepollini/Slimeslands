@@ -4,8 +4,11 @@ import {
   createBoosterFoilBackTexture,
 } from '../../../components/booster/pokemonTextures';
 import { BoosterPackViewer } from '../../../components/booster/BoosterPackViewer';
+import { resolveBoosterCards } from '../utils/boosterResolver';
 import { StorePack, StoreData, normalizeStoreData } from './TabStore';
 import { getGlobalCardBack } from '../../../../core/constants';
+import { renderMatrixCardSVG } from '../utils/HestridiaMatrixRenderer';
+import { loadGameMatrixSnapshot } from '../../../../card_studio/src/utils/matrixPersistence';
 
 export class TabPacks {
   private data: StoreData;
@@ -31,6 +34,9 @@ export class TabPacks {
   // Filtro de cartas no seletor temático
   private cardCatalogSearch: string = '';
   private cardCatalogRarity: string = 'all';
+  private cardCatalogCategory: string = 'all';
+  private isMatrixSynced: boolean = false;
+  private _lastSyncHash: string = '';
 
   // Drag Orbit 3D
   private isPointerDown: boolean = false;
@@ -43,7 +49,7 @@ export class TabPacks {
 
   constructor(state: any, callbacks: any, core: any) {
     this.data = normalizeStoreData(state.storeItems);
-    this.templates = state.templates || [];
+    this.templates = [];
     this.callbacks = callbacks;
     this.reRender = callbacks.reRender;
     this.showToast = callbacks.showToast;
@@ -51,6 +57,26 @@ export class TabPacks {
     this.saveJson = core.saveJson.bind(core);
 
     this.selectedPackIdx = Math.max(0, state.selectedIndex || 0);
+
+    // Sincroniza imediatamente com as cartas reais da Matriz
+    this.syncMatrixTemplates();
+
+    window.addEventListener('matrix_library_cleared', () => {
+      this.templates = [];
+      this.textureCache.forEach((t) => t.dispose());
+      this.textureCache.clear();
+      (this.data.packs || []).forEach((p: any) => {
+        p.fixedCards = [];
+        p.cardGroups = { common: [], rare: [], legendary: [] };
+      });
+      this.saveJson('/api/save-store', this.data);
+      this._lastSyncHash = 'EMPTY_CLEARED';
+      this.reRender();
+    });
+
+    window.addEventListener('matrix_card_deleted', () => {
+      this.syncMatrixTemplates();
+    });
 
     // Garante que haja pelo menos 1 pack configurado
     if (!this.data.packs || this.data.packs.length === 0) {
@@ -71,6 +97,138 @@ export class TabPacks {
           gridLayout: 'auto'
         }
       ];
+    }
+  }
+
+  private async syncMatrixTemplates() {
+    try {
+      const snapshot = await loadGameMatrixSnapshot();
+      if (!snapshot || snapshot.isLibraryCleared || ((!snapshot.cards || snapshot.cards.length === 0) && (!snapshot.baseCharacters || snapshot.baseCharacters.length === 0))) {
+        this.templates = [];
+        this.isMatrixSynced = true;
+        this.textureCache.forEach((t) => t.dispose());
+        this.textureCache.clear();
+        let changed = false;
+        (this.data.packs || []).forEach((p: any) => {
+          if (Array.isArray(p.fixedCards) && p.fixedCards.length > 0) {
+            p.fixedCards = [];
+            changed = true;
+          }
+          if (p.cardGroups) {
+            (['common', 'rare', 'legendary'] as const).forEach((grp) => {
+              if (Array.isArray(p.cardGroups[grp]) && p.cardGroups[grp].length > 0) {
+                p.cardGroups[grp] = [];
+                changed = true;
+              }
+            });
+          }
+        });
+        if (changed) {
+          this.saveJson('/api/save-store', this.data);
+        }
+        if (this._lastSyncHash !== 'EMPTY_CLEARED') {
+          this._lastSyncHash = 'EMPTY_CLEARED';
+          this.reRender();
+        }
+        return;
+      }
+
+      const matrixCards: any[] = [];
+      const seenNames = new Set<string>();
+
+      // 1. Cartas do estúdio Matriz
+      if (Array.isArray(snapshot.cards)) {
+        snapshot.cards.forEach((cd) => {
+          const name = cd.title || cd.name;
+          if (!name || seenNames.has(name.toLowerCase().trim())) return;
+          seenNames.add(name.toLowerCase().trim());
+
+          const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
+          const atk = parseInt(cd.pills?.[0]?.mainText || '200') || 200;
+          const rKey = cd.cardRank === 'S' ? 'legendary' : cd.cardRank === 'A' ? 'epic' : cd.cardRank === 'B' ? 'rare' : 'common';
+
+          matrixCards.push({
+            id: cd.id,
+            name,
+            title: name,
+            image: cd.imageUrl || '',
+            imageUrl: cd.imageUrl || '',
+            baseAtk: atk,
+            basePv,
+            rarity: rKey,
+            preferredRarity: rKey,
+            family: (cd as any).family || (cd.elementText || 'Geral'),
+            biome: (cd as any).biome || 'Geral',
+            cardData: cd,
+          });
+        });
+      }
+
+      // 2. Personagens / Blueprints da Matriz (classificados)
+      if (Array.isArray(snapshot.baseCharacters)) {
+        snapshot.baseCharacters.forEach((bc) => {
+          if (bc.isClassified === false || bc.rarity === 'Não classificada') return;
+          const name = bc.name;
+          if (!name || seenNames.has(name.toLowerCase().trim())) return;
+          seenNames.add(name.toLowerCase().trim());
+
+          const rKey = bc.rarity === 'Mítica' || bc.rarity === 'Lendária' ? 'legendary' : bc.rarity === 'Épica' ? 'epic' : bc.rarity === 'Rara' ? 'rare' : 'common';
+
+          matrixCards.push({
+            id: bc.id,
+            name,
+            title: name,
+            image: bc.imageUrl || '',
+            imageUrl: bc.imageUrl || '',
+            baseAtk: bc.stats?.baseDamage || 200,
+            basePv: bc.stats?.baseHealth || 400,
+            rarity: rKey,
+            preferredRarity: rKey,
+            family: bc.family || 'Geral',
+            biome: bc.biome || 'Geral',
+            baseCharacter: bc,
+          });
+        });
+      }
+
+      this.templates = matrixCards;
+      this.isMatrixSynced = true;
+
+      // Purga absoluta em todos os boosters: remove qualquer carta fixa ou em grupos que não existe mais na Matriz
+      const validNames = new Set(matrixCards.map((c) => c.name.toLowerCase().trim()));
+      let changedPacks = false;
+      (this.data.packs || []).forEach((p: any) => {
+        if (Array.isArray(p.fixedCards) && p.fixedCards.length > 0) {
+          const prevLen = p.fixedCards.length;
+          p.fixedCards = p.fixedCards.filter((name: string) => validNames.has(name.toLowerCase().trim()));
+          if (p.fixedCards.length !== prevLen) {
+            changedPacks = true;
+          }
+        }
+        if (p.cardGroups) {
+          (['common', 'rare', 'legendary'] as const).forEach((grp) => {
+            if (Array.isArray(p.cardGroups[grp]) && p.cardGroups[grp].length > 0) {
+              const prev = p.cardGroups[grp].length;
+              p.cardGroups[grp] = p.cardGroups[grp].filter((name: string) => validNames.has(name.toLowerCase().trim()));
+              if (p.cardGroups[grp].length !== prev) changedPacks = true;
+            }
+          });
+        }
+      });
+
+      if (changedPacks) {
+        this.saveJson('/api/save-store', this.data);
+      }
+
+      const hash = matrixCards.map((c) => c.name).sort().join('|');
+      const packsHash = (this.data.packs || []).map((p) => (p.fixedCards || []).join(',')).join(';');
+      const fullHash = `${hash}:::${packsHash}`;
+      if (this._lastSyncHash !== fullHash) {
+        this._lastSyncHash = fullHash;
+        this.reRender();
+      }
+    } catch (err) {
+      console.warn('Falha ao sincronizar Matriz no TabPacks:', err);
     }
   }
 
@@ -380,15 +538,24 @@ export class TabPacks {
           <div style="display:flex; flex-direction:column; gap:12px; background:rgba(255,255,255,0.02); padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
               <div>
-                <span style="font-size:0.75rem; font-weight:900; color:#38bdf8;">CARTAS INCLUÍDAS NESTE BOOSTER (${pack.fixedCards.length}):</span>
-                <div style="font-size:0.65rem; color:#aaa;">Apenas as cartas selecionadas abaixo serão sorteadas na abertura deste booster.</div>
+                <span style="font-size:0.75rem; font-weight:900; color:#38bdf8;">CARTAS DA NOVA MATRIZ INCLUÍDAS NESTE BOOSTER (${pack.fixedCards.length}):</span>
+                <div style="font-size:0.65rem; color:#aaa;">Apenas as cartas oficiais da Matriz selecionadas abaixo serão sorteadas no Booster 3D.</div>
               </div>
-              <div style="display:flex; gap:8px;">
-                <input type="text" id="input-catalog-search" class="editor-input" placeholder="🔍 Filtrar cartas..." value="${this.esc(this.cardCatalogSearch)}" style="font-size:0.68rem; padding:4px 10px; width:160px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="text" id="input-catalog-search" class="editor-input" placeholder="🔍 Filtrar cartas..." value="${this.esc(this.cardCatalogSearch)}" style="font-size:0.68rem; padding:4px 10px; width:150px;">
+                <button id="btn-clean-ghost-fixed" class="editor-btn-secondary" style="font-size:0.65rem; color:#f59e0b; border-color:#f59e0b; padding:4px 10px;" title="Remove nomes de cartas de versões antigas que não existem na Matriz atual">
+                  🧹 Limpar Órfãs
+                </button>
                 <button id="btn-clear-all-fixed" class="editor-btn-secondary" style="font-size:0.65rem; color:#ef4444; border-color:#ef4444; padding:4px 10px;">
-                  ✕ Limpar Lista
+                  ✕ Desmarcar Todas
                 </button>
               </div>
+            </div>
+
+            <!-- FILTRO DE CATEGORIAS / FAMÍLIAS DA MATRIZ -->
+            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:8px;">
+              <span style="font-size:0.65rem; font-weight:800; color:#cbd5e1; margin-right:4px;">CATEGORIA:</span>
+              ${this.renderCategoryFilterButtons()}
             </div>
 
             <!-- SELETOR VISUAL POR RARIDADE -->
@@ -401,12 +568,40 @@ export class TabPacks {
     `;
   }
 
+  private renderCategoryFilterButtons(): string {
+    const categoriesSet = new Set<string>();
+    this.templates.forEach((t) => {
+      if (t.family && t.family !== 'Geral') categoriesSet.add(t.family);
+      if (t.biome && t.biome !== 'Geral') categoriesSet.add(t.biome);
+    });
+
+    const categories = ['all', ...Array.from(categoriesSet)];
+    return categories.map((cat) => {
+      const isSel = this.cardCatalogCategory === cat;
+      const label = cat === 'all' ? 'Todas as Categorias' : cat;
+      return `
+        <button class="btn-catalog-cat" data-cat="${this.esc(cat)}" style="font-size:0.62rem; font-weight:700; padding:3px 10px; border-radius:9999px; cursor:pointer; transition:0.15s; ${
+          isSel
+            ? 'background:#38bdf8; color:#000; border:1px solid #38bdf8;'
+            : 'background:rgba(255,255,255,0.06); color:#cbd5e1; border:1px solid rgba(255,255,255,0.12);'
+        }">
+          ${label}
+        </button>
+      `;
+    }).join('');
+  }
+
   // SELETOR VISUAL POR RARIDADE: um grupo de cartas para cada raridade,
   // com contagem e botões TODAS/NENHUMA por grupo.
   private renderCardCatalogGrid(pack: StorePack): string {
     const fixedSet = new Set(pack.fixedCards || []);
     const search = this.cardCatalogSearch.toLowerCase().trim();
-    const matches = (t: any) => !search || t.name.toLowerCase().includes(search);
+    const cat = this.cardCatalogCategory;
+    const matches = (t: any) => {
+      const matchSearch = !search || (t.name || t.title || '').toLowerCase().includes(search);
+      const matchCat = cat === 'all' || t.family === cat || t.biome === cat;
+      return matchSearch && matchCat;
+    };
 
     const groups: { key: string; label: string; color: string }[] = [
       { key: 'common', label: 'COMUNS', color: '#e2e8f0' },
@@ -451,10 +646,8 @@ export class TabPacks {
           ${isSelected ? `
             <div style="position:absolute; top:4px; right:4px; background:#38bdf8; color:#000; font-size:0.6rem; font-weight:900; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; z-index:2;">✓</div>
           ` : ''}
-          <div style="width:100%; height:85px; background:url('${img}') center/cover; position:relative;">
-            <span style="position:absolute; bottom:2px; left:2px; font-size:0.55rem; font-weight:900; background:rgba(0,0,0,0.7); color:${rColor}; padding:1px 4px; border-radius:4px;">
-              ${rarity.toUpperCase()}
-            </span>
+          <div style="width:100%; height:120px; position:relative; overflow:hidden;">
+            ${renderMatrixCardSVG(t, { mode: 'thumb', animateChroma: false })}
           </div>
           <div style="padding:6px; display:flex; flex-direction:column; gap:2px;">
             <div style="font-size:0.65rem; font-weight:800; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(t.name)}">
@@ -760,9 +953,29 @@ export class TabPacks {
       });
     });
 
+    // Filtro por Categoria / Família
+    container.querySelectorAll('.btn-catalog-cat').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.cardCatalogCategory = (btn as HTMLElement).dataset.cat || 'all';
+        this.reRender();
+      });
+    });
+
+    // Limpar Cartas Órfãs / Modos Antigos
+    container.querySelector('#btn-clean-ghost-fixed')?.addEventListener('click', () => {
+      const validNames = new Set(this.templates.map((t) => (t.name || t.title || '').toLowerCase().trim()));
+      const initialCount = (pack.fixedCards || []).length;
+      pack.fixedCards = (pack.fixedCards || []).filter((name) => validNames.has(name.toLowerCase().trim()));
+      const removed = initialCount - pack.fixedCards.length;
+      this.showToast(`🧹 ${removed} cartas órfãs/antigas removidas do booster!`);
+      this.saveJson('/api/save-store', this.data);
+      this.reRender();
+    });
+
     // Limpar todas as cartas do modo temático
     container.querySelector('#btn-clear-all-fixed')?.addEventListener('click', () => {
       pack.fixedCards = [];
+      this.saveJson('/api/save-store', this.data);
       this.reRender();
     });
 
@@ -811,84 +1024,27 @@ export class TabPacks {
     });
   }
 
-  // TESTE DE ABERTURA COM AS CARTAS REAIS DO JOGO
-  private testOpenBooster(pack: StorePack) {
-    const count = Math.max(1, Math.min(15, pack.cardsCount || 3));
-    const drawnCards: any[] = [];
+  // TESTE DE ABERTURA COM AS CARTAS REAIS DO JOGO NO BOOSTER 3D
+  private async testOpenBooster(pack: StorePack) {
+    try {
+      this.showToast(`Preparando Booster 3D: ${pack.name}...`);
+      const resolvedCards = await resolveBoosterCards(pack, this.templates);
 
-    if (pack.mode === 'special' && pack.fixedCards && pack.fixedCards.length > 0) {
-      // Modo Temático: sorteia da lista curada (embaralhada p/ variar)
-      const bag = [...pack.fixedCards];
-      for (let i = bag.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [bag[i], bag[j]] = [bag[j], bag[i]];
-      }
-      for (let i = 0; i < count; i++) {
-        const name = bag[i % bag.length];
-        const tmpl = this.templates.find(t => t.name === name);
-        drawnCards.push({
-          id: `card_${i}_${Date.now()}`,
-          name: tmpl?.name || name,
-          rarity: tmpl ? this.getRarityKey(tmpl) : 'rare',
-          atk: tmpl?.baseAtk ?? 3,
-          pv: tmpl?.basePv ?? 5,
-          mana: tmpl?.manaCost ?? 1,
-          stamina: tmpl?.staminaCost ?? 1,
-          image: tmpl?.image || '',
-          tpl: tmpl || null
-        });
-      }
-    } else {
-      // Modo Randômico com Probabilidades reais da coleção
-      const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
-      const legRate = Number(rates.legendary) || 5;
-      const rareRate = Number(rates.rare) || 25;
-
-      const comList = this.templates.filter(t => this.getRarityKey(t) === 'common');
-      const rareList = this.templates.filter(t => this.getRarityKey(t) === 'rare' || this.getRarityKey(t) === 'epic');
-      const legList = this.templates.filter(t => this.getRarityKey(t) === 'legendary');
-
-      for (let i = 0; i < count; i++) {
-        const roll = Math.random() * 100;
-        let pool = comList;
-        let rarity: 'common' | 'rare' | 'legendary' = 'common';
-
-        if (roll < legRate) {
-          pool = legList.length > 0 ? legList : (rareList.length > 0 ? rareList : this.templates);
-          rarity = 'legendary';
-        } else if (roll < (legRate + rareRate)) {
-          pool = rareList.length > 0 ? rareList : this.templates;
-          rarity = 'rare';
-        } else {
-          pool = comList.length > 0 ? comList : this.templates;
-          rarity = 'common';
+      new BoosterPackViewer({
+        theme: pack.theme || 'charizard',
+        customBack: (pack.customBack as any) || 'silver',
+        customFrontUrl: pack.customFront || pack.frontImageUrl || undefined,
+        customBackUrl: pack.customBackUrl || pack.backImageUrl || undefined,
+        customTitle: `Teste 3D · ${pack.name}`,
+        quantity: 1,
+        cards: resolvedCards,
+        onComplete: (cards) => {
+          this.showToast(`🎉 Teste concluído com sucesso! ${cards.length} cartas reveladas e salvas na coleção.`);
         }
-
-        const picked = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : this.templates[0];
-        drawnCards.push({
-          id: `card_${i}_${Date.now()}`,
-          name: picked?.name || `Criatura #${i + 1}`,
-          rarity: rarity,
-          atk: picked?.baseAtk ?? Math.floor(Math.random() * 6 + 1),
-          pv: picked?.basePv ?? Math.floor(Math.random() * 8 + 2),
-          mana: picked?.manaCost ?? 1,
-          stamina: picked?.staminaCost ?? 1,
-          image: picked?.image || '',
-          tpl: picked || null
-        });
-      }
+      });
+    } catch (err) {
+      this.showToast('Falha ao abrir teste do Booster 3D: ' + String((err as Error)?.message || err), '#ef4444');
     }
-
-    new BoosterPackViewer({
-      theme: pack.theme || 'charizard',
-      customTitle: pack.name,
-      customBack: pack.customBack || 'silver',
-      customFrontUrl: pack.customFront,
-      cards: drawnCards,
-      onComplete: (cards) => {
-        this.showToast(`🎉 Teste concluído! ${cards.length} cartas reveladas.`);
-      }
-    });
   }
 
   // UPLOAD PERSISTENTE E SEGURO DA IMAGEM DA FRENTE

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "slime_colosso",
+    "name": "Slime Colosso Ancestral",
+    "description": "Um monstro colossal esculpido em pedra e musgo antigo. Seus impactos abalam as próprias fundações da terra.",
+    "image": "/cards/1791856764818_cfcc2709-bf95-4b0e-8a39-7cc96830c148.png",
+    "hp": 280,
+    "maxHp": 280,
+    "atk": 16,
+    "rewardCardId": "04 obsidiana",
+    "artifacts": [
+      "art_escudo",
+      "art_golpe",
+      "art_queimadura",
+      "art_nuke"
+    ],
+    "dialogues": [
+      {
+        "triggerType": "turn_reached",
+        "triggerValue": 1,
+        "speaker": "mobby",
+        "text": "Quem ousa invadir o santuário das lendas?! Você será esmagado!"
+      },
+      {
+        "triggerType": "hp_below",
+        "triggerValue": 50,
+        "speaker": "mobby",
+        "text": "Insolente! A terra ancestral estremece diante da minha fúria!"
+      },
+      {
+        "triggerType": "hp_below",
+        "triggerValue": 20,
+        "speaker": "mobby",
+        "text": "Não... minha essência primordial... está se partindo..."
+      }
+    ],
+    "scale": 175,
+    "backgroundUrl": "/cards/gemini_generated_video_0381afa9.mp4",
+    "rotation": -3,
+    "offsetX": 4,
+    "offsetY": 72
+  },
+  {
+    "id": "slime_vulcanico",
+    "name": "Slime Vulcânico Flamejante",
+    "description": "Nascido das profundezas da forja magmática. Emite labaredas incandescentes a cada movimento.",
+    "image": "/cards/Slime_vulc_nico_martela_a_bigorna-5.png",
+    "hp": 220,
+    "maxHp": 220,
+    "atk": 22,
+    "rewardCardId": "furia_vulcanica",
+    "artifacts": [
+      "art_queimadura",
+      "art_golpe",
+      "art_drenar",
+      "art_poder_divino"
+    ],
+    "dialogues": [
+      {
+        "triggerType": "turn_reached",
+        "triggerValue": 1,
+        "speaker": "mobby",
+        "text": "O fogo eterno purificará suas fracas cartas!"
+      },
+      {
+        "triggerType": "hp_below",
+        "triggerValue": 40,
+        "speaker": "mobby",
+        "text": "Magma fervente! Testemunhe o verdadeiro calor da forja!"
+      }
+    ]
+  }
+]

@@ -6,6 +6,7 @@ import {
   createSparkleSpriteTexture,
   createHoloLightBeamTexture,
   createBoosterNineCards,
+  createPremiumCardTexture,
   PackCardData,
 } from './pokemonTextures';
 import {
@@ -16,6 +17,7 @@ import {
   playSparkleBurstSound,
 } from './pokemonAudio';
 import { getGlobalCardBack } from '../../../core/constants';
+import { openCardViewer } from '../CardViewer';
 
 export interface BoosterPackViewerOptions {
   theme?: 'charizard' | 'pikachu' | 'rayquaza' | 'mewtwo' | string;
@@ -25,6 +27,7 @@ export interface BoosterPackViewerOptions {
   customBackUrl?: string;
   customBackTexture?: THREE.Texture;
   customTitle?: string;
+  quantity?: number;
   customCardsList?: PackCardData[];
   cards?: PackCardData[];
   onComplete?: (cards: PackCardData[]) => void;
@@ -34,6 +37,8 @@ export interface BoosterPackViewerOptions {
 export class BoosterPackViewer {
   private overlay: HTMLElement;
   private container: HTMLElement;
+  private themeGlow: HTMLElement | null = null;
+  private qtyCapsule: HTMLElement | null = null;
   private options: BoosterPackViewerOptions;
   private cleanupFn: (() => void) | null = null;
 
@@ -93,11 +98,45 @@ export class BoosterPackViewer {
     const themeGlow = document.createElement('div');
     themeGlow.style.cssText = `
       position: absolute; inset: 0; pointer-events: none; z-index: 0;
+      transition: opacity 0.6s ease;
       background:
         radial-gradient(circle at 50% 42%, ${tint} 0%, transparent 62%),
         radial-gradient(circle at 50% 50%, rgba(0,0,0,0.55) 0%, transparent 75%);
     `;
     this.overlay.insertBefore(themeGlow, this.container);
+    this.themeGlow = themeGlow;
+
+    // Cápsula simples de quantidade abaixo do pacote (quando compra mais de 1)
+    const qty = this.options.quantity ?? (
+      this.options.customTitle?.match(/\((\d+)x\)/)?.[1]
+        ? parseInt(this.options.customTitle.match(/\((\d+)x\)/)![1])
+        : 1
+    );
+
+    if (qty > 1) {
+      const qtyCapsule = document.createElement('div');
+      qtyCapsule.className = 'booster-quantity-capsule';
+      qtyCapsule.innerHTML = `
+        <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#ffd700; box-shadow:0 0 8px #ffd700;"></span>
+        <span>PACOTES: <b style="color:#fff; font-size:0.95rem;">${qty}x</b></span>
+      `;
+      qtyCapsule.style.cssText = `
+        position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+        z-index: 1000; pointer-events: none;
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 20px; border-radius: 999px;
+        background: rgba(14, 18, 26, 0.76);
+        border: 1px solid rgba(255, 215, 0, 0.4);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), 0 0 12px rgba(255, 215, 0, 0.18);
+        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        color: #ffd76a; font-family: 'Outfit', sans-serif;
+        font-size: 0.8rem; font-weight: 800; letter-spacing: 1.2px;
+        transition: opacity 0.35s ease, transform 0.35s ease;
+        white-space: nowrap;
+      `;
+      this.overlay.appendChild(qtyCapsule);
+      this.qtyCapsule = qtyCapsule;
+    }
 
     document.body.appendChild(this.overlay);
 
@@ -166,30 +205,24 @@ export class BoosterPackViewer {
 
     const defaultNine = createBoosterNineCards();
     let initialCards = defaultNine;
-    // URL da arte real de cada carta (p/ trocar a arte demo após carregar)
-    const artUrls = new Map<any, string>();
     if (this.options.cards && this.options.cards.length > 0) {
-      if (this.options.cards[0].texture) {
-        initialCards = this.options.cards;
-      } else {
-        initialCards = this.options.cards.map((c, i) => {
-          const fallback = defaultNine[i % defaultNine.length];
-          const mapped: any = {
-            ...fallback,
-            name: c.name || fallback.name,
-            rarity: (c.rarity as any) || fallback.rarity,
-            atk: (c as any).atk ?? (fallback as any).atk,
-            pv: (c as any).pv ?? (fallback as any).pv,
-            mana: (c as any).mana ?? (c as any).manaCost ?? (fallback as any).mana,
-            stamina: (c as any).stamina ?? (c as any).staminaCost ?? (fallback as any).stamina,
-            tpl: (c as any).tpl || null,
-            texture: fallback.texture
-          };
-          const art = (c as any).image;
-          if (art) { artUrls.set(mapped, art); mapped.imageUrl = art; }
-          return mapped;
-        });
-      }
+      initialCards = this.options.cards.map((c, i) => {
+        const fallback = defaultNine[i % defaultNine.length];
+        const mapped: any = {
+          ...fallback,
+          ...c,
+          name: c.name || fallback.name,
+          rarity: (c.rarity as any) || fallback.rarity,
+          atk: (c as any).atk ?? (fallback as any).atk,
+          pv: (c as any).pv ?? (fallback as any).pv,
+          mana: (c as any).mana ?? (c as any).manaCost ?? (fallback as any).mana,
+          stamina: (c as any).stamina ?? (c as any).staminaCost ?? (fallback as any).stamina,
+          tpl: (c as any).tpl || c,
+          image: (c as any).image || (fallback as any).image || '',
+        };
+        mapped.texture = c.texture || createPremiumCardTexture(mapped);
+        return mapped;
+      });
     }
 
     const cardsData = [...initialCards];
@@ -454,6 +487,91 @@ export class BoosterPackViewer {
     sparkMesh.visible = false;
     worldGroup.add(sparkMesh);
 
+    // --- 3.5 Luminous Tear Guide Shimmer (Brilho na linha indicando onde passar o dedo) ---
+    const createTearGuideTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, 512, 64);
+
+      // Linha central com brilho vertical suave
+      const vGrad = ctx.createLinearGradient(0, 0, 0, 64);
+      vGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
+      vGrad.addColorStop(0.35, 'rgba(0, 235, 255, 0.45)');
+      vGrad.addColorStop(0.50, 'rgba(255, 255, 255, 0.95)');
+      vGrad.addColorStop(0.65, 'rgba(0, 235, 255, 0.45)');
+      vGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = vGrad;
+      ctx.fillRect(0, 0, 512, 64);
+
+      // Feixe de luz horizontal pulsante indicando o traço
+      const hGrad = ctx.createLinearGradient(0, 0, 512, 0);
+      hGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.2)');
+      hGrad.addColorStop(0.32, 'rgba(255, 255, 255, 0.3)');
+      hGrad.addColorStop(0.46, 'rgba(255, 235, 160, 0.85)');
+      hGrad.addColorStop(0.50, 'rgba(255, 255, 255, 1.0)');
+      hGrad.addColorStop(0.54, 'rgba(255, 235, 160, 0.85)');
+      hGrad.addColorStop(0.68, 'rgba(255, 255, 255, 0.3)');
+      hGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.2)');
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.fillStyle = hGrad;
+      ctx.fillRect(0, 0, 512, 64);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      return tex;
+    };
+
+    const tearGuideTex = createTearGuideTexture();
+    const tearGuideMat = new THREE.MeshBasicMaterial({
+      map: tearGuideTex,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const guideSegX = 36;
+    const guideW = PW * 0.92;
+    const guideH = 0.28;
+    const guideGeo = new THREE.BufferGeometry();
+    const guidePositions: number[] = [];
+    const guideUvs: number[] = [];
+    const guideIndices: number[] = [];
+
+    for (let i = 0; i <= guideSegX; i++) {
+      const u = i / guideSegX;
+      const gx = -guideW / 2 + u * guideW;
+      const gz = getPillowZ(gx, Y_CUT, true) + 0.015;
+
+      guidePositions.push(gx, Y_CUT - guideH / 2, gz);
+      guideUvs.push(u, 0);
+
+      guidePositions.push(gx, Y_CUT + guideH / 2, gz);
+      guideUvs.push(u, 1);
+    }
+
+    for (let i = 0; i < guideSegX; i++) {
+      const i0 = i * 2;
+      const i1 = i * 2 + 1;
+      const i2 = (i + 1) * 2;
+      const i3 = (i + 1) * 2 + 1;
+      guideIndices.push(i0, i2, i1);
+      guideIndices.push(i1, i2, i3);
+    }
+
+    guideGeo.setAttribute('position', new THREE.Float32BufferAttribute(guidePositions, 3));
+    guideGeo.setAttribute('uv', new THREE.Float32BufferAttribute(guideUvs, 2));
+    guideGeo.setIndex(guideIndices);
+    guideGeo.computeVertexNormals();
+
+    const tearGuideMesh = new THREE.Mesh(guideGeo, tearGuideMat);
+    worldGroup.add(tearGuideMesh);
+
     // --- 4. Cards Rig ---
     const cardsMasterGroup = new THREE.Group();
     worldGroup.add(cardsMasterGroup);
@@ -507,109 +625,74 @@ export class BoosterPackViewer {
       startScale: 1.0,
     };
 
-    // --- 5. Holographic Light Beam & Radiant Aura ---
-    const auraGeo = new THREE.PlaneGeometry(CW * 1.45, CH * 1.45);
-    const auraCanvas = document.createElement('canvas');
-    auraCanvas.width = 256;
-    auraCanvas.height = 256;
-    const aCtx = auraCanvas.getContext('2d')!;
-    const aGlow = aCtx.createRadialGradient(128, 128, 0, 128, 128, 120);
-    aGlow.addColorStop(0, 'rgba(255, 240, 180, 0.85)');
-    aGlow.addColorStop(0.35, 'rgba(255, 100, 200, 0.55)');
-    aGlow.addColorStop(0.7, 'rgba(0, 230, 255, 0.3)');
-    aGlow.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    aCtx.fillStyle = aGlow;
-    aCtx.fillRect(0, 0, 256, 256);
-    const auraTex = new THREE.CanvasTexture(auraCanvas);
-    const auraMat = new THREE.MeshBasicMaterial({
-      map: auraTex,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const auraMesh = new THREE.Mesh(auraGeo, auraMat);
-    auraMesh.position.set(0, 0, -MAX_STACK_DEPTH / 2 - 0.02);
-    cardsMasterGroup.add(auraMesh);
+    // --- 5. Holographic Foil Sheen Texture (Confinado 100% à geometria da carta) ---
+    const createCardFoilSheenTexture = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, 512, 512);
 
-    const beamTex = createHoloLightBeamTexture();
+      // Gradiente diagonal holográfico arco-íris
+      const grad = ctx.createLinearGradient(0, 0, 512, 512);
+      grad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
+      grad.addColorStop(0.32, 'rgba(0, 230, 255, 0)');
+      grad.addColorStop(0.40, 'rgba(0, 230, 255, 0.40)');
+      grad.addColorStop(0.46, 'rgba(255, 240, 160, 0.75)');
+      grad.addColorStop(0.50, 'rgba(255, 255, 255, 0.95)');
+      grad.addColorStop(0.54, 'rgba(255, 120, 220, 0.75)');
+      grad.addColorStop(0.60, 'rgba(160, 80, 255, 0.40)');
+      grad.addColorStop(0.68, 'rgba(255, 255, 255, 0)');
+      grad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
 
-    const beamGeo = new THREE.PlaneGeometry(1.65, CH * 2.3);
-    const beamMat = new THREE.MeshBasicMaterial({
-      map: beamTex,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const holoBeamMesh = new THREE.Mesh(beamGeo, beamMat);
-    holoBeamMesh.rotation.z = -0.62;
-    holoBeamMesh.position.set(0, 0, (MAX_STACK_DEPTH / 2) + 0.012);
-    cardsMasterGroup.add(holoBeamMesh);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 512, 512);
 
-    const diffGeo = new THREE.PlaneGeometry(3.3, CH * 2.3);
-    const diffMat = new THREE.MeshBasicMaterial({
-      map: beamTex,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const diffuseBeamMesh = new THREE.Mesh(diffGeo, diffMat);
-    diffuseBeamMesh.rotation.z = -0.62;
-    diffuseBeamMesh.position.set(0, 0, (MAX_STACK_DEPTH / 2) + 0.010);
-    cardsMasterGroup.add(diffuseBeamMesh);
+      // Glints e estrelas cintilantes contidos na textura
+      const drawGlint = (cx: number, cy: number, r: number) => {
+        const radGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        radGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+        radGrad.addColorStop(0.4, 'rgba(255, 240, 180, 0.55)');
+        radGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = radGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
 
-    // --- 6. Particles ---
-    const maxSparkles = 280;
-    const sparkleGeo = new THREE.BufferGeometry();
-    const sparklePositions = new Float32Array(maxSparkles * 3);
-    const sparkleColors = new Float32Array(maxSparkles * 3);
-    const sparkleVelocities = new Float32Array(maxSparkles * 3);
-    const sparkleLives = new Float32Array(maxSparkles);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 1.5, cy);
+        ctx.lineTo(cx + r * 1.5, cy);
+        ctx.moveTo(cx, cy - r * 1.5);
+        ctx.lineTo(cx, cy + r * 1.5);
+        ctx.stroke();
+      };
 
-    const sparklePalette = [
-      new THREE.Color('#ffffff'),
-      new THREE.Color('#ffd700'),
-      new THREE.Color('#00f5d4'),
-      new THREE.Color('#ff00aa'),
-      new THREE.Color('#fff275'),
-      new THREE.Color('#e0aaff'),
-    ];
+      drawGlint(220, 220, 16);
+      drawGlint(260, 255, 22);
+      drawGlint(300, 295, 14);
 
-    for (let i = 0; i < maxSparkles; i++) {
-      sparklePositions[i * 3] = 0;
-      sparklePositions[i * 3 + 1] = 0;
-      sparklePositions[i * 3 + 2] = -999;
-      sparkleLives[i] = 0;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      return texture;
+    };
+    const foilSheenTex = createCardFoilSheenTexture();
 
-      const col = sparklePalette[i % sparklePalette.length];
-      sparkleColors[i * 3] = col.r;
-      sparkleColors[i * 3 + 1] = col.g;
-      sparkleColors[i * 3 + 2] = col.b;
-    }
+    let shimmerTimer = 0;
+    let shimmerMeshIdx = -1;
 
-    sparkleGeo.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
-    sparkleGeo.setAttribute('color', new THREE.BufferAttribute(sparkleColors, 3));
+    const triggerCardShimmer = (targetIdx?: number) => {
+      shimmerTimer = 1.2;
+      shimmerMeshIdx = targetIdx !== undefined ? targetIdx : (cardOrder[0] ?? 0);
+      playHoloShimmerSound();
+    };
 
-    const sparkleSprite = createSparkleSpriteTexture();
-    const sparkleMat = new THREE.PointsMaterial({
-      size: 0.36,
-      map: sparkleSprite,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      vertexColors: true,
-      opacity: 0.0,
-    });
-
-    const sparklePoints = new THREE.Points(sparkleGeo, sparkleMat);
-    worldGroup.add(sparklePoints);
-
-    let sparkleTimer = 0;
+    const triggerSparkleFx = () => {
+      playSparkleBurstSound();
+    };
 
     const stopVideoCinematic = () => {
       if (!videoCinematic.active) return;
@@ -628,12 +711,6 @@ export class BoosterPackViewer {
       }
       videoCinematic.meshIdx = -1;
       videoCinematic.timer = 0;
-      holoBeamMesh.visible = false;
-      diffuseBeamMesh.visible = false;
-      beamMat.opacity = 0;
-      diffMat.opacity = 0;
-      auraMesh.visible = false;
-      auraMat.opacity = 0;
     };
 
     const triggerVideoCinematic = (meshIdx: number) => {
@@ -649,8 +726,8 @@ export class BoosterPackViewer {
       videoCinematic.startRot.copy(mesh.rotation);
       videoCinematic.startScale = 1.0;
       mesh.scale.set(1, 1, 1);
-      sparkleTimer = 2.4;
-      playHoloShimmerSound();
+      triggerCardShimmer(meshIdx);
+      triggerSparkleFx();
     };
 
     const finishCycle = () => {
@@ -673,8 +750,13 @@ export class BoosterPackViewer {
 
         const newTopIdx = cardOrder[0];
         const newTopMesh = cardMeshes[newTopIdx];
-        if (newTopMesh && (newTopMesh as any).userData?.isVideo && !isGridMode) {
-          triggerVideoCinematic(newTopIdx);
+        if (newTopMesh && !isGridMode) {
+          const rarity = (newTopMesh as any).userData?.rarity;
+          const isPremium = rarity === 'legendary' || rarity === 'epic' || (newTopMesh as any).userData?.isVideo;
+          if (isPremium) {
+            triggerCardShimmer(newTopIdx);
+            triggerSparkleFx();
+          }
         }
       }
     };
@@ -761,11 +843,9 @@ export class BoosterPackViewer {
         const frontTex = cardItem.texture;
         const isVideoCard = Boolean(cardItem.isVideo || (frontTex as any).isVideo);
 
-        const frontMat = new THREE.MeshStandardMaterial({
+        const frontMat = new THREE.MeshBasicMaterial({
           map: frontTex,
-          roughness: 0.28,
-          metalness: 0.08,
-          side: THREE.FrontSide,
+          side: THREE.DoubleSide,
           polygonOffset: true,
           polygonOffsetFactor: -1,
           polygonOffsetUnits: -1,
@@ -783,11 +863,25 @@ export class BoosterPackViewer {
         const rimMesh = new THREE.Mesh(edgeGeo, edgeMat);
         cardGroup.add(rimMesh);
 
+        const sheenMat = new THREE.MeshBasicMaterial({
+          map: foilSheenTex.clone(),
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.FrontSide,
+        });
+        const sheenMesh = new THREE.Mesh(frontGeo, sheenMat);
+        sheenMesh.position.z = halfThick + 0.0012;
+        sheenMesh.visible = false;
+        cardGroup.add(sheenMesh);
+
         (cardGroup as any).userData = {
           cardData: cardItem,
           isVideo: isVideoCard,
           rarity: cardItem.rarity,
           meshIndex: idx,
+          sheenMesh: sheenMesh,
         };
 
         cardGroup.position.set(0, 0, getSlotZ(idx, count));
@@ -798,48 +892,6 @@ export class BoosterPackViewer {
     };
 
     rebuildCardMeshes(cardsData);
-
-    // Troca a arte demo pela arte real de cada carta (assíncrono; se falhar, mantém a demo)
-    if (artUrls.size > 0) {
-      const artLoader = new THREE.TextureLoader();
-      artUrls.forEach((url, cardItem) => {
-        artLoader.load(url, (tex) => {
-          tex.colorSpace = THREE.SRGBColorSpace;
-          cardItem.texture = tex;
-          cardMeshes.forEach((g: any) => {
-            if (g?.userData?.cardData === cardItem) {
-              const mesh = g.children?.[0] as any;
-              if (mesh?.material?.map) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
-            }
-          });
-        }, undefined, () => { /* mantém a arte demo */ });
-      });
-    }
-
-    const triggerSparkleFx = () => {
-      sparkleTimer = 2.0;
-      playSparkleBurstSound();
-
-      for (let i = 0; i < maxSparkles; i++) {
-        const x = (Math.random() - 0.5) * CW * 0.95;
-        const y = (Math.random() - 0.5) * CH * 0.95;
-        const z = 1.95 + (Math.random() - 0.5) * 0.1;
-
-        sparklePositions[i * 3] = x;
-        sparklePositions[i * 3 + 1] = y;
-        sparklePositions[i * 3 + 2] = z;
-
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 1.2 + Math.random() * 2.8;
-        sparkleVelocities[i * 3] = Math.cos(angle) * speed;
-        sparkleVelocities[i * 3 + 1] = Math.sin(angle) * speed + 0.6;
-        sparkleVelocities[i * 3 + 2] = 1.0 + Math.random() * 2.8;
-
-        sparkleLives[i] = 1.0;
-      }
-
-      (sparkleGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-    };
 
     // State Variables
     let packState: 'sealed' | 'cutting' | 'opened' = 'sealed';
@@ -919,41 +971,45 @@ export class BoosterPackViewer {
       rebuildCardMeshes(cardsData);
 
       updateFloppyTopStrip(0, 0);
+      tearGuideMesh.visible = true;
+      tearGuideTex.offset.x = 0;
       bottomGridBar.style.display = 'none';
+      if (this.qtyCapsule) {
+        this.qtyCapsule.style.opacity = '1';
+        this.qtyCapsule.style.transform = 'translateX(-50%) translateY(0)';
+      }
     };
 
-    // Duas discretas cápsulas flutuantes no rodapé (barra escura arredondada)
+    // Duas cápsulas simples de linha única no rodapé
     const bottomGridBar = document.createElement('div');
     bottomGridBar.className = 'booster-grid-actions';
     bottomGridBar.style.cssText = `
-      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; gap: 10px;
-      background: rgba(12, 9, 6, 0.88); border: 1px solid rgba(212, 175, 55, 0.3);
-      border-radius: 999px; padding: 6px 8px;
-      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7);
-      z-index: 100; pointer-events: auto;
+      position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+      display: none; align-items: center; justify-content: center; gap: 14px;
+      z-index: 1000; pointer-events: auto;
     `;
 
-    // Cápsula 1: Abrir outro pack (discreta, tom escuro com borda sutil)
+    // Cápsula 1: Abrir outro pack (cápsula simples de linha única)
     const btnOpenAnother = document.createElement('button');
-    btnOpenAnother.innerHTML = `✨ ABRIR OUTRO PACK`;
+    btnOpenAnother.innerHTML = `✨ Abrir Outro Pack`;
     btnOpenAnother.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 9px 16px;
-      background: rgba(30, 22, 14, 0.95);
-      color: #ffe9a8; border: 1px solid rgba(212, 175, 55, 0.45); border-radius: 999px;
-      font-family: 'Cinzel', serif, system-ui; font-size: 0.7rem; font-weight: 700;
-      letter-spacing: 0.4px; cursor: pointer; transition: all 0.2s ease;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 236, 190, 0.2);
-      text-shadow: 0 1px 2px #000;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 22px; white-space: nowrap; border-radius: 999px;
+      background: rgba(18, 22, 32, 0.88);
+      color: #ffe89e; border: 1px solid rgba(212, 175, 55, 0.45);
+      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 700;
+      letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55); backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     `;
     btnOpenAnother.onmouseenter = () => {
-      btnOpenAnother.style.filter = 'brightness(1.2)';
-      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.7)';
+      btnOpenAnother.style.filter = 'brightness(1.18)';
+      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.8)';
       btnOpenAnother.style.transform = 'translateY(-1px)';
     };
     btnOpenAnother.onmouseleave = () => {
       btnOpenAnother.style.filter = 'none';
-      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.35)';
+      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.45)';
       btnOpenAnother.style.transform = 'none';
     };
     btnOpenAnother.onmousedown = () => {
@@ -964,26 +1020,26 @@ export class BoosterPackViewer {
     };
     btnOpenAnother.onclick = () => resetToSealed();
 
-    // Cápsula 2: Concluir & Coletar (discreta, dourado suave com brilho)
+    // Cápsula 2: Concluir & Coletar (cápsula simples de linha única)
     const btnCollect = document.createElement('button');
-    btnCollect.innerHTML = `🏆 CONCLUIR & COLETAR`;
+    btnCollect.innerHTML = `🏆 Concluir & Coletar`;
     btnCollect.style.cssText = `
-      display: flex; align-items: center; gap: 6px; padding: 9px 18px;
-      background: linear-gradient(180deg, #ffd700 0%, #b8860b 100%);
-      color: #1a0f02; border: 1px solid rgba(255, 236, 190, 0.6); border-radius: 999px;
-      font-family: 'Cinzel', serif, system-ui; font-size: 0.72rem; font-weight: 900;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 24px; white-space: nowrap; border-radius: 999px;
+      background: linear-gradient(135deg, #ffd700 0%, #e5a910 50%, #c48208 100%);
+      color: #1a0f00; border: 1px solid rgba(255, 245, 180, 0.6);
+      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 800;
       letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.35);
     `;
     btnCollect.onmouseenter = () => {
       btnCollect.style.filter = 'brightness(1.12)';
-      btnCollect.style.boxShadow = '0 4px 18px rgba(0, 0, 0, 0.6), 0 0 16px rgba(212, 175, 55, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
+      btnCollect.style.boxShadow = '0 6px 22px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 215, 0, 0.5)';
       btnCollect.style.transform = 'translateY(-1px)';
     };
     btnCollect.onmouseleave = () => {
       btnCollect.style.filter = 'none';
-      btnCollect.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(212, 175, 55, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.6)';
+      btnCollect.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.35)';
       btnCollect.style.transform = 'none';
     };
     btnCollect.onmousedown = () => {
@@ -1002,6 +1058,40 @@ export class BoosterPackViewer {
     bottomGridBar.appendChild(btnOpenAnother);
     bottomGridBar.appendChild(btnCollect);
     this.overlay.appendChild(bottomGridBar);
+
+    const normalizeForViewer = (cd: any): any => {
+      if (!cd) return null;
+      const tpl = cd.tpl || cd;
+      const atk = cd.atk ?? tpl.baseAtk ?? tpl.atk ?? 100;
+      const pv = cd.pv ?? tpl.basePv ?? tpl.pv ?? 100;
+      const mana = cd.mana ?? tpl.manaCost ?? tpl.mana ?? 1;
+      const stamina = cd.stamina ?? tpl.staminaCost ?? tpl.stamina ?? 1;
+      const attacksSource = (tpl.attacks && tpl.attacks.length > 0) ? tpl.attacks : (cd.attacks || [
+        { name: 'ATACAR', damage: atk, cost: stamina, costType: 'stamina' }
+      ]);
+      return {
+        ...tpl,
+        id: tpl.id || cd.id || 'viewer-' + Math.random().toString(36).slice(2, 7),
+        name: tpl.name || cd.name || 'Carta',
+        image: tpl.image || cd.image || cd.imageUrl || '',
+        atk,
+        baseAtk: atk,
+        pv,
+        basePv: pv,
+        maxPv: pv,
+        manaCost: mana,
+        staminaCost: stamina,
+        attacks: attacksSource,
+        specialAttack: tpl.specialAttack || cd.specialAttack,
+        abilityId: tpl.abilityId || cd.abilityId,
+        flavorText: tpl.flavorText || cd.flavorText || 'Uma relíquia das lendas de inverno.',
+        rarity: tpl.preferredRarity || tpl.rarity || cd.rarity || 'common',
+        preferredRarity: tpl.preferredRarity || tpl.rarity || cd.rarity || 'common',
+        borderColor: tpl.borderColor || cd.borderColor,
+        glowColor: tpl.glowColor || cd.glowColor,
+        immersiveMode: false
+      };
+    };
 
     const onPointerDown = (e: PointerEvent) => {
       isPointerDown = true;
@@ -1134,16 +1224,9 @@ export class BoosterPackViewer {
             isCardsFlipped = true;
             targetCardsFlipProgress = 1.0;
             revealedCount = 1;
-            playHoloShimmerSound();
-            triggerSparkleFx();
-
             const firstTopIdx = cardOrder[0];
-            const firstMesh = cardMeshes[firstTopIdx];
-            if (firstMesh && (firstMesh as any).userData?.isVideo) {
-              setTimeout(() => {
-                triggerVideoCinematic(firstTopIdx);
-              }, 450);
-            }
+            triggerCardShimmer(firstTopIdx);
+            playSparkleBurstSound();
           } else if (videoCinematic.active) {
             stopVideoCinematic();
           } else if (isGridMode) {
@@ -1154,31 +1237,45 @@ export class BoosterPackViewer {
               }
               const clickedIdx = clickedMesh ? cardMeshes.indexOf(clickedMesh) : -1;
               if (clickedIdx >= 0) {
-                if ((clickedMesh as any)?.userData?.isVideo) {
-                  triggerVideoCinematic(clickedIdx);
-                } else {
-                  playSparkleBurstSound();
-                  triggerSparkleFx();
+                // Brilho contido estritamente na carta clicada no grid
+                triggerCardShimmer(clickedIdx);
+                // Abre o mesmo CardViewer do deck/batalha
+                const cd = (clickedMesh as any)?.userData?.cardData || cardsData[clickedIdx];
+                const cardForViewer = normalizeForViewer(cd);
+                if (cardForViewer) {
+                  openCardViewer({
+                    card: cardForViewer,
+                    list: cardsData.map((c: any) => normalizeForViewer(c)).filter(Boolean),
+                    index: clickedIdx,
+                    actionLabel: 'FECHAR',
+                    onAction: () => ({ close: true }),
+                  });
                 }
               }
             }
           } else {
+            // Fase de abertura do booster (passando as cartas uma a uma no stack)
             const totalCards = cardMeshes.length;
             if (revealedCount >= totalCards) {
               stopVideoCinematic();
               isGridMode = true;
               bottomGridBar.style.display = 'flex';
               playHoloShimmerSound();
-              playSparkleBurstSound();
-              triggerSparkleFx();
             } else {
+              // Clicar na carta OU fora dela durante a abertura do booster passa suavemente para a próxima carta
               stopVideoCinematic();
               revealedCount += 1;
               triggerCycleCard();
 
               if (revealedCount >= totalCards) {
-                playSparkleBurstSound();
-                triggerSparkleFx();
+                setTimeout(() => {
+                  if (!isGridMode) {
+                    stopVideoCinematic();
+                    isGridMode = true;
+                    bottomGridBar.style.display = 'flex';
+                    playHoloShimmerSound();
+                  }
+                }, 400);
               }
             }
           }
@@ -1548,19 +1645,6 @@ export class BoosterPackViewer {
               Math.sin(vTimer * 4.0) * 0.01
             );
 
-            holoBeamMesh.visible = true;
-            diffuseBeamMesh.visible = true;
-            const beamSweep = Math.sin((vTimer - 0.35) * 4.5);
-            holoBeamMesh.position.set(beamSweep * CW * 1.3, 0, targetLocalZ + 0.02);
-            diffuseBeamMesh.position.set(beamSweep * CW * 1.3, 0, targetLocalZ + 0.02);
-            beamMat.opacity = 0.98;
-            diffMat.opacity = 0.85;
-
-            auraMesh.visible = true;
-            auraMesh.position.set(0, 0, targetLocalZ - 0.08);
-            auraMesh.scale.setScalar(targetScale * 1.35 + Math.sin(vTimer * 5) * 0.2);
-            auraMat.opacity = 0.95;
-            sparkleMat.opacity = 0.98;
           } else if (vTimer < 2.70) {
             const p3 = (vTimer - 2.35) / 0.35;
             const easeRet = Math.sin((p3 * Math.PI) / 2);
@@ -1581,63 +1665,50 @@ export class BoosterPackViewer {
         }
       }
 
-      // Sparkles & Beam
-      if (sparkleTimer > 0 && !videoCinematic.active) {
-        sparkleTimer = Math.max(0, sparkleTimer - dt);
-        const sTime = sparkleTimer;
-        const sProgress = 1.0 - sTime / 2.0;
+      // ── Brilho Holográfico (Foil Sheen) 100% Confinado à geometria da carta ──
+      if (shimmerTimer > 0) {
+        shimmerTimer = Math.max(0, shimmerTimer - dt);
+        const sProg = 1.0 - shimmerTimer / 1.2;
+        const sAlpha = Math.sin(sProg * Math.PI);
 
-        const sweepProgress = Math.min(1.0, sProgress / 0.42);
-        if (sProgress < 0.48) {
-          holoBeamMesh.visible = true;
-          diffuseBeamMesh.visible = true;
-          const beamX = -CW * 1.9 + sweepProgress * CW * 3.8;
-          holoBeamMesh.position.x = beamX;
-          diffuseBeamMesh.position.x = beamX;
-          const beamAlpha = Math.sin(sweepProgress * Math.PI);
-          beamMat.opacity = beamAlpha * 0.98;
-          diffMat.opacity = beamAlpha * 0.75;
-        } else {
-          holoBeamMesh.visible = false;
-          diffuseBeamMesh.visible = false;
-          beamMat.opacity = 0;
-          diffMat.opacity = 0;
-        }
-
-        auraMesh.visible = true;
-        auraMat.opacity = Math.sin(sProgress * Math.PI) * 0.85;
-        auraMesh.scale.setScalar(1.0 + Math.sin(sProgress * Math.PI) * 0.18);
-        sparkleMat.opacity = Math.sin(sProgress * Math.PI) * 0.98;
-
-        const posAttr = sparkleGeo.attributes.position as THREE.BufferAttribute;
-        for (let i = 0; i < maxSparkles; i++) {
-          if (sparkleLives[i] > 0) {
-            sparklePositions[i * 3] += sparkleVelocities[i * 3] * dt;
-            sparklePositions[i * 3 + 1] += sparkleVelocities[i * 3 + 1] * dt + 0.18 * dt;
-            sparklePositions[i * 3 + 2] += sparkleVelocities[i * 3 + 2] * dt;
-
-            sparkleVelocities[i * 3] *= 0.96;
-            sparkleVelocities[i * 3 + 1] *= 0.96;
-            sparkleVelocities[i * 3 + 2] *= 0.96;
+        cardMeshes.forEach((g: any, idx) => {
+          const sheen = g.userData?.sheenMesh;
+          if (sheen) {
+            if (idx === shimmerMeshIdx) {
+              sheen.visible = true;
+              sheen.material.opacity = sAlpha * 0.90;
+              if (sheen.material.map) {
+                sheen.material.map.offset.x = (sProg - 0.5) * 1.6;
+              }
+            } else {
+              sheen.visible = false;
+              sheen.material.opacity = 0;
+            }
           }
-        }
-        posAttr.needsUpdate = true;
+        });
+      } else {
+        cardMeshes.forEach((g: any) => {
+          const sheen = g.userData?.sheenMesh;
+          if (sheen) {
+            sheen.visible = false;
+            sheen.material.opacity = 0;
+          }
+        });
+      }
 
-        if (gridP < 0.1) {
-          const cardPop = Math.sin(sProgress * Math.PI) * 0.45;
-          cardFinalZ += cardPop;
-          cardFinalRotX = Math.sin(sProgress * Math.PI * 2) * 0.12;
-          cardFinalRotZ = Math.cos(sProgress * Math.PI * 2) * 0.06;
-          cardFinalRotY += Math.sin(sProgress * Math.PI * 2) * 0.05;
-        }
-      } else if (!videoCinematic.active) {
-        holoBeamMesh.visible = false;
-        diffuseBeamMesh.visible = false;
-        beamMat.opacity = 0.0;
-        diffMat.opacity = 0.0;
-        auraMesh.visible = false;
-        auraMat.opacity = 0.0;
-        sparkleMat.opacity = 0.0;
+      // ── Fading do themeGlow e balanceamento de iluminação no modo grid ──
+      if (this.themeGlow) {
+        this.themeGlow.style.opacity = String(Math.max(0, 1.0 - gridP * 2.5));
+      }
+
+      if (gridP > 0.001) {
+        frontStudioLight.intensity = THREE.MathUtils.lerp(0.70, 0.15, gridP);
+        keyLight.intensity = THREE.MathUtils.lerp(1.15, 0.20, gridP);
+        ambientLight.intensity = THREE.MathUtils.lerp(0.85, 1.0, gridP);
+      } else {
+        frontStudioLight.intensity = 0.70;
+        keyLight.intensity = 1.15;
+        ambientLight.intensity = 0.85;
       }
 
       const effectiveCardY = THREE.MathUtils.lerp(cardFinalY, targetGridCenterY, gridP);
@@ -1650,10 +1721,30 @@ export class BoosterPackViewer {
       if (shouldHidePouch) {
         lowerPouchGroup.visible = false;
         topStripGroup.visible = false;
+        tearGuideMesh.visible = false;
       } else {
         lowerPouchGroup.position.set(0, 0, 0);
         lowerPouchGroup.scale.setScalar(1);
         lowerPouchGroup.visible = true;
+
+        // Animação contínua do feixe de brilho guia indicando onde passar o dedo
+        if (packState === 'sealed' && cutP < 0.05) {
+          tearGuideMesh.visible = true;
+          tearGuideTex.offset.x -= dt * 0.85;
+          const pulse = Math.sin(time * 0.005) * 0.25;
+          tearGuideMat.opacity = THREE.MathUtils.clamp(0.75 + pulse, 0.45, 1.0);
+        } else {
+          tearGuideMesh.visible = false;
+        }
+      }
+
+      // Transição suave da cápsula de quantidade abaixo do pacote
+      if (this.qtyCapsule) {
+        const isSealed = packState === 'sealed' && cutP < 0.05 && !isCardsLeapt && !isGridMode;
+        this.qtyCapsule.style.opacity = isSealed ? '1' : '0';
+        this.qtyCapsule.style.transform = isSealed
+          ? 'translateX(-50%) translateY(0)'
+          : 'translateX(-50%) translateY(12px)';
       }
 
       const effectiveTargetZoom = THREE.MathUtils.lerp(targetZoom, targetGridCameraZ, gridP);
@@ -1687,9 +1778,10 @@ export class BoosterPackViewer {
       foilFrontTex.dispose();
       foilBackTex.dispose();
       cardBackTex.dispose();
-      sparkleSprite.dispose();
-      auraTex.dispose();
-      beamTex.dispose();
+      foilSheenTex.dispose();
+      tearGuideTex.dispose();
+      guideGeo.dispose();
+      tearGuideMat.dispose();
 
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createMatrixCardTexture } from '../../screens/forge_v2/utils/HestridiaMatrixRenderer';
 
 /**
  * Procedural texture generator for authentic TCG Booster Pack foil packaging
@@ -851,6 +852,10 @@ function renderRayquazaVMAX(ctx: CanvasRenderingContext2D, w: number, h: number)
   ctx.fillText('★★★ SECRET RARE · 218/203', margin + 35, h - margin - 20);
 }
 
+export function createPremiumCardTexture(card: any): THREE.CanvasTexture {
+  return createMatrixCardTexture(card);
+}
+
 export interface PackCardData {
   id: string;
   name: string;
@@ -1238,6 +1243,31 @@ export function createDynamicVideoCardTexture(): { texture: THREE.CanvasTexture;
 }
 
 export function createBoosterNineCards(): PackCardData[] {
+  const definitions = [
+    { id: 'c1', name: 'Aqua Leviathan', rarity: 'common', rarityLabel: 'Comum', hp: 420, type: 'Água', image: '/cards/Slime_agua_super_fofo.png' },
+    { id: 'c2', name: 'Frost Wolf', rarity: 'common', rarityLabel: 'Comum', hp: 440, type: 'Gelo', image: '/cards/05_gelo.png' },
+    { id: 'c3', name: 'Terra Colossus', rarity: 'common', rarityLabel: 'Comum', hp: 480, type: 'Terra', image: '/cards/04_obsidiana.png' },
+    { id: 'c4', name: 'Gale Falcon', rarity: 'uncommon', rarityLabel: 'Incomum', hp: 510, type: 'Vento', image: '/cards/11_vento.png' },
+    { id: 'c5', name: 'Umbra Phantom', rarity: 'uncommon', rarityLabel: 'Incomum', hp: 530, type: 'Sombra', image: '/cards/07_mercurio.png' },
+    { id: 'c6', name: 'Solar Phoenix', rarity: 'rare', rarityLabel: 'Rara', hp: 600, type: 'Solar', image: '/cards/06_areia.png' },
+    { id: 'c7', name: 'Trio Slimes Ladrões', rarity: 'rare', rarityLabel: 'Rara', hp: 640, type: 'Ferro', image: '/cards/trio_de_ladr_es_slimes_no_be-1.png' },
+    { id: 'c8', name: 'Slime Vulcânico Martelo', rarity: 'rare', rarityLabel: 'Rara', hp: 650, type: 'Fogo', image: '/cards/Slime_vulc_nico_martela_a_bigorna-5.png' },
+    { id: 'c9', name: 'Ignis Dragon Sovereign', rarity: 'legendary', rarityLabel: 'Lendária ★★★', hp: 880, type: 'Fogo', image: '/cards/10_lava.png' },
+  ];
+
+  return definitions.map((def) => ({
+    id: def.id,
+    name: def.name,
+    rarity: def.rarity as any,
+    rarityLabel: def.rarityLabel,
+    hp: def.hp,
+    type: def.type,
+    texture: createMatrixCardTexture(def),
+    ...def,
+  }));
+}
+
+function _legacyCreateBoosterNineCards(): PackCardData[] {
   const cards: PackCardData[] = [];
 
   // Card 1: Comum - Aqua Leviathan (Water)

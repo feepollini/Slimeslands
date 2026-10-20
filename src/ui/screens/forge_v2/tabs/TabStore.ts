@@ -1,6 +1,7 @@
 import { StoreScreen } from '../../StoreScreen';
 import { ProgressionManager } from '../../../../core/ProgressionManager';
 import { CARD_TEMPLATES } from '../../../../core/constants';
+import { renderMatrixCardSVG } from '../utils/HestridiaMatrixRenderer';
 
 export interface StoreDeck {
   id: string;
@@ -289,29 +290,16 @@ export class TabStore {
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
             user-select: none;
           ">
-            <!-- Thumbnail da Arte -->
+            <!-- Thumbnail da Arte Fiel da Matriz -->
             <div style="
               width: 100%;
-              aspect-ratio: 3/4;
+              aspect-ratio: 680/990;
               border-radius: 8px;
-              ${img ? `background: url('${img}') center/cover;` : 'background: #181a24;'}
-              border: 1px solid rgba(255,255,255,0.15);
               position: relative;
               overflow: hidden;
             ">
-              <!-- Custo Mana -->
-              <div style="
-                position: absolute;
-                top: 4px;
-                left: 4px;
-                background: rgba(0,0,0,0.75);
-                border: 1px solid #38bdf8;
-                border-radius: 4px;
-                padding: 1px 4px;
-                font-size: 0.58rem;
-                font-weight: 900;
-                color: #7ee7ff;
-              ">💎 ${cost}</div>
+              ${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}
+            </div>
 
               <!-- Badge Raridade -->
               <div style="

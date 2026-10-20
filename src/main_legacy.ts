@@ -1116,8 +1116,8 @@ class App {
     b.textContent = txt;
     gsap.killTweensOf(b);
     gsap.timeline()
-      .fromTo(b, { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.28, ease: 'back.out' })
-      .to(b, { opacity: 0, scale: 1.3, delay: 1.0, duration: 0.28 });
+      .fromTo(b, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.28, ease: 'power2.out' })
+      .to(b, { opacity: 0, scale: 1.05, delay: 2.2, duration: 0.3, ease: 'power2.in' });
   }
 
   // ─── UI ──────────────────────────────────────────────────────────────────────

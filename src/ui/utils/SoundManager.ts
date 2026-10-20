@@ -92,6 +92,35 @@ export class SoundManager {
     });
   }
 
+  /** Play any direct audio URL with smooth crossfade */
+  public static playTrackUrl(url: string, loop: boolean = true): void {
+    if (!this.enabled || !url) return;
+    const prevAmbient = this.currentAmbient;
+    if (prevAmbient && prevAmbient.src.includes(url)) {
+      gsap.to(prevAmbient, { volume: this._ambientVolume, duration: 0.8 });
+      return;
+    }
+    const newAmbient = new Audio(url);
+    newAmbient.loop = loop;
+    newAmbient.volume = 0;
+    if (prevAmbient) {
+      gsap.to(prevAmbient, {
+        volume: 0,
+        duration: 1.2,
+        onComplete: () => {
+          prevAmbient.pause();
+          prevAmbient.currentTime = 0;
+        }
+      });
+    }
+    this.currentAmbient = newAmbient;
+    newAmbient.play().catch(() => {});
+    gsap.to(newAmbient, {
+      volume: this._ambientVolume,
+      duration: 1.2
+    });
+  }
+
   public static stopAmbient(): void {
     if (this.currentAmbient) {
       const audio = this.currentAmbient;

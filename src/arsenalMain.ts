@@ -2,6 +2,7 @@ import './style.css';
 import { gsap } from 'gsap';
 import { ArsenalScreen } from './ui/screens/ArsenalScreen';
 import { CARD_TEMPLATES, SKILL_POOL } from './core/constants';
+import { getMergedGameTemplates } from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
 import SCENARIOS from './core/scenarios.json';
 import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
 import { t } from './core/i18n';
@@ -46,8 +47,10 @@ class ArsenalApp {
         });
     } : undefined;
 
+    const allTemplates = await getMergedGameTemplates(CARD_TEMPLATES);
+
     const arsenal = new ArsenalScreen(
-      CARD_TEMPLATES,
+      allTemplates,
       SKILL_POOL,
       bgs,
       onConfirm

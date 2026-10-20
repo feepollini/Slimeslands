@@ -1,5 +1,5 @@
 import { gsap } from 'gsap';
-import { renderPremiumCard } from '../screens/forge_v2/utils/PremiumCardRenderer';
+import { renderMatrixCardSVG } from '../screens/forge_v2/utils/HestridiaMatrixRenderer';
 import type { Card } from '../../core/GameEngine';
 
 // Fullscreen único de carta (loja e deck): a mesma carta premium da forja,
@@ -30,20 +30,34 @@ interface ViewerSession {
 let session: ViewerSession | null = null;
 
 export function toPreviewCard(t: any): Card {
-  const mappedAttacks = (t.attacks || []).map((a: any, i: number) => ({
+  const atk = t.baseAtk ?? t.atk ?? 0;
+  const pv = t.basePv ?? t.pv ?? 0;
+  const mana = t.manaCost ?? t.mana ?? 1;
+  const stamina = t.staminaCost ?? t.stamina ?? 1;
+  const attacksSource = (t.attacks && t.attacks.length > 0) ? t.attacks : [
+    { name: 'ATACAR', damage: atk, cost: stamina, costType: 'stamina' }
+  ];
+  const mappedAttacks = attacksSource.map((a: any, i: number) => ({
     ...a,
     name: a.name || (a.type === 'damage' ? `ATAQUE ${i + 1}` : `EFEITO ${i + 1}`)
   }));
   return {
     ...t,
-    id: 'preview',
+    id: t.id || 'preview',
+    name: t.name || 'Carta',
+    image: t.image || t.imageUrl || '',
     owner: 'p',
-    atk: t.baseAtk || 0,
-    pv: t.basePv || 0,
-    maxPv: t.basePv || 0,
+    atk: atk,
+    baseAtk: atk,
+    pv: pv,
+    basePv: pv,
+    maxPv: pv,
+    manaCost: mana,
+    staminaCost: stamina,
     attacks: mappedAttacks,
-    rarity: t.preferredRarity || 'common',
-    immersiveMode: !!t.immersiveMode
+    rarity: t.preferredRarity || t.rarity || 'common',
+    preferredRarity: t.preferredRarity || t.rarity || 'common',
+    immersiveMode: false
   } as unknown as Card;
 }
 
@@ -84,7 +98,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
 
   const overlay = document.createElement('div');
   overlay.id = 'card-viewer-overlay';
-  overlay.style.cssText = 'position:fixed; inset:0; z-index:99990; background:radial-gradient(circle at 50% 42%, rgba(30,24,16,0.88), rgba(0,0,0,0.94)); backdrop-filter:blur(10px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:22px 16px; box-sizing:border-box; overflow-y:auto;';
+  overlay.style.cssText = 'position:fixed; inset:0; z-index:99999999; background:radial-gradient(circle at 50% 42%, rgba(30,24,16,0.88), rgba(0,0,0,0.94)); backdrop-filter:blur(10px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:22px 16px; box-sizing:border-box; overflow-y:auto;';
   document.body.appendChild(overlay);
 
   const paint = () => {
@@ -102,7 +116,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
       <button id="cv-prev" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">‹</button>
       <button id="cv-next" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">›</button>` : ''}
       <div id="cv-counter" style="font-size:0.62rem; font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.5);">${list.length > 1 ? `${curIdx + 1} / ${list.length}` : ''}</div>
-      <div id="cv-card" style="width:min(330px, 84vw); filter:brightness(1.04) drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderPremiumCard(mock)}</div>
+      <div id="cv-card" style="width:min(350px, 86vw); max-width:380px; filter:drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderMatrixCardSVG(mock, { mode: 'full', animateChroma: true })}</div>
       ${opts.priceHtml ? `<div id="cv-price" style="font-size:0.9rem;">${opts.priceHtml}</div>` : ''}
       <button id="cv-action" style="min-width:220px; padding:13px 34px; border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:0.8rem; letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${opts.actionLabel}</button>
     `;

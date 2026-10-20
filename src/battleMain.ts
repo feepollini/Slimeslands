@@ -4,9 +4,8 @@ import { gsap } from 'gsap';
 import { GameEngine, Card } from './core/GameEngine';
 import { GameAI, AIDifficulty } from './core/GameAI';
 import { ProgressionManager } from './core/ProgressionManager';
-import { BoardScreen } from './ui/screens/BoardScreen';
 import SCENARIOS from './core/scenarios.json';
-import { applyScenarioBackground } from './ui/utils/BackgroundUtils';
+import { applyScenarioBackground, getActiveScenario } from './ui/utils/BackgroundUtils';
 import { t } from './core/i18n';
 import { animateParallaxLayers } from './ui/utils/ParallaxUtils';
 import { SoundManager } from './ui/utils/SoundManager';
@@ -15,6 +14,7 @@ import * as FX from './ui/utils/BattleAnimations';
 import { ENCHANTMENT_REGISTRY } from './core/enchantments';
 import { CARD_ABILITIES, getGlobalCardBack } from './core/constants';
 import { renderPremiumCard } from './ui/screens/forge_v2/utils/PremiumCardRenderer';
+import { BoardScreen } from './ui/screens/BoardScreen';
 
 // Helper to cast FX functions
 const { spawnParticles, deathExplosion, spawnFloatingText, triggerAbilityAnim, animateCapsulePv } = FX;
@@ -59,7 +59,7 @@ class BattleApp {
   }
 
   private initPreBattle() {
-    applyScenarioBackground((SCENARIOS as any).difficulty || (SCENARIOS as any).lobby);
+    applyScenarioBackground(getActiveScenario('difficulty', (SCENARIOS as any).difficulty || (SCENARIOS as any).lobby));
     this.container.innerHTML = this.board.renderDifficultyScreen();
     this.setupDifficultySelect();
 
@@ -101,7 +101,7 @@ class BattleApp {
   }
 
   private async showCoinFlip() {
-    applyScenarioBackground((SCENARIOS as any).coin_flip || (SCENARIOS as any).lobby);
+    applyScenarioBackground(getActiveScenario('coin_flip', (SCENARIOS as any).coin_flip || (SCENARIOS as any).lobby));
     this.container.innerHTML = this.board.renderCoinFlipScreen();
     
     const p = document.getElementById('er-particles-coin');
@@ -183,15 +183,15 @@ class BattleApp {
           this.engine.initBattle();
         }
         SoundManager.playAmbient('batalha');
-    applyScenarioBackground((SCENARIOS as any).battle);
+        applyScenarioBackground(getActiveScenario('battle', (SCENARIOS as any).battle));
       } else {
         this.engine.initBattle();
-        applyScenarioBackground((SCENARIOS as any).battle);
+        applyScenarioBackground(getActiveScenario('battle', (SCENARIOS as any).battle));
       }
     } catch (e) {
       console.error("Battle Init Error:", e);
       this.engine.initBattle(); // Fallback to fresh battle
-      applyScenarioBackground((SCENARIOS as any).battle);
+      applyScenarioBackground(getActiveScenario('battle', (SCENARIOS as any).battle));
     }
 
     if (starterTurn) this.engine.turn = starterTurn;
@@ -301,7 +301,7 @@ class BattleApp {
       if (lastCardIdx !== undefined) {
         this.openAction(lastCardIdx);
       } else {
-        this.showBanner('⚠️ Nenhuma carta sua em campo!');
+        this.showBanner('⚠️ ' + t('bt.noCardsField'));
       }
     });
 
@@ -955,7 +955,7 @@ class BattleApp {
     const action = this.aiLogic.computeMove(this.engine, this.difficulty);
 
     if (action.action === 'attack' && action.atkIdx !== undefined && action.defIdx !== undefined) {
-      this.showBanner('🤖 IA ATACA!');
+      this.showBanner('⚔️ ' + t('bt.aiAttacks'));
       setTimeout(async () => {
         const isAttackingPlayerSlot = action.defIdx! >= 3;
         let parried = false;
@@ -1235,7 +1235,7 @@ class BattleApp {
     const cardEl = document.querySelector(`[data-idx="${this.selectedSlotIdx}"] .card-face`);
     if (cardEl) deathExplosion(cardEl, () => {
       const ok = this.engine.sacrifice(this.selectedSlotIdx!);
-      if (ok) { this.showBanner('SACRIFÍCIO! +1 carta'); this.render(); this.checkAutoEnd(); }
+      if (ok) { this.showBanner('🔥 ' + t('bt.sacrifice')); this.render(); this.checkAutoEnd(); }
       else this.render();
     });
   }
@@ -1682,7 +1682,7 @@ class BattleApp {
     if (confirmBtn) confirmBtn.onclick = async () => {
       bar.classList.remove('active');
       if (this.engine.mana.p < (skill.manaCost || 0) || this.engine.stamina.p < (skill.staminaCost || 0)) {
-        this.showBanner('❌ RECURSOS INSUFICIENTES!');
+        this.showBanner('❌ ' + t('bt.insufficientResources'));
         return;
       }
 
@@ -1884,8 +1884,8 @@ class BattleApp {
     b.textContent = txt;
     gsap.killTweensOf(b);
     gsap.timeline()
-      .fromTo(b, { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.28, ease: 'back.out' })
-      .to(b, { opacity: 0, scale: 1.3, delay: 1.0, duration: 0.28 });
+      .fromTo(b, { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.28, ease: 'power2.out' })
+      .to(b, { opacity: 0, scale: 1.05, delay: 2.2, duration: 0.3, ease: 'power2.in' });
   }
 
   private startTimer() {

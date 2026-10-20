@@ -28,6 +28,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     try {
+        const res = await fetch('/api/load-cards');
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                initialState.templates = data;
+            }
+        }
+    } catch {}
+
+    try {
         const res = await fetch('/api/images');
         if (res.ok) {
             const data = await res.json();

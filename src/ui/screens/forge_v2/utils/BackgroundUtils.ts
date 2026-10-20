@@ -162,8 +162,32 @@ export function generateSvgPattern(type: string, color: string, opacity: number,
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
-export function applyScenarioBackground(bgVal: string) {
+export function getActiveScenario(screenId: string, fallback: any = ''): any {
+    try {
+        const raw = localStorage.getItem('forge_scenarios');
+        if (raw) {
+            const data = JSON.parse(raw);
+            if (data && data[screenId]) return data[screenId];
+        }
+    } catch (_) {}
+    if (fallback && typeof fallback === 'object' && fallback[screenId]) {
+        return fallback[screenId];
+    }
+    return fallback || '';
+}
+
+export function applyScenarioBackground(bgVal: string | any) {
     if (!bgVal) return;
+    const KNOWN_SCREENS = ['lobby', 'battle', 'boss_battle', 'map', 'academy', 'arsenal', 'preparation', 'store', 'booster', 'difficulty', 'coin_flip'];
+    if (typeof bgVal === 'string' && KNOWN_SCREENS.includes(bgVal)) {
+        bgVal = getActiveScenario(bgVal, '');
+        if (!bgVal) return;
+    }
+    if (typeof bgVal === 'object') {
+        try {
+            bgVal = JSON.stringify(bgVal);
+        } catch (_) {}
+    }
 
     let animStyle = '';
 

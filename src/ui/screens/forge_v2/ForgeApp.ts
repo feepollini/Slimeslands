@@ -10,11 +10,14 @@ import { TabPacks } from './tabs/TabPacks';
 import { TabQuestMaker } from './tabs/TabQuestMaker';
 import { QuestMakerHub } from './tabs/quest_maker/QuestMakerHub';
 import { SoundCentralScreen } from './tabs/SoundCentralScreen';
+import { TabMobbys } from './tabs/TabMobbys';
+import { TabMatrix } from './tabs/TabMatrix';
 import { ForgeCore } from './core/ForgeCore';
 
 export class ForgeApp {
   private container: HTMLElement;
-  private currentMode: 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'questmaker' = 'cards';
+  private currentMode: 'matrix' | 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'questmaker' | 'mobbys' = 'matrix';
+  private tabMatrix: TabMatrix | null = null;
   private selectedIndex: number = 0;
   private habilidadesSelectedIndex: number = 0;
   private artefatosSelectedIndex: number = 0;
@@ -96,7 +99,9 @@ export class ForgeApp {
     if (saved) {
       try {
         const data = JSON.parse(saved);
-        if (data.currentMode) this.currentMode = data.currentMode;
+        if (data.currentMode) {
+          this.currentMode = (data.currentMode === 'cards' || data.currentMode === 'questmaker') ? 'matrix' : data.currentMode;
+        }
         if (data.cardSubMode) this.cardSubMode = data.cardSubMode;
         if (data.questSubMode) this.questSubMode = data.questSubMode;
         if (data.selectedIndex !== undefined) this.selectedIndex = data.selectedIndex;
@@ -122,24 +127,28 @@ export class ForgeApp {
     // Top-level render of the layout matching legacy CardEditorScreen structure exactly
     this.container.innerHTML = `
       <div class="editor-screen">
-        <header class="editor-header">
-          <button id="btn-back-editor" class="editor-btn-secondary">◀ VOLTAR</button>
-          <div class="editor-tabs">
-            <button class="editor-tab ${this.currentMode === 'cards' ? 'active' : ''}" data-mode="cards">CARTAS</button>
-            <button class="editor-tab ${this.currentMode === 'habilidades' ? 'active' : ''}" data-mode="habilidades">PASSIVAS</button>
-            <button class="editor-tab ${this.currentMode === 'artefatos' ? 'active' : ''}" data-mode="artefatos">ATIVAS(Artf)</button>
-            <button class="editor-tab ${this.currentMode === 'assets' ? 'active' : ''}" data-mode="assets">GALERIA</button>
-            <button class="editor-tab ${this.currentMode === 'scenarios' ? 'active' : ''}" data-mode="scenarios">CENÁRIOS</button>
-            <button class="editor-tab ${this.currentMode === 'store' ? 'active' : ''}" data-mode="store">LOJA/OFERTAS</button>
-            <button class="editor-tab ${this.currentMode === 'packs' ? 'active' : ''}" data-mode="packs">📦 BOOSTERS</button>
-            <button class="editor-tab ${this.currentMode === 'config' ? 'active' : ''}" data-mode="config">ECONOMIA</button>
-            <button class="editor-tab ${this.currentMode === 'sounds' ? 'active' : ''}" data-mode="sounds">🔊 SONS</button>
-            <button class="editor-tab ${this.currentMode === 'questmaker' ? 'active' : ''}" data-mode="questmaker">📜 QUEST MAKER</button>
+        <header class="editor-header" style="height: 52px; padding: 0 16px; background: #0c0d12; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+          <button id="btn-back-editor" class="editor-btn-secondary" style="font-size: 0.72rem; padding: 6px 12px; white-space: nowrap; flex-shrink: 0;">◀ VOLTAR</button>
+          
+          <div class="editor-tabs" style="display: flex; gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding: 4px 6px; border-radius: 9999px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.06); max-width: calc(100vw - 300px); scrollbar-width: none;">
+            <button class="editor-tab ${this.currentMode === 'matrix' ? 'active' : ''}" data-mode="matrix" style="background: ${this.currentMode === 'matrix' ? 'linear-gradient(135deg, #7928ca, #ff0080)' : 'transparent'}; color: #fff; font-weight: 900; border-radius: 9999px; padding: 5px 12px; font-size: 0.72rem; white-space: nowrap;" title="Forja Matriz: Estúdio Oficial de Criação de Cartas">✨ FORJA MATRIZ</button>
+            <button class="editor-tab ${this.currentMode === 'habilidades' ? 'active' : ''}" data-mode="habilidades" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">PASSIVAS</button>
+            <button class="editor-tab ${this.currentMode === 'artefatos' ? 'active' : ''}" data-mode="artefatos" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">ATIVAS(Artf)</button>
+            <button class="editor-tab ${this.currentMode === 'assets' ? 'active' : ''}" data-mode="assets" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">GALERIA</button>
+            <button class="editor-tab ${this.currentMode === 'scenarios' ? 'active' : ''}" data-mode="scenarios" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">CENÁRIOS</button>
+            <button class="editor-tab ${this.currentMode === 'store' ? 'active' : ''}" data-mode="store" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">LOJA/OFERTAS</button>
+            <button class="editor-tab ${this.currentMode === 'packs' ? 'active' : ''}" data-mode="packs" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">📦 BOOSTERS</button>
+            <button class="editor-tab ${this.currentMode === 'config' ? 'active' : ''}" data-mode="config" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">ECONOMIA</button>
+            <button class="editor-tab ${this.currentMode === 'sounds' ? 'active' : ''}" data-mode="sounds" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">🔊 SONS</button>
+            <button class="editor-tab ${this.currentMode === 'mobbys' ? 'active' : ''}" data-mode="mobbys" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">👾 MOBBY DUELOS</button>
           </div>
-          <h2>FORJA DO CRIADOR <span style="font-size:0.5rem; color:#ffd700; vertical-align:super;">V2</span></h2>
+
+          <div style="font-size: 0.75rem; font-weight: 900; color: #ffd76a; letter-spacing: 1px; white-space: nowrap; flex-shrink: 0;">
+            FORJA <span style="font-size:0.55rem; color:#ffd700; background:rgba(255,215,0,0.15); padding:2px 6px; border-radius:6px; border:1px solid rgba(255,215,0,0.3); vertical-align:middle;">V2</span>
+          </div>
         </header>
 
-        <div class="editor-layout" id="forge-main-content">
+        <div class="editor-layout ${this.currentMode === 'matrix' ? 'matrix-mode' : ''}" id="forge-main-content" style="${this.currentMode === 'matrix' ? 'padding:0; overflow:hidden; height:calc(100vh - 65px); width:100%;' : ''}">
           <!-- Dynamic Tab Content Rendering here -->
         </div>
 
@@ -218,7 +227,15 @@ export class ForgeApp {
         saveClasses: () => this.saveClasses()
      };
 
-     if (this.currentMode === 'cards') {
+     if (this.currentMode !== 'matrix' && this.tabMatrix) {
+        this.tabMatrix.unmount();
+     }
+
+     if (this.currentMode === 'matrix') {
+        if (!this.tabMatrix) this.tabMatrix = new TabMatrix();
+        main.innerHTML = this.tabMatrix.render();
+        this.tabMatrix.bind(main);
+     } else if (this.currentMode === 'cards') {
         state.selectedIndex = this.selectedIndex;
         const tab = new TabCards(state, callbacks);
         main.innerHTML = tab.render();
@@ -273,18 +290,60 @@ export class ForgeApp {
          const tab = new TabQuestMaker(state, this.core, callbacks);
          main.innerHTML = tab.render();
          tab.bind(main);
+      } else if (this.currentMode === 'mobbys') {
+         const tab = new TabMobbys(state, callbacks);
+         main.innerHTML = tab.render();
+         tab.bind(main);
       }
   }
 
   private bindGlobal() {
      document.getElementById('btn-back-editor')?.addEventListener('click', () => this.onExit());
-     document.querySelectorAll('.editor-tab').forEach(btn => {
+     document.querySelectorAll('.editor-tab:not(.disabled)').forEach(btn => {
         btn.addEventListener('click', (e) => {
-           this.currentMode = (e.currentTarget as HTMLElement).dataset.mode as any;
+           const mode = (e.currentTarget as HTMLElement).dataset.mode as any;
+           if (mode === 'cards' || mode === 'questmaker') return;
+           this.currentMode = mode;
            this.selectedIndex = 0;
            this.savePersistence();
            this.render();
         });
+     });
+
+     // Ouvinte para purga absoluta da biblioteca da Matriz atingindo a aba Booster em tempo real
+     window.addEventListener('matrix_library_cleared', () => {
+       this.templates = [];
+       if (this.storeItems && Array.isArray(this.storeItems.packs)) {
+         this.storeItems.packs.forEach((p: any) => {
+           p.fixedCards = [];
+           p.cardGroups = { common: [], rare: [], legendary: [] };
+         });
+       }
+       if (this.currentMode === 'packs') {
+         this.renderTab();
+       }
+     });
+
+     window.addEventListener('matrix_card_deleted', (e: any) => {
+       const delTitle = (e.detail?.title || '').toLowerCase().trim();
+       const delId = e.detail?.id;
+       if (delTitle || delId) {
+         this.templates = this.templates.filter((t: any) => {
+           const matchTitle = delTitle && (t.name || t.title || '').toLowerCase().trim() === delTitle;
+           const matchId = delId && t.id === delId;
+           return !matchTitle && !matchId;
+         });
+         if (this.storeItems && Array.isArray(this.storeItems.packs)) {
+           this.storeItems.packs.forEach((p: any) => {
+             if (Array.isArray(p.fixedCards)) {
+               p.fixedCards = p.fixedCards.filter((name: string) => name.toLowerCase().trim() !== delTitle);
+             }
+           });
+         }
+         if (this.currentMode === 'packs') {
+           this.renderTab();
+         }
+       }
      });
   }
 
@@ -338,21 +397,36 @@ export class ForgeApp {
         this.showToast('Importando arquivo...', '#51c5ff');
         const formData = new FormData();
         formData.append('media', file);
+        let url = '';
         try {
-           const resp = await fetch('/api/upload-media', { method: 'POST', body: formData });
+           const controller = new AbortController();
+           const timeoutId = setTimeout(() => controller.abort(), 6000);
+           const resp = await fetch('/api/upload-media', { method: 'POST', body: formData, signal: controller.signal });
+           clearTimeout(timeoutId);
            const json = await resp.json();
            if (json.success) {
-              const url = (json.urls && json.urls[0]) || `/cards/${file.name}`;
-              if (!this.availableCards.includes(url)) this.availableCards.push(url);
-              this.showToast('Importado com sucesso do PC!', '#4cff88');
-              onSelect(url);
-              p.remove();
-           } else {
-              this.showToast('Falha ao importar: ' + (json.error || 'erro'), '#ff4444');
+              url = json.url || (json.urls && json.urls[0]) || `/cards/${file.name}`;
            }
         } catch (err) {
-           console.error(err);
-           this.showToast('Falha ao importar do PC.', '#ff4444');
+           console.warn('Upload-media falhou ou expirou, aplicando fallback local:', err);
+        }
+
+        if (!url) {
+           url = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string || `/cards/${file.name}`);
+              reader.onerror = () => resolve(`/cards/${file.name}`);
+              reader.readAsDataURL(file);
+           });
+        }
+
+        if (url) {
+           if (!this.availableCards.includes(url)) this.availableCards.push(url);
+           this.showToast('Importado com sucesso!', '#4cff88');
+           onSelect(url);
+           p.remove();
+        } else {
+           this.showToast('Falha ao processar o arquivo.', '#ff4444');
         }
      });
   }

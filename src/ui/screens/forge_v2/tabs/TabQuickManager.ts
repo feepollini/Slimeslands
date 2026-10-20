@@ -58,12 +58,12 @@ export class TabQuickManager {
         <!-- IMPORT & BULK CREATE BAR -->
         <div style="background:linear-gradient(90deg, rgba(81,197,255,0.1), rgba(76,255,136,0.1)); padding:12px; border-radius:12px; border:1px solid rgba(81,197,255,0.25); display:flex; gap:10px; align-items:center;">
           <div style="flex:1;">
-            <span style="font-weight:900; color:#51c5ff; font-size:0.75rem; letter-spacing:1px;">🖼️ IMPORTAR & CRIAR EM MASSA</span>
-            <div style="font-size:0.55rem; opacity:0.6; margin-top:2px;">Importe do PC ou crie cartas aleatórias a partir da galeria</div>
+            <span style="font-weight:900; color:#51c5ff; font-size:0.75rem; letter-spacing:1px;">🎴 CRIAR CARTAS INSTANTÂNEAS</span>
+            <div style="font-size:0.55rem; opacity:0.6; margin-top:2px;">Importe imagens do PC para virarem cartas prontas na hora!</div>
           </div>
-          <button id="btn-quick-import" class="editor-btn-secondary" style="font-size:0.65rem; padding:8px 14px; border-color:#51c5ff; color:#51c5ff; font-weight:900;">+ IMPORTAR IMAGENS</button>
+          <button id="btn-quick-import" class="editor-btn-secondary" style="font-size:0.65rem; padding:8px 14px; border-color:#51c5ff; color:#51c5ff; font-weight:900;">🎴 CRIAR CARTA COM IMAGEM</button>
           <input type="file" id="inp-quick-import" multiple accept="image/*,video/*,.mp4,.webm,.mov,.m4v,.ogv" style="display:none">
-          <button id="btn-bulk-create" class="editor-btn-secondary" style="font-size:0.65rem; padding:8px 14px; border-color:#4cff88; color:#4cff88; font-weight:900;">＋ CRIAR EM MASSA</button>
+          <button id="btn-bulk-create" class="editor-btn-secondary" style="font-size:0.65rem; padding:8px 14px; border-color:#4cff88; color:#4cff88; font-weight:900;">＋ DA GALERIA EM MASSA</button>
         </div>
 
         <!-- FILTERS BAR -->
@@ -123,7 +123,13 @@ export class TabQuickManager {
             return `
               <div class="class-grid-item ${isSel ? 'selected' : ''}" data-idx="${i}" style="position:relative; background:rgba(0,0,0,0.6); border-radius:12px; border:2px solid ${isSel ? '#51c5ff' : 'rgba(255,255,255,0.05)'}; padding:6px; cursor:pointer; transition:0.2s; display:flex; flex-direction:column; align-items:center;">
                 <input type="checkbox" style="position:absolute; top:6px; left:6px; z-index:10; transform:scale(1.1); pointer-events:none;" ${isSel ? 'checked' : ''}>
-                <div style="width:100%; aspect-ratio:3.5/5; background:url('${t.image}') center/cover; border-radius:8px; margin-bottom:6px;"></div>
+                <div style="width:100%; aspect-ratio:3.5/5; border-radius:8px; margin-bottom:6px; overflow:hidden; background:#0b0b10; display:flex; align-items:center; justify-content:center;">
+                  ${t.animationUrl ? `
+                    <video src="${t.animationUrl}" muted autoplay loop playsinline style="width:100%; height:100%; object-fit:cover; pointer-events:none;"></video>
+                  ` : `
+                    <img src="${t.image || '/cards/01.jpg'}" style="width:100%; height:100%; object-fit:cover; pointer-events:none;" onerror="this.onerror=null; this.src='/cards/01.jpg';" />
+                  `}
+                </div>
                 <div style="font-size:0.8rem; font-weight:950; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; color:#fff; line-height:1.2; letter-spacing:0.5px;">${t.name.toUpperCase()}</div>
                 <div style="font-size:0.65rem; color:${cls?.color || '#888'}; font-weight:900; margin-top:2px; display:flex; align-items:center; gap:4px;">${cls ? cls.icon + ' ' + cls.name : 'SEM CLASSE'}</div>
                 
@@ -308,25 +314,81 @@ export class TabQuickManager {
       });
     });
 
-    // Import images from PC into gallery
+    // ─── IMPORTAR IMAGEM E CRIAR CARTA INSTANTANEAMENTE ───
     const inpImport = container.querySelector('#inp-quick-import') as HTMLInputElement;
     container.querySelector('#btn-quick-import')?.addEventListener('click', () => inpImport?.click());
     inpImport?.addEventListener('change', async () => {
       const files = Array.from(inpImport.files || []);
       if (files.length === 0) return;
-      this.showToast(`Importando ${files.length} arquivo(s)...`, '#51c5ff');
-      let ok = 0;
+      this.showToast(`Processando e criando ${files.length} carta(s)...`, '#51c5ff');
+      
+      let createdCount = 0;
+      const rars = ['common', 'rare', 'epic', 'legendary'];
+
       for (const file of files) {
+        let finalUrl = '';
         const fd = new FormData();
         fd.append('media', file);
+
         try {
           const resp = await fetch('/api/upload-media', { method: 'POST', body: fd });
           const json = await resp.json();
-          if (json.success) ok++;
-        } catch (err) { console.error(err); }
+          if (json.success && (json.url || (json.urls && json.urls[0]))) {
+            finalUrl = json.url || json.urls[0];
+          }
+        } catch (err) {
+          console.warn('Upload API falhou, usando fallback seguro de arquivo:', err);
+        }
+
+        // Fallback resiliente: caso o upload retorne vazio ou falhe, cria Data URL para não travar!
+        if (!finalUrl) {
+          finalUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string || `/cards/${file.name}`);
+            reader.onerror = () => resolve(`/cards/${file.name}`);
+            reader.readAsDataURL(file);
+          });
+        }
+
+        if (finalUrl) {
+          const fileClean = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().substring(0, 26) || 'Nova Carta';
+          const cardName = fileClean.charAt(0).toUpperCase() + fileClean.slice(1);
+          const isVid = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(finalUrl);
+
+          const newCard: any = {
+            id: 'card_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+            name: cardName,
+            image: finalUrl,
+            ...(isVid ? { animationUrl: finalUrl } : {})
+          };
+
+          // Aplica atributos balanceados automaticamente
+          randomizeCard(newCard, rars[Math.floor(Math.random() * rars.length)], this.abilities, this.classes);
+
+          // Insere a nova carta no topo da lista
+          this.templates.unshift(newCard);
+          createdCount++;
+        }
       }
+
       inpImport.value = '';
-      this.showToast(ok > 0 ? `✅ ${ok} imagem(ns) na galeria!` : '❌ Falha ao importar', ok > 0 ? '#4cff88' : '#ff4444');
+
+      if (createdCount > 0) {
+        // Limpar filtros para que a nova carta apareça imediatamente no grid
+        this.filter.search = '';
+        this.filter.class = '';
+        this.filter.rarity = '';
+        this.selectedIds.clear();
+        for (let k = 0; k < createdCount; k++) {
+          this.selectedIds.add(k);
+        }
+
+        this.saveTemplates();
+        this.showToast(`✨ ${createdCount} nova(s) carta(s) criada(s) com sucesso!`, '#4cff88');
+        this.reRender();
+      } else {
+        this.showToast('❌ Nenhuma carta pôde ser gerada.', '#ff4444');
+      }
     });
 
     // Bulk create random cards from gallery

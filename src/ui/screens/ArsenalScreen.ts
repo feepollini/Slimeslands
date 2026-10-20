@@ -6,6 +6,7 @@ import { bindLongPress } from '../utils/InputUtils';
 import { SoundManager } from '../utils/SoundManager';
 import { thumbFor } from '../utils/thumb';
 import { openCardViewer, cardViewerNav, isCardViewerOpen } from '../components/CardViewer';
+import { renderMatrixCardSVG, renderMatrixCardBackSVG } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t as i18nT, tx as i18nTx } from '../../core/i18n';
 
 export class ArsenalScreen {
@@ -18,6 +19,7 @@ export class ArsenalScreen {
     private searchQuery: string = '';
     private rarityFilter: 'all' | 'common' | 'rare' | 'epic' | 'legendary' = 'all';
     private favorites: string[] = [];
+    private isStacked: boolean = false;
 
     // Pre-Deck State
     private preDeckCards: (any | null)[] = [null, null, null, null, null, null, null, null, null, null, null, null];
@@ -54,6 +56,11 @@ export class ArsenalScreen {
         const favs = localStorage.getItem('arsenal_favorites');
         if (favs) this.favorites = JSON.parse(favs);
 
+        const savedStacked = localStorage.getItem('arsenal_stack_copies');
+        if (savedStacked !== null) {
+            try { this.isStacked = JSON.parse(savedStacked); } catch {}
+        }
+
         try {
             const collapsed = JSON.parse(localStorage.getItem('arsenal_collapsed_sections') || '[]');
             this.collapsedSections = new Set(collapsed);
@@ -87,7 +94,7 @@ export class ArsenalScreen {
                     <div class="ars-predeck-cards">
                         ${this.preDeckCards.map((c, i) => `
                             <div class="ars-slot ars-card-slot ${c ? 'filled' : ''}" data-type="card" data-idx="${i}" draggable="true">
-                                ${c ? `<div class="ars-slot-img" style="background-image:url('${c.image}')"></div>` : '<div class="ars-slot-plus">+</div>'}
+                                ${c ? `<div class="ars-slot-img" style="border-radius:6px; overflow:hidden;">${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}</div>` : '<div class="ars-slot-plus">+</div>'}
                             </div>
                         `).join('')}
                     </div>
@@ -151,6 +158,14 @@ export class ArsenalScreen {
                                 <option value="epic" ${this.rarityFilter === 'epic' ? 'selected' : ''}>${i18nT('ars.epic')}</option>
                                 <option value="legendary" ${this.rarityFilter === 'legendary' ? 'selected' : ''}>${i18nT('ars.legendary')}</option>
                             </select>
+
+                            <!-- BOTÃO DISCRETO E CIRCULAR PARA PILHAR CÓPIAS -->
+                            <button id="ars-stack-btn" class="ars-stack-btn ${this.isStacked ? 'active' : ''}" title="${this.isStacked ? 'Desempilhar cópias (modo sequencial)' : 'Pilhar cópias'}" aria-label="Pilhar cópias">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="7" width="13" height="14" rx="2" ry="2"></rect>
+                                    <path d="M6 3h13a2 2 0 0 1 2 2v13"></path>
+                                </svg>
+                            </button>
                         </div>
 
                         <!-- TABS -->
@@ -197,21 +212,73 @@ export class ArsenalScreen {
         this.observeLazyBg(container);
     }
 
+    private getCardsList(): any[] {
+        const list: any[] = [...this.templates];
+        try {
+            const raw = localStorage.getItem('store_owned');
+            if (raw) {
+                const owned = JSON.parse(raw);
+                if (Array.isArray(owned.cards)) {
+                    const storeCounts: Record<string, number> = {};
+                    owned.cards.forEach((name: string) => {
+                        storeCounts[name] = (storeCounts[name] || 0) + 1;
+                    });
+                    for (const [name, count] of Object.entries(storeCounts)) {
+                        const existingCount = list.filter(t => t.name === name).length;
+                        const needed = count - existingCount;
+                        if (needed > 0) {
+                            const tmpl = this.templates.find(t => t.name === name);
+                            if (tmpl) {
+                                for (let i = 0; i < needed; i++) {
+                                    list.push({ ...tmpl });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {}
+        return list;
+    }
+
     private renderActiveContent(): string {
         const q = this.searchQuery.toLowerCase();
 
         if (this.activeTab === 'cards') {
-            let filtered = this.templates.filter(t => t.name.toLowerCase().includes(q));
+            const allCards = this.getCardsList();
+            let filtered = allCards.filter(t => t.name.toLowerCase().includes(q));
             if (this.rarityFilter !== 'all') {
                 filtered = filtered.filter(t => (t.preferredRarity || 'common') === this.rarityFilter);
             }
 
+            // Agrupamento de cópias quando o modo empilhado está ativado
+            let displayCards: any[] = [];
+            if (this.isStacked) {
+                const cardMap = new Map<string, { card: any, count: number, instances: any[] }>();
+                filtered.forEach(c => {
+                    const existing = cardMap.get(c.name);
+                    if (existing) {
+                        existing.count++;
+                        existing.instances.push(c);
+                    } else {
+                        cardMap.set(c.name, { card: { ...c }, count: 1, instances: [c] });
+                    }
+                });
+                displayCards = Array.from(cardMap.values()).map(entry => {
+                    entry.card._count = entry.count;
+                    entry.card._instances = entry.instances;
+                    return entry.card;
+                });
+            } else {
+                displayCards = filtered;
+            }
+
             const grouped = {
-                'favorites': filtered.filter(t => this.favorites.includes(t.name)),
-                'legendary': filtered.filter(t => t.preferredRarity === 'legendary' && !this.favorites.includes(t.name)),
-                'epic': filtered.filter(t => t.preferredRarity === 'epic' && !this.favorites.includes(t.name)),
-                'rare': filtered.filter(t => t.preferredRarity === 'rare' && !this.favorites.includes(t.name)),
-                'common': filtered.filter(t => (t.preferredRarity === 'common' || !t.preferredRarity) && !this.favorites.includes(t.name)),
+                'favorites': displayCards.filter(t => this.favorites.includes(t.name)),
+                'legendary': displayCards.filter(t => t.preferredRarity === 'legendary' && !this.favorites.includes(t.name)),
+                'epic': displayCards.filter(t => t.preferredRarity === 'epic' && !this.favorites.includes(t.name)),
+                'rare': displayCards.filter(t => t.preferredRarity === 'rare' && !this.favorites.includes(t.name)),
+                'common': displayCards.filter(t => (t.preferredRarity === 'common' || !t.preferredRarity) && !this.favorites.includes(t.name)),
             };
 
             this.viewerList = [...grouped.favorites, ...grouped.legendary, ...grouped.epic, ...grouped.rare, ...grouped.common];
@@ -245,7 +312,7 @@ export class ArsenalScreen {
                 for (let i = 0; i < lockedCount; i++) {
                     html += `
                         <div class="ars-card-thumb locked" style="cursor:not-allowed;">
-                            <div class="ars-thumb-art" style="background-image: url('/cards/cardback.png'); filter: grayscale(1) blur(2px); opacity: 0.3;"></div>
+                            <div class="ars-thumb-art" style="overflow:hidden; border-radius:8px; opacity:0.35; filter:grayscale(1) blur(1px); aspect-ratio:680/990;">${renderMatrixCardBackSVG()}</div>
                             <div class="ars-locked-icon">🔒</div>
                             <div class="ars-thumb-info"><div class="ars-thumb-name" style="color:#666; font-size: 0.45rem;">${i18nT('ars.locked')}</div></div>
                         </div>
@@ -312,23 +379,24 @@ export class ArsenalScreen {
     }
 
     private renderCardThumb(t: any, isFav: boolean): string {
-        const inDeck = this.preDeckCards.some(c => c && c.name === t.name);
+        const inDeckCount = this.preDeckCards.filter(c => c && c.name === t.name).length;
+        const totalCount = t._count || 1;
+        const allInDeck = inDeckCount >= totalCount;
+        const inDeck = inDeckCount > 0;
+        const isStackedCard = this.isStacked && totalCount > 1;
+
         return `
-            <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''}" data-name="${t.name}">
-                <div class="ars-thumb-art">
-                    <div data-lazybg="${t.image}" data-lazythumb="${thumbFor(t.image)}" style="width:100%; height:100%; background-color:#141414; background-size:cover; background-position:center; position:absolute; inset:0;"></div>
+            <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''} ${isStackedCard ? 'stacked' : ''}" data-name="${t.name}">
+                <div class="ars-thumb-art matrix-thumb-art" style="overflow:hidden; border-radius:8px; position:relative; aspect-ratio:680/990;">
+                    ${renderMatrixCardSVG(t, { mode: 'thumb', animateChroma: false })}
                     <div class="ars-fav-indicator ${isFav ? 'active' : ''}">⭐</div>
                     
-                    <div class="ars-thumb-capsules">
-                        <div class="ars-capsule atk">⚔️${t.baseAtk || 0}</div>
-                        <div class="ars-capsule pv">❤️${t.basePv || 0}</div>
-                        <div class="ars-capsule mana" style="background: rgba(81,197,255,0.2); border: 1px solid rgba(81,197,255,0.4); color: #51c5ff; font-weight: 950; font-size: 0.55rem; padding: 1px 6px; border-radius: 10px; display: flex; align-items: center; gap: 2px;">💎${t.manaCost || 1}</div>
-                    </div>
+                    ${isStackedCard ? `<div class="ars-stack-badge" title="${totalCount} cópias disponíveis">🎴 x${totalCount}</div>` : ''}
 
-                    ${inDeck ? `<div class="ars-deck-badge">${i18nT('ars.inDeck')}</div>` : ''}
+                    ${inDeck ? `<div class="ars-deck-badge ${isStackedCard && !allInDeck ? 'partial' : ''}">${isStackedCard && totalCount > 1 ? `${inDeckCount}/${totalCount} ${i18nT('ars.inDeck')}` : i18nT('ars.inDeck')}</div>` : ''}
                     
                     <div class="ars-thumb-overlay">
-                        <button class="ars-btn-action inline-equip">${inDeck ? i18nT('ars.remove') : i18nT('ars.equip')}</button>
+                        <button class="ars-btn-action inline-equip">${allInDeck ? i18nT('ars.remove') : (isStackedCard && inDeckCount > 0 ? `+ EQUIPAR (${inDeckCount}/${totalCount})` : (inDeck ? i18nT('ars.remove') : i18nT('ars.equip')))}</button>
                         <button class="ars-btn-action secondary inline-view">${i18nT('ars.details')}</button>
                     </div>
                 </div>
@@ -344,6 +412,16 @@ export class ArsenalScreen {
                 const arts = this.preDeckArtifacts.filter(a => a !== null) as Skill[];
                 this.onConfirm(cards, arts, this.selectedBoard);
             }
+        });
+
+        // Alternar modo de empilhamento de cópias (ícone discreto e circular)
+        container.querySelector('#ars-stack-btn')?.addEventListener('click', () => {
+            SoundManager.playAction('clique_geral', 0.5);
+            this.isStacked = !this.isStacked;
+            try {
+                localStorage.setItem('arsenal_stack_copies', JSON.stringify(this.isStacked));
+            } catch {}
+            this.render(container);
         });
 
         container.querySelector('#ars-search')?.addEventListener('input', (e) => {
@@ -547,7 +625,7 @@ export class ArsenalScreen {
             if (thumb) {
                 if (Date.now() < this.suppressThumbClickUntil) return;
                 const name = thumb.dataset.name;
-                const c = this.templates.find(t => t.name === name);
+                const c = this.viewerList.find(t => t.name === name) || this.templates.find(t => t.name === name);
                 if (trg.classList.contains('inline-equip')) { this.equipToDeck('card', c, thumb); return; }
                 if (trg.classList.contains('inline-view')) { 
                     const vIdx = this.viewerList.findIndex(t => t.name === name);
@@ -738,16 +816,32 @@ export class ArsenalScreen {
         els.forEach((el) => io.observe(el));
     }
 
-    private isArtifactInDeck(id: string) { return this.preDeckArtifacts.some(a => a && a.id === id); }
-
     private equipToDeck(type: 'card' | 'artifact', item: any, sourceEl: HTMLElement | null) {
         let targetIdx = -1;
         let isRemoving = false;
 
         if (type === 'card') {
-            const existing = this.preDeckCards.indexOf(item);
-            if (existing !== -1) { this.preDeckCards[existing] = null; isRemoving = true; }
-            else { targetIdx = this.preDeckCards.indexOf(null); if (targetIdx === -1) targetIdx = 0; this.preDeckCards[targetIdx] = item; }
+            const inDeckCount = this.preDeckCards.filter(c => c && c.name === item.name).length;
+            const totalCount = item._count || 1;
+
+            if (inDeckCount >= totalCount) {
+                // Se todas as cópias já estão no deck, remove a última cópia equipada
+                let lastIdx = -1;
+                for (let i = this.preDeckCards.length - 1; i >= 0; i--) {
+                    if (this.preDeckCards[i] && this.preDeckCards[i].name === item.name) {
+                        lastIdx = i;
+                        break;
+                    }
+                }
+                if (lastIdx !== -1) {
+                    this.preDeckCards[lastIdx] = null;
+                    isRemoving = true;
+                }
+            } else {
+                targetIdx = this.preDeckCards.indexOf(null);
+                if (targetIdx === -1) targetIdx = 0;
+                this.preDeckCards[targetIdx] = item;
+            }
         } else {
             const existing = this.preDeckArtifacts.indexOf(item);
             if (existing !== -1) { this.preDeckArtifacts[existing] = null; isRemoving = true; }

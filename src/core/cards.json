@@ -1,42 +1,52 @@
 [
   {
-    "name": "Nova Carta",
-    "baseAtk": 830,
-    "basePv": 940,
-    "image": "/cards/09.jpg",
-    "shopAvailability": {
-      "type": "always"
-    },
-    "manaCost": 6,
-    "staminaCost": 6,
-    "preferredRarity": "rare",
+    "id": "card_1791833477017_y2rv7",
+    "name": "Cae6286f 5476 4046 a96a 7e",
+    "image": "/cards/1791833477012_cae6286f-5476-4046-a96a-7eb2bdc69f9a.png",
+    "baseAtk": 1200,
+    "basePv": 1340,
+    "manaCost": 7,
+    "staminaCost": 7,
+    "preferredRarity": "epic",
+    "classId": "mago",
+    "abilityId": "phantom",
     "attacks": [
       {
-        "type": "enchantment",
-        "name": "DESARMAR",
-        "enchantment": {
-          "id": "disarm",
-          "value": 50,
-          "turns": 2
-        },
-        "cost": 6,
+        "type": "damage",
+        "name": "ATAQUE BÁSICO",
+        "damage": 1200,
+        "cost": 9,
         "costType": "stamina"
       },
       {
         "type": "enchantment",
-        "name": "MEDITAÇÃO",
+        "name": "SIFÃO DE MANA",
         "enchantment": {
-          "id": "meditate",
-          "value": 4
+          "id": "siphon",
+          "value": 2
         },
-        "cost": 0,
+        "cost": 7,
+        "costType": "mana"
+      },
+      {
+        "type": "enchantment",
+        "name": "REANIMAÇÃO",
+        "enchantment": {
+          "id": "revive",
+          "value": 20
+        },
+        "cost": 7,
         "costType": "mana"
       }
     ],
-    "classId": "elementar",
-    "abilityId": "none",
-    "parry": 0,
-    "cardBack": "/cards/fundo_de_carta.png"
+    "specialAttack": {
+      "name": "DESTREZA FINAL",
+      "damage": 2400,
+      "costType": "stamina",
+      "cost": 9,
+      "description": "Um golpe devastador que utiliza toda a energia acumulada."
+    },
+    "parry": 1
   },
   {
     "id": "card_1791678766476_0",

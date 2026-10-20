@@ -1,0 +1,746 @@
+# WORLDS OF SLIMELANDS
+# ESPECIFICAÇÃO ATUALIZADA — MATRIZ DE CARTAS, CLASSIFICAÇÕES, GERADOR PROCEDURAL E BOOSTERS
+
+## 1. OBJETIVO
+
+Reestruturar o sistema de cartas existente, centralizando todo o gerenciamento na **Matriz de Cartas**.
+
+Atualmente, o gerador procedural e o sistema de boosters já existem, mas apresentam problemas de integração e fluxo.
+
+A Matriz deverá ser responsável pelo cadastro e pela organização das cartas.
+
+O motor procedural será responsável exclusivamente pela geração dos atributos variáveis, respeitando as regras e classificações previamente estabelecidas.
+
+Os packs serão responsáveis por selecionar quais matrizes poderão participar de cada distribuição.
+
+**Não desenvolver sistemas paralelos. Aproveitar e corrigir a implementação existente.**
+
+## 2. ESTRUTURA PRINCIPAL
+
+A arquitetura deverá seguir esta organização:
+
+**Matriz → Classificações → Packs → Motor procedural → Instâncias → Inventário → Tabuleiro.**
+
+Cada camada possui uma responsabilidade.
+
+- **Matriz:** armazena os modelos originais das cartas.
+- **Classificações:** organizam os modelos por raridade, classe, bioma, coleção e tipo.
+- **Packs:** selecionam as matrizes elegíveis e definem regras de distribuição.
+- **Motor procedural:** gera atributos individuais para as cartas.
+- **Instâncias:** representam as cartas efetivamente obtidas.
+- **Inventário:** armazena as instâncias dos jogadores.
+- **Tabuleiro:** utiliza os atributos individuais das cartas.
+
+O sorteio de qual matriz será obtida pertence ao mecanismo de distribuição. A geração dos atributos pertence ao motor procedural.
+
+Essas duas responsabilidades não devem ser confundidas.
+
+---
+
+## 3. IMPORTAÇÃO DE CARTAS NEUTRAS
+
+O administrador deverá conseguir selecionar uma pasta contendo as imagens das cartas.
+
+O sistema deverá importar os arquivos para a Matriz, criando um registro independente para cada carta.
+
+Inicialmente, as cartas deverão permanecer neutras.
+
+Não gerar automaticamente:
+
+- Rank.
+- PV.
+- Dano.
+- Mana.
+- Custo de invocação.
+- Raridade aleatória.
+
+Durante a importação, criar:
+
+- ID da matriz.
+- Referência ao arquivo.
+- Nome provisório, se necessário.
+- Descrição provisória, se necessário.
+- Estado de classificação.
+- Estado de edição.
+
+Não sobrescrever informações já cadastradas.
+
+As matrizes recém-importadas deverão aparecer na seção **Não classificadas**.
+
+O administrador poderá selecioná-las individualmente ou em lote e atribuir suas classificações.
+
+---
+
+## 4. HIERARQUIA DE RARIDADES
+
+As raridades serão os grupos principais de organização.
+
+Utilizar as raridades atualmente configuradas no projeto.
+
+A estrutura conhecida anteriormente incluía:
+
+- Comum.
+- Rara.
+- Lendária.
+- Mítica.
+- Limitada.
+
+A classe de raridade Épica também foi considerada como opção adicional.
+
+Entretanto, não criar nem modificar raridades automaticamente.
+
+A implementação deve ler a configuração mais recente existente no projeto.
+
+Cada matriz classificada deverá possuir uma raridade principal.
+
+Matrizes não classificadas permanecerão separadas até a atribuição administrativa.
+
+### Responsabilidades da raridade
+
+A raridade determina:
+
+- Tabela de balanceamento.
+- Limites gerais de geração.
+- Elegibilidade em determinados packs.
+- Probabilidades de distribuição.
+- Regras específicas de disponibilidade.
+
+**A raridade da matriz não deve ser sorteada novamente pelo gerador de atributos.**
+
+Se um booster precisar gerar uma carta Mítica, deverá selecionar uma matriz classificada como Mítica.
+
+---
+
+## 5. SISTEMA DE SUBGRUPOS
+
+Além da raridade principal, a Matriz deverá possuir classificações secundárias independentes.
+
+Esses subgrupos não serão gerados aleatoriamente.
+
+Serão definidos pelo administrador.
+
+### 5.1 Classe ou família
+
+Representa a natureza da criatura ou personagem.
+
+Exemplos:
+
+- Slimes Tóxicos.
+- Slimes Rochosos.
+- Slimes Cromáticos.
+- Slimes Vikings.
+- Slimes Orientais.
+- Slimes Divinos.
+
+Uma carta poderá pertencer a uma classe ou família definida pelo administrador.
+
+Essas classificações não devem ser confundidas com raridade.
+
+### 5.2 Bioma
+
+Indica o ambiente ou a região associada à carta.
+
+Exemplos:
+
+- Floresta.
+- Deserto.
+- Neve.
+- Vulcânico.
+- Pântano.
+- Reino Sombrio.
+
+O bioma poderá ser utilizado como filtro para packs e, futuramente, para drops e encontros no mapa.
+
+### 5.3 Coleção temática
+
+Organiza cartas por coleção ou temática.
+
+Exemplos:
+
+- Halloween.
+- Criaturas Sombrias.
+- Coleção Oriental.
+- Coleção dos Deuses.
+- Festival de Inverno.
+- Coleção de Aniversário.
+
+Uma carta poderá participar de mais de uma coleção temática, conforme configuração.
+
+### 5.4 Tipo de carta
+
+Define a natureza funcional da carta.
+
+Exemplos:
+
+- Criatura.
+- Magia.
+- Item.
+- Outros tipos existentes.
+
+O tipo poderá determinar quais atributos e regras são aplicáveis.
+
+Uma carta de Magia não deverá receber automaticamente PV ou custo de invocação de criatura.
+
+---
+
+## 6. SUBGRUPOS COMPARTILHADOS ENTRE RARIDADES
+
+As classificações secundárias deverão ser independentes dos grupos de raridade.
+
+A mesma categoria poderá existir em várias raridades.
+
+Exemplo:
+
+**Comum**
+- Floresta
+  - Slime Verde
+  - Slime Musgo
+
+**Rara**
+- Floresta
+  - Slime Guardião
+  - Slime Espiritual
+
+**Mítica**
+- Floresta
+  - Herisdia
+
+As três raridades compartilham a classificação Floresta.
+
+Entretanto, suas cartas permanecem em conjuntos separados.
+
+Uma carta Comum não deverá aparecer automaticamente na categoria Rara.
+
+O compartilhamento de uma classificação não significa compartilhamento de itens.
+
+Cada matriz possui sua raridade, e os subgrupos apenas acrescentam informações de organização.
+
+### Classificações simultâneas
+
+Uma matriz poderá possuir várias classificações secundárias.
+
+Exemplo:
+
+**Slime Venenoso**
+
+- Raridade: Rara.
+- Família: Slime Tóxico.
+- Bioma: Pântano.
+- Coleção: Criaturas Sombrias.
+- Tipo: Criatura.
+
+Essas classificações deverão ser armazenadas como campos ou associações independentes.
+
+Não construir uma hierarquia rígida que obrigue a escolher apenas um subgrupo.
+
+Os subgrupos podem ser compartilhados e reutilizados sem duplicar seus registros.
+
+---
+
+## 7. INTERFACE DA MATRIZ
+
+A galeria administrativa deverá possuir uma estrutura visual organizada.
+
+### Navegação principal
+
+**Matriz de Cartas**
+
+- Não classificadas.
+- Comum.
+- Rara.
+- Lendária.
+- Mítica.
+- Limitada.
+- Outras raridades habilitadas.
+
+Ao selecionar uma raridade, apresentar filtros por:
+
+- Classe ou família.
+- Bioma.
+- Coleção temática.
+- Tipo.
+- Estado de edição.
+- Nome.
+
+Permitir filtros combinados.
+
+Exemplo:
+
+Raridade: Rara.
+
+Família: Tóxico.
+
+Bioma: Pântano.
+
+O resultado deverá mostrar apenas as matrizes que correspondem simultaneamente aos critérios selecionados.
+
+### Ações administrativas
+
+Permitir:
+
+- Importar pasta.
+- Selecionar cartas.
+- Classificar individualmente.
+- Classificar em lote.
+- Mover entre raridades.
+- Adicionar subgrupos.
+- Remover subgrupos.
+- Editar nomes e descrições.
+- Configurar habilidades.
+- Editar regras.
+- Gerar versão aleatória.
+- Criar versão manual.
+- Visualizar versões existentes.
+
+Alterar a classificação de uma matriz não deve modificar cartas já obtidas pelos jogadores.
+
+---
+
+## 8. MATRIZ, VERSÃO E INSTÂNCIA
+
+Manter três conceitos separados.
+
+### Matriz
+
+É a identidade original da carta.
+
+Contém:
+
+- Imagem.
+- Nome.
+- Descrição.
+- Raridade.
+- Família.
+- Bioma.
+- Coleção.
+- Tipo.
+- Habilidades-base.
+- Configurações permitidas.
+
+A matriz não possui obrigatoriamente PV, dano ou rank definitivos.
+
+### Versão
+
+É uma configuração opcional salva pelo administrador.
+
+Poderá ser criada manualmente ou a partir de uma geração aleatória.
+
+Exemplo:
+
+Slime Verde, Comum, Rank S, PV 495.
+
+Uma versão poderá servir como modelo fixo para distribuição, se o administrador habilitar essa opção.
+
+### Instância
+
+É a carta individual obtida pelo jogador.
+
+Contém os atributos finais gerados e um identificador único.
+
+Duas instâncias podem compartilhar a mesma matriz, raridade e rank, mas possuir PV e ataques diferentes.
+
+Também é permitido que os atributos coincidam.
+
+**Não implementar mecanismos artificiais para impedir repetições.**
+
+O objetivo é variedade natural, não exclusividade absoluta.
+
+---
+
+## 9. RESPONSABILIDADE DO RANDOMIZADOR
+
+O motor procedural não será responsável por inventar as classificações da matriz.
+
+Ele deverá receber uma matriz já classificada e gerar seus atributos variáveis.
+
+### Informações fixas da matriz
+
+- Nome.
+- Imagem.
+- Descrição-base.
+- Raridade.
+- Família.
+- Bioma.
+- Coleção.
+- Tipo.
+- Identidade das habilidades.
+
+### Informações geradas
+
+- Rank, quando não estiver fixado.
+- PV.
+- Dano das habilidades.
+- Custos de mana.
+- Custo de invocação.
+- Outros atributos numéricos proceduralmente configurados.
+
+A quantidade de habilidades dependerá das regras da raridade e do cadastro do personagem.
+
+O motor poderá selecionar quais habilidades-base estarão disponíveis na instância, conforme essas regras.
+
+Não substituir automaticamente os nomes das habilidades já cadastradas.
+
+### Exemplo
+
+Matriz:
+
+Slime Verde.
+
+Raridade: Comum.
+
+Família: Slime Natural.
+
+Bioma: Floresta.
+
+O jogador A poderá receber:
+
+- Rank S.
+- PV 495.
+- Ataque 350.
+- Ataque 500.
+- Invocação 3.
+
+O jogador B poderá receber:
+
+- Rank S.
+- PV 465.
+- Ataque 325.
+- Ataque 480.
+- Invocação 2.
+
+O jogador C poderá receber:
+
+- Rank A.
+- PV 380.
+- Ataque 270.
+- Ataque 390.
+- Invocação 2.
+
+Todos possuem cartas derivadas da mesma matriz.
+
+Os resultados são independentes, mas respeitam a raridade e as regras de balanceamento.
+
+---
+
+## 10. REGRAS DE BALANCEAMENTO
+
+Reutilizar as regras já implementadas no gerador.
+
+Cada combinação de raridade e rank deverá possuir suas próprias faixas de atributos.
+
+Os ranks são:
+
+- S.
+- A.
+- B.
+- C.
+- D.
+
+Permitir configurar:
+
+- PV mínimo.
+- PV máximo.
+- Dano mínimo.
+- Dano máximo.
+- Incrementos.
+- Quantidade de habilidades.
+- Mana por habilidade.
+- Custo de invocação.
+
+Exemplo anterior para cartas Comuns:
+
+| Rank | Ataque máximo |
+|---|---|
+| S | 550 |
+| A | 400 |
+| B | 300 |
+| C | 200 |
+| D | 100 |
+
+Esses números são exemplos, não valores obrigatórios.
+
+A raridade e o rank devem trabalhar juntos na definição dos limites.
+
+Não permitir atributos acima dos limites configurados.
+
+O ataque máximo representa o teto aplicável à habilidade correspondente, não a soma obrigatória de todos os danos.
+
+---
+
+## 11. MANA, ESTAMINA E PARRY
+
+Preservar o sistema de recursos existente.
+
+Mana é utilizada para ativar habilidades.
+
+Estamina é utilizada para invocação e Parry.
+
+Os limites gerais conhecidos são 9 pontos de mana e 9 de estamina.
+
+O custo de invocação varia entre 1 e 9, conforme as regras de geração.
+
+### Parry
+
+O custo corresponde a 50% da mana efetivamente consumida pelo ataque adversário.
+
+Exemplos:
+
+- 3 mana: 1,5 estamina.
+- 6 mana: 3 estamina.
+- 9 mana: 4,5 estamina.
+
+Para múltiplos agressores, calcular separadamente e somar os custos das defesas executadas.
+
+Suportar valores fracionários de 0,5.
+
+O resultado do bloqueio deve seguir as regras existentes do tabuleiro.
+
+Não modificar a mecânica de combate durante a reorganização da Matriz.
+
+---
+
+## 12. PACKS DE DISTRIBUIÇÃO
+
+Os packs serão conjuntos de regras que consultam as matrizes organizadas.
+
+Um pack poderá selecionar cartas utilizando:
+
+- Raridade.
+- Família.
+- Bioma.
+- Coleção.
+- Tipo.
+- IDs específicos de matrizes.
+
+Exemplo:
+
+**Booster Floresta**
+
+Filtros:
+
+- Bioma: Floresta.
+- Tipo: Criatura.
+- Raridades conforme os slots.
+- Magias conforme os slots próprios.
+
+Os packs deverão usar as classificações já cadastradas.
+
+Não criar cópias independentes das cartas ao adicioná-las a um pack.
+
+A seleção deverá utilizar referências à Matriz.
+
+### Packs temáticos
+
+Permitir packs específicos de:
+
+- Bioma.
+- Família.
+- Coleção.
+- Evento.
+- Seleção personalizada.
+
+Os exemplos de eventos representam apenas preparação para funcionalidades futuras.
+
+Atualmente, os packs serão utilizados pela Loja e pelos Boosters.
+
+---
+
+## 13. COMPOSIÇÃO DOS BOOSTERS
+
+O booster padrão conterá nove cartas.
+
+| Slots | Tipo | Quantidade |
+|---|---|---|
+| 1–4 | Comum | 4 |
+| 5–6 | Rara | 2 |
+| 7–8 | Magia | 2 |
+| 9 | Carta especial de rank alto | 1 |
+
+Os slots Comuns devem buscar matrizes classificadas como Comuns.
+
+Os slots Raros devem buscar matrizes classificadas como Raras.
+
+Os slots de Magia devem buscar matrizes do tipo Magia elegíveis naquele pack.
+
+O slot especial deverá selecionar uma matriz de qualquer raridade habilitada, respeitando as probabilidades configuradas.
+
+Após selecionar a matriz, o motor procedural gera os atributos da instância.
+
+### Slot especial
+
+O rank deverá ser alto, inicialmente A ou S.
+
+As raridades superiores terão probabilidades de obtenção muito pequenas.
+
+Permitir configuração individual das taxas.
+
+Não incluir matrizes de raridades desativadas.
+
+Não gerar cartas de categorias ausentes do pack.
+
+---
+
+## 14. FLUXO CORRETO DOS BOOSTERS
+
+Corrigir o comportamento atual em que a abertura apresenta um menu administrativo.
+
+O jogador não deve interagir com ferramentas de gerenciamento.
+
+O fluxo correto será:
+
+1. Jogador seleciona o booster.
+2. Clica em Abrir.
+3. O sistema consulta o pack.
+4. O pack seleciona as matrizes elegíveis.
+5. O motor gera as instâncias individuais.
+6. O sistema registra o resultado.
+7. Consome o booster.
+8. Concede as nove cartas ao inventário.
+9. Apresenta a revelação.
+
+O processo precisa ser seguro contra duplicações e falhas.
+
+A animação de abertura não deverá executar sorteios adicionais.
+
+O resultado já confirmado deverá permanecer recuperável.
+
+---
+
+## 15. LOJA E OUTRAS FONTES
+
+Atualmente, somente Loja e Boosters estão implementados.
+
+Esses serão os únicos fluxos de obtenção que deverão ser integrados nesta etapa.
+
+A estrutura deverá ser preparada para futuras fontes:
+
+- Spawn de personagens.
+- Drops.
+- Escaneamento.
+- Quests.
+- Eventos limitados.
+
+Não implementar essas mecânicas agora.
+
+Quando forem desenvolvidas, deverão utilizar a mesma Matriz e o mesmo motor procedural.
+
+---
+
+## 16. INFORMATIVO DAS CARTAS
+
+Preservar o informativo interativo das cartas.
+
+No mobile, utilizar long press.
+
+No desktop, oferecer acionamento equivalente.
+
+Exibir:
+
+- Nome.
+- Descrição.
+- Raridade.
+- Rank.
+- PV.
+- Dano.
+- Habilidades.
+- Nomes dos ataques.
+- Descrições.
+- Mana necessária.
+- Custo de invocação.
+- Efeitos especiais.
+
+O informativo deverá utilizar os dados da instância quando estiver mostrando uma carta de jogador.
+
+Na galeria administrativa, poderá mostrar os dados da matriz ou de uma versão selecionada.
+
+Não gerar atributos automaticamente apenas porque o usuário abriu o informativo.
+
+---
+
+## 17. TESTES OBRIGATÓRIOS
+
+Verificar:
+
+1. Importação de pasta cria matrizes neutras.
+2. Nenhum atributo aleatório é gerado durante a importação.
+3. Raridades são atribuídas manualmente.
+4. Família, bioma, coleção e tipo são classificações independentes.
+5. Uma carta pode possuir múltiplos subgrupos.
+6. Subgrupos podem ser compartilhados entre raridades.
+7. Compartilhar subgrupo não compartilha automaticamente as cartas.
+8. A geração administrativa é opcional.
+9. A matriz não é alterada pela geração.
+10. O rank pode ser sorteado conforme as regras.
+11. PV e ataque respeitam os limites.
+12. Os custos de mana e invocação são válidos.
+13. Cartas com atributos iguais são permitidas.
+14. Cada instância possui ID próprio.
+15. Packs utilizam matrizes elegíveis.
+16. Boosters geram exatamente nove cartas.
+17. O botão de abertura não mostra menus administrativos.
+18. Cartas obtidas entram no inventário.
+19. O tabuleiro utiliza os atributos das instâncias.
+20. A loja continua funcionando.
+21. Alterações na Matriz não modificam cartas já obtidas.
+
+---
+
+## 18. ORDEM DE IMPLEMENTAÇÃO
+
+**Etapa 1:** inspecionar a implementação existente.
+
+**Etapa 2:** corrigir a estrutura e o gerenciamento da Matriz de Cartas.
+
+**Etapa 3:** implementar importação neutra e classificação administrativa.
+
+**Etapa 4:** implementar raridades como grupos principais e subgrupos independentes.
+
+**Etapa 5:** adaptar o gerador procedural para receber matrizes classificadas.
+
+**Etapa 6:** permitir criação administrativa de versões manuais ou aleatórias.
+
+**Etapa 7:** reorganizar os packs para selecionar matrizes pelos filtros.
+
+**Etapa 8:** corrigir a abertura automática dos boosters.
+
+**Etapa 9:** integrar as instâncias ao inventário e ao tabuleiro.
+
+**Etapa 10:** executar os testes de integração e balanceamento.
+
+---
+
+## 19. RESULTADO FINAL ESPERADO
+
+O administrador importa uma pasta de cartas.
+
+As cartas aparecem na Matriz em estado neutro.
+
+O administrador atribui a raridade e organiza cada carta por família, bioma, coleção e tipo.
+
+As classificações secundárias podem ser compartilhadas entre várias raridades, sem misturar os itens.
+
+Quando desejar, o administrador poderá gerar uma versão aleatória ou editar manualmente seus atributos.
+
+Os packs selecionam matrizes por suas classificações.
+
+Quando o jogador abre um booster, o sistema seleciona as matrizes elegíveis e cria instâncias por meio do motor procedural.
+
+Cada jogador recebe cartas com atributos próprios, respeitando os limites da raridade e do rank.
+
+Repetições de atributos são permitidas.
+
+**A regra fundamental é:**
+
+A Matriz define o que a carta é.
+
+As classificações definem a quais grupos ela pertence.
+
+Os packs definem onde ela pode ser obtida.
+
+O motor procedural define os atributos variáveis.
+
+O inventário registra o que o jogador recebeu.
+
+O tabuleiro utiliza a instância recebida.
+
+Todo o sistema deverá funcionar reutilizando a implementação existente, sem duplicação de motores, perda de dados ou mudanças desnecessárias nas regras de combate.

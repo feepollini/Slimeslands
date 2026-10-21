@@ -1,12 +1,15 @@
 import './style.css';
 import './ui/styles/Battle.css';
 import './ui/styles/BossBattle.css';
+import './ui/styles/Landscape.css';
 import './ui/screens/forge_v2/utils/PremiumCard.css';
 import { gsap } from 'gsap';
 import { GameEngine, Card } from './core/GameEngine';
 import { GameAI, AIDifficulty } from './core/GameAI';
 import { ProgressionManager } from './core/ProgressionManager';
 import { BossBoardScreen } from './ui/screens/BossBoardScreen';
+import { BossBoardScreenLandscape } from './ui/screens_landscape/BossBoardScreenLandscape';
+import { OrientationManager } from './ui/OrientationManager';
 import { Mobby, MobbyManager } from './core/MobbyManager';
 import SCENARIOS from './core/scenarios.json';
 import { applyScenarioBackground, isVideoUrl } from './ui/utils/BackgroundUtils';
@@ -45,7 +48,11 @@ function bindLongPress(el: HTMLElement, callback: () => void, ms = 650) {
 
 class BossBattleApp {
   private engine: GameEngine;
-  private board: BossBoardScreen;
+  private portraitBoard: BossBoardScreen;
+  private landscapeBoard: BossBoardScreenLandscape;
+  private get board(): BossBoardScreen {
+    return OrientationManager.isLandscape() ? this.landscapeBoard : this.portraitBoard;
+  }
   private container: HTMLElement;
   private mobby: Mobby;
   private timer = 60;
@@ -58,11 +65,21 @@ class BossBattleApp {
   private difficulty: AIDifficulty = 'easy';
   private aiLogic = new GameAI();
   private isAIProcessing = false;
+  public landscapeDeviceState: 'portrait' | 'mobile-landscape' | 'tablet-landscape' | 'desktop-landscape' = 'portrait';
 
   constructor() {
     this.container = document.getElementById('battle-root')!;
     this.engine = new GameEngine();
-    this.board = new BossBoardScreen();
+    this.portraitBoard = new BossBoardScreen();
+    this.landscapeBoard = new BossBoardScreenLandscape();
+    this.syncLandscapeDeviceState();
+
+    OrientationManager.subscribe(() => {
+      this.syncLandscapeDeviceState();
+      if (this.container && this.container.querySelector('.battle-screen')) {
+        this.render();
+      }
+    });
 
     // Carregar Mobby selecionado
     const params = new URLSearchParams(window.location.search);
@@ -177,7 +194,24 @@ class BossBattleApp {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
 
+  private syncLandscapeDeviceState() {
+    if (!OrientationManager.isLandscape()) {
+      this.landscapeDeviceState = 'portrait';
+      return;
+    }
+    if (OrientationManager.isMobileLandscape()) {
+      this.landscapeDeviceState = 'mobile-landscape';
+    } else if (OrientationManager.isTabletLandscape()) {
+      this.landscapeDeviceState = 'tablet-landscape';
+    } else {
+      this.landscapeDeviceState = 'desktop-landscape';
+    }
+    this.landscapeBoard.setDeviceState(this.landscapeDeviceState);
+  }
+
   private render() {
+    this.syncLandscapeDeviceState();
+    this.landscapeBoard.setEnemyHandCount(this.engine.aiHand.length);
     this.container.innerHTML = this.board.render(
       this.engine.board, this.engine.hp, this.engine.mana, this.engine.stamina, this.engine.turn, this.timer, this.engine.grave, this.engine.deck.length, this.mobby
     );
@@ -206,6 +240,22 @@ class BossBattleApp {
     if (!handCont) return;
     handCont.innerHTML = '';
     const n = this.engine.hand.length;
+    const isLandscape = this.landscapeDeviceState !== 'portrait';
+    const isMobileLs = this.landscapeDeviceState === 'mobile-landscape';
+    const isTabletLs = this.landscapeDeviceState === 'tablet-landscape';
+
+    const spreadX = isLandscape
+      ? isMobileLs
+        ? Math.min(58, Math.max(32, 240 / Math.max(1, n)))
+        : isTabletLs
+        ? Math.min(68, Math.max(40, 340 / Math.max(1, n)))
+        : Math.min(86, Math.max(52, 460 / Math.max(1, n)))
+      : Math.min(38, Math.max(22, 190 / Math.max(1, n - 1)));
+    const rotStep = isLandscape ? (isMobileLs ? 3.5 : 4.5) : Math.min(7, 28 / Math.max(1, n - 1));
+    const tyStep = isLandscape ? (isMobileLs ? 2.5 : 4.5) : Math.min(5, 18 / Math.max(1, n - 1));
+    const hoverLiftY = isLandscape ? (isMobileLs ? -24 : isTabletLs ? -38 : -48) : -50;
+    const hoverScale = isLandscape ? (isMobileLs ? 1.2 : 1.22) : 1.25;
+
     this.engine.hand.forEach((c: Card, i: number) => {
       const el = document.createElement('div');
       el.className = 'hand-card-hifi';
@@ -215,15 +265,33 @@ class BossBattleApp {
       // Dynamic Alignment Calculation
       const center = (n - 1) / 2;
       const offset = i - center;
-      const rot = offset * 12; // 12 deg step
-      const tx = offset * 45;  // 45px X step
-      const ty = Math.abs(offset) * 8; // 8px Y arc
+      const rot = offset * rotStep;
+      const tx = offset * spreadX;
+      const ty = Math.abs(offset) * tyStep;
+      const baseTransform = `rotate(${rot}deg) translateX(${tx}px) translateY(${ty}px)`;
 
-      el.style.transform = `rotate(${rot}deg) translateX(${tx}px) translateY(${ty}px)`;
+      el.dataset.baseTransform = baseTransform;
+      el.dataset.tx = String(tx);
+      el.style.transform = baseTransform;
       el.style.zIndex = `${100 - Math.abs(Math.round(offset * 2))}`;
 
       el.innerHTML = this.board.renderHandCard(c);
       handCont.appendChild(el);
+
+      el.onmouseenter = () => {
+        if (!el.classList.contains('selected')) {
+          el.style.transform = `translateX(${tx}px) translateY(${hoverLiftY}px) scale(${hoverScale}) rotate(0deg)`;
+          el.style.zIndex = '300';
+        }
+      };
+
+      el.onmouseleave = () => {
+        if (!el.classList.contains('selected')) {
+          el.style.transform = baseTransform;
+          el.style.zIndex = `${100 - Math.abs(Math.round(offset * 2))}`;
+        }
+      };
+
       const select = (e: Event) => {
         e.stopPropagation();
         if (this.engine.turn !== 'p') return;
@@ -337,6 +405,17 @@ class BossBattleApp {
       });
     }
 
+    const graveEl = document.querySelector('.sepulture-slot');
+    if (graveEl) {
+      graveEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.engine.grave.length > 0) {
+          SoundManager.playAction('clique_geral', 0.4);
+          this.showFullscreen(this.engine.grave[this.engine.grave.length - 1]);
+        }
+      });
+    }
+
     // SLOTE DO CHEFE (SUBSTITUI OS 3 SLOTS DO INIMIGO)
     const bossSlot = document.getElementById('boss-sprite-slot');
     if (bossSlot) {
@@ -447,13 +526,17 @@ class BossBattleApp {
     const bossEl = document.getElementById('mobby-sprite');
     const bossWrap = document.getElementById('boss-sprite-transform-wrap') || document.getElementById('boss-sprite-slot');
 
-    // Dimensões da carta final na proporção exata 680:990 da Forja Matriz
-    const maxH = Math.min(460, window.innerHeight * 0.72);
-    const maxW = Math.min(316, window.innerWidth * 0.88);
+    // Dimensões da carta final na proporção exata 680:990 da Forja Matriz (compatível com espaço disponível em Paisagem e Retrato)
+    const isLs = this.landscapeDeviceState !== 'portrait';
+    const btnReservedSpace = isLs ? 64 : 84;
+    const availH = Math.max(180, window.innerHeight - btnReservedSpace - (isLs ? 24 : 40));
+    const maxH = Math.min(isLs ? 320 : 430, availH);
+    const maxW = Math.min(isLs ? 240 : 300, window.innerWidth * 0.84);
     const targetWidth = Math.min(maxW, Math.round(maxH * (680 / 990)));
     const targetHeight = Math.round(targetWidth * (990 / 680));
     const targetLeft = (window.innerWidth - targetWidth) / 2;
-    const targetTop = (window.innerHeight - targetHeight) / 2 - 35;
+    const totalGroupH = targetHeight + (isLs ? 14 : 20) + (isLs ? 40 : 48);
+    const targetTop = Math.max(10, Math.round((window.innerHeight - totalGroupH) / 2));
     const centerX = targetLeft + targetWidth / 2;
     const centerY = targetTop + targetHeight / 2;
 
@@ -762,31 +845,32 @@ class BossBattleApp {
         onComplete: () => {
           // Levitação suave e aura pulsante contínua na carta revelada
           gsap.to(cardWrap, {
-            y: "-=8",
-            filter: "drop-shadow(0 0 50px rgba(255,215,0,0.95)) drop-shadow(0 25px 45px rgba(0,0,0,0.9))",
+            y: isLs ? "-=5" : "-=8",
+            filter: "drop-shadow(0 0 42px rgba(255,215,0,0.92)) drop-shadow(0 18px 36px rgba(0,0,0,0.9))",
             duration: 1.4,
             repeat: -1,
             yoyo: true,
             ease: "sine.inOut"
           });
 
-          // 6. BOTÃO COLETAR CENTRALIZADO ABAIXO COM A ID VISUAL DO JOGO
+          // 6. BOTÃO CÁPSULA SIMPLES COM A ID VISUAL DO JOGO E COMPATÍVEL COM PAISAGEM
           const collectBtn = document.createElement('button');
           collectBtn.id = 'btn-collect-reward';
           collectBtn.className = 'btn-collect-reward-pulse';
-          collectBtn.innerHTML = '<span>🎴</span><span>COLETAR RECOMPENSA</span>';
+          collectBtn.innerHTML = '<span class="collect-capsule-icon">✦</span><span class="collect-capsule-label">COLETAR RECOMPENSA</span>';
+          const btnTop = Math.min(window.innerHeight - (isLs ? 46 : 62), targetTop + targetHeight + (isLs ? 12 : 20));
           collectBtn.style.cssText = `
             position: fixed;
             left: 50%;
-            top: ${targetTop + targetHeight + 24}px;
+            top: ${btnTop}px;
             z-index: 1000002;
             opacity: 0;
           `;
           overlay.appendChild(collectBtn);
 
           gsap.fromTo(collectBtn,
-            { opacity: 0, y: 30 },
-            { opacity: 1, y: 0, duration: 0.55, ease: "back.out(1.7)" }
+            { opacity: 0, y: 18 },
+            { opacity: 1, y: 0, duration: 0.45, ease: "back.out(1.7)" }
           );
 
           // Ação de coletar a carta
@@ -814,17 +898,17 @@ class BossBattleApp {
                 // Absorção e fechamento
                 gsap.to(cardWrap, {
                   scale: 0,
-                  y: 350,
+                  y: 260,
                   opacity: 0,
-                  duration: 0.5,
+                  duration: 0.45,
                   ease: "power3.in"
                 });
                 gsap.to(collectBtn, { opacity: 0, duration: 0.2 });
 
                 gsap.to(overlay, {
                   opacity: 0,
-                  duration: 0.4,
-                  delay: 0.35,
+                  duration: 0.35,
+                  delay: 0.3,
                   onComplete: () => {
                     overlay.remove();
                     this.triggerEndScreen(true);
@@ -845,7 +929,6 @@ class BossBattleApp {
 
     const pvRemain = this.engine.hp.p;
     const prevData = ProgressionManager.getPlayerData();
-    const previousXp = prevData.xp;
     const xpForNextLevel = ProgressionManager.getNextLevelXpRequirement(prevData.level);
 
     const matchStats = {
@@ -857,11 +940,12 @@ class BossBattleApp {
     const { data: newData, rewards } = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
     const coinsGained = rewards.goldGained;
     const diamondsGained = rewards.diamondGained;
+    const enjinGained = rewards.enjinGained ?? (isWin ? 1 : 0);
     const newPct = Math.min(100, (newData.xp / xpForNextLevel) * 100);
 
     const themeClass = isWin ? 'win-theme' : 'lose-theme';
     const bannerClass = isWin ? 'win-ribbon' : (isSurrender ? 'coward-ribbon' : 'lose-ribbon');
-    const mascotImg = isWin ? '/victory_slime.jpg' : '/defeat_slime.png';
+    const btnClass = isWin ? '' : 'lose-btn';
 
     const overlay = document.createElement('div');
     overlay.id = 'end-battle-overlay';
@@ -876,16 +960,15 @@ class BossBattleApp {
             <span class="end-star-item center-star">⭐</span>
             <span class="end-star-item">⭐</span>
           </div>
-          <div class="end-mini-mascot ${isWin ? 'win' : 'lose'}" id="end-mascot">
-            <img src="${mascotImg}" alt="${isWin ? 'Vitória' : 'Derrota'}" />
-          </div>
         </div>
         <div class="end-ribbon-banner ${bannerClass}" id="end-banner">
           <h1 class="end-ribbon-title">${title}</h1>
         </div>
         <div class="end-modal-card" id="end-modal-card">
-          <div class="end-level-pill">${t('bt.level')} ${prevData.level}</div>
-          <div class="end-section-header">${t('bt.end.rewards')}</div>
+          <div class="end-modal-top-bar">
+            <div class="end-level-pill">${t('bt.level')} ${prevData.level}</div>
+            <div class="end-section-header">${t('bt.end.rewards')}</div>
+          </div>
           <div class="end-capsules-row" id="end-capsules">
             <div class="end-capsule-card gold-capsule">
               <div class="end-capsule-icon-wrap">🪙</div>
@@ -897,16 +980,46 @@ class BossBattleApp {
               <div class="end-capsule-label">${t('bt.end.gems')}</div>
               <div class="end-capsule-value">+${diamondsGained}</div>
             </div>
+            <div class="end-capsule-card enjin-capsule">
+              <div class="end-capsule-icon-wrap">🟣</div>
+              <div class="end-capsule-label">ENJ COIN</div>
+              <div class="end-capsule-value">+${enjinGained}</div>
+            </div>
           </div>
           <div class="end-card-divider"></div>
-          <div class="end-xp-compact-wrap">
-            <div class="end-xp-compact-bar">
-              <div id="er-xp-bar" class="end-xp-compact-fill" style="width:${newPct}%;"></div>
-              <span id="er-xp-txt" class="end-xp-compact-txt">+${rewards.xpGained} XP</span>
+          <div class="end-metrics-panel" id="end-metrics">
+            <div class="end-metrics-badges-row">
+              <div class="end-metric-badge">
+                <span class="end-metric-badge-icon">💀</span>
+                <div class="end-metric-badge-info">
+                  <span class="end-metric-badge-title">${t('bt.end.enemies')}</span>
+                  <span class="end-metric-badge-val">${isWin ? '1x' : '0x'}</span>
+                </div>
+              </div>
+              <div class="end-metric-badge">
+                <span class="end-metric-badge-icon">💖</span>
+                <div class="end-metric-badge-info">
+                  <span class="end-metric-badge-title">${t('bt.hpLeft')}</span>
+                  <span class="end-metric-badge-val">${pvRemain}</span>
+                </div>
+              </div>
+              <div class="end-metric-badge">
+                <span class="end-metric-badge-icon">🃏</span>
+                <div class="end-metric-badge-info">
+                  <span class="end-metric-badge-title">${t('bt.end.cards')}</span>
+                  <span class="end-metric-badge-val">${matchStats.cardsUsed}</span>
+                </div>
+              </div>
+            </div>
+            <div class="end-xp-compact-wrap">
+              <div class="end-xp-compact-bar">
+                <div id="er-xp-bar" class="end-xp-compact-fill" style="width:${newPct}%;"></div>
+                <span id="er-xp-txt" class="end-xp-compact-txt">+${rewards.xpGained} XP</span>
+              </div>
             </div>
           </div>
         </div>
-        <button id="btn-return-lobby" class="btn-end-continue-game">${t('bt.end.continue')}</button>
+        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${t('bt.end.continue')}</button>
       </div>
       <div id="coin-fling-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999998;overflow:hidden;"></div>
     `;
@@ -930,11 +1043,20 @@ class BossBattleApp {
     if (this.isGameOver() || this.engine.turn !== 'e' || this.isAIProcessing) return;
     this.isAIProcessing = true;
 
-    // Chefe escolhe uma carta do jogador para atacar
+    // Chefe avalia taticamente o campo do jogador (prioriza abate letal ou maior ameaça de ATK)
     const occupiedSlots = [3, 4, 5].filter(idx => !!this.engine.board[idx]);
-    const defIdx = occupiedSlots.length > 0 
-      ? occupiedSlots[Math.floor(Math.random() * occupiedSlots.length)]
-      : 3; // Slot alvo (ataque direto se vazio)
+    let defIdx = 3;
+    if (occupiedSlots.length > 0) {
+      defIdx = occupiedSlots.reduce((bestIdx, currIdx) => {
+        const bestCard = this.engine.board[bestIdx]!;
+        const currCard = this.engine.board[currIdx]!;
+        const bestKills = bestCard.pv <= this.mobby.atk ? 1 : 0;
+        const currKills = currCard.pv <= this.mobby.atk ? 1 : 0;
+        const bestScore = bestKills * 500 + bestCard.atk * 1.4 - bestCard.pv * 0.2;
+        const currScore = currKills * 500 + currCard.atk * 1.4 - currCard.pv * 0.2;
+        return currScore > bestScore ? currIdx : bestIdx;
+      }, occupiedSlots[0]);
+    }
 
     this.showBanner(`⚔️ ${this.mobby.name.toUpperCase()} ATACA!`);
 
@@ -1051,6 +1173,7 @@ class BossBattleApp {
 
   private openAction(idx: number) {
     SoundManager.playAction('clique_geral', 0.4);
+    this.clearHandSelection();
     this.selectedSlotIdx = idx;
     const card = this.engine.board[idx];
     if (!card) return;
@@ -1250,6 +1373,7 @@ class BossBattleApp {
   // ─── SKILLS / ARTEFATOS CONTRA O MOBBY ───────────────────────────────────
 
   private async openSkillDialog(skillIdx: number) {
+    this.clearHandSelection();
     const skill = this.engine.activeSkills[skillIdx];
     if (!skill) return;
     const bar = document.getElementById('inline-skill-bar');
@@ -1378,13 +1502,24 @@ class BossBattleApp {
 
   private selectHandCard(c: Card, el: HTMLElement) {
     if (this.selectedHandCard?.id === c.id) return;
-    gsap.to('.hand-card-hifi', { scale: 1, y: 0, duration: 0.2 });
+
+    document.querySelectorAll('.hand-card-hifi').forEach(e => {
+      const cardEl = e as HTMLElement;
+      cardEl.classList.remove('selected');
+      const bt = cardEl.dataset.baseTransform;
+      if (bt) cardEl.style.transform = bt;
+    });
 
     this.selectedHandCard = c;
-    document.querySelectorAll('.hand-card-hifi').forEach(e => e.classList.remove('selected'));
     el.classList.add('selected');
 
-    gsap.to(el, { scale: 1.25, y: -20, zIndex: 100, duration: 0.3, ease: 'back.out(1.7)' });
+    const tx = parseFloat(el.dataset.tx || '0');
+    const isMobileLs = OrientationManager.isMobileLandscape();
+    const selLiftY = isMobileLs ? -20 : -34;
+    const selScale = isMobileLs ? 1.18 : 1.26;
+    el.style.transform = `translateX(${tx}px) translateY(${selLiftY}px) scale(${selScale}) rotate(0deg)`;
+    el.style.zIndex = '350';
+
     this.showBanner(t('bt.chooseSlot'));
 
     document.querySelectorAll('.slot-p').forEach(slot => {
@@ -1394,9 +1529,13 @@ class BossBattleApp {
   }
 
   private clearHandSelection() {
-    gsap.to('.hand-card-hifi', { scale: 1, y: 0, duration: 0.2 });
+    document.querySelectorAll('.hand-card-hifi').forEach(e => {
+      const el = e as HTMLElement;
+      el.classList.remove('selected');
+      const baseTransform = el.dataset.baseTransform;
+      if (baseTransform) el.style.transform = baseTransform;
+    });
     this.selectedHandCard = null;
-    document.querySelectorAll('.hand-card-hifi').forEach(e => e.classList.remove('selected'));
     document.querySelectorAll('.slot-p').forEach(slot => slot.classList.remove('highlight'));
   }
 
@@ -1420,48 +1559,95 @@ class BossBattleApp {
   }
 
   private openDeckFan(onCardPicked?: () => void) {
+    const isLandscape = OrientationManager.isLandscape();
+    const isMobileLs = OrientationManager.isMobileLandscape();
     const fanOverlay = document.createElement('div');
-    fanOverlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;`;
+    fanOverlay.style.cssText = `position:fixed;inset:0;background:rgba(4,4,8,0.88);backdrop-filter:blur(16px);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;`;
 
     const container = document.createElement('div');
-    container.style.cssText = `position:relative; width: min(450px, 95vw); height: 300px; display:flex; justify-content:center; align-items:flex-end; perspective:1200px;`;
+    container.style.cssText = isLandscape
+      ? `position:relative; width: min(1080px, 92vw); height: clamp(160px, 56dvh, 420px); display:flex; justify-content:center; align-items:flex-end; perspective:1400px;`
+      : `position:relative; width: min(400px, 92vw); height: clamp(200px, 32dvh, 260px); display:flex; justify-content:center; align-items:flex-end; perspective:1000px;`;
 
     const count = this.engine.deck.length;
-    const maxArc = count > 10 ? 160 : 100;
+    const maxArc = isLandscape ? Math.min(68, Math.max(22, count * 6)) : Math.min(90, Math.max(30, count * 6));
     const angleStep = count > 1 ? maxArc / (count - 1) : 0;
     const startAngle = count > 1 ? -maxArc / 2 : 0;
+    const maxFanSpan = isLandscape ? Math.min(720, window.innerWidth * 0.68) : 175;
+    const xSpread = isLandscape
+      ? Math.min(isMobileLs ? 38 : 58, maxFanSpan / Math.max(1, count - 1))
+      : Math.min(18, 175 / Math.max(1, count - 1));
 
     for (let i = 0; i < count; i++) {
       const cardBack = document.createElement('div');
-      cardBack.className = 'card-face';
-      cardBack.style.cssText = `position:absolute; bottom:0; width: 130px; height: 189px; overflow:hidden; border-radius:12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.8); cursor:pointer; transform-origin:bottom center;`;
+      cardBack.className = 'card-face matrix-frame-mode';
+      cardBack.style.cssText = isLandscape
+        ? `position:absolute; left:50%; bottom:8px; width: clamp(78px, 24dvh, 210px); height: auto; aspect-ratio: 680/990; overflow:hidden; border-radius:12px; border: 2px solid rgba(255,215,0,0.45); box-shadow: -10px 12px 30px rgba(0,0,0,0.92), 0 0 16px rgba(212,175,55,0.2); cursor:pointer; transform-origin:bottom center; background:#0b0814;`
+        : `position:absolute; left:50%; bottom:10px; width: clamp(82px, 12dvh, 102px); height: auto; aspect-ratio: 680/990; overflow:hidden; border-radius:12px; border: 1.5px solid rgba(255,215,0,0.3); box-shadow: -8px 8px 25px rgba(0,0,0,0.9); cursor:pointer; transform-origin:bottom center; background:#0b0814;`;
       cardBack.innerHTML = renderMatrixCardBackSVG();
 
+      const centerOffset = i - (count - 1) / 2;
       const angle = startAngle + (i * angleStep);
-      const distFromCenter = Math.abs(i - (count - 1) / 2);
-      const yOffset = distFromCenter * (count > 15 ? 4 : 8);
+      const xOffset = count > 1 ? centerOffset * xSpread : 0;
+      const distFromCenter = Math.abs(centerOffset);
+      const yOffset = distFromCenter * (isLandscape ? (isMobileLs ? 3 : 5) : (count > 12 ? 3.5 : 6));
 
-      gsap.set(cardBack, { rotation: angle, y: yOffset + 300, zIndex: i, opacity: 0 });
+      gsap.set(cardBack, { xPercent: -50, x: xOffset, rotation: angle, y: yOffset + (isLandscape ? 240 : 300), zIndex: i, opacity: 0 });
 
-      cardBack.onmouseenter = () => { if (!fanOverlay.dataset.picking) gsap.to(cardBack, { y: yOffset - 30, scale: 1.08, zIndex: 500, duration: 0.2 }); };
-      cardBack.onmouseleave = () => { if (!fanOverlay.dataset.picking) gsap.to(cardBack, { y: yOffset, scale: 1, zIndex: i, duration: 0.2 }); };
+      if (isLandscape) {
+        const hoverLift = isMobileLs ? 24 : 44;
+        cardBack.onmouseenter = () => {
+          if (!fanOverlay.dataset.picking) {
+            gsap.to(cardBack, {
+              xPercent: -50,
+              x: xOffset,
+              y: yOffset - hoverLift,
+              rotation: angle * 0.35,
+              scale: 1.14,
+              zIndex: 500,
+              boxShadow: '0 20px 45px rgba(0,0,0,0.95), 0 0 28px rgba(255,215,0,0.65)',
+              duration: 0.22,
+              ease: 'power2.out'
+            });
+          }
+        };
+        cardBack.onmouseleave = () => {
+          if (!fanOverlay.dataset.picking) {
+            gsap.to(cardBack, {
+              xPercent: -50,
+              x: xOffset,
+              y: yOffset,
+              rotation: angle,
+              scale: 1,
+              zIndex: i,
+              boxShadow: '-10px 12px 30px rgba(0,0,0,0.92), 0 0 16px rgba(212,175,55,0.2)',
+              duration: 0.22,
+              ease: 'power2.out'
+            });
+          }
+        };
+      }
 
       cardBack.onclick = () => {
         if (fanOverlay.dataset.picking) return;
         fanOverlay.dataset.picking = "true";
+
+        gsap.to(cardBack, { xPercent: -50, y: yOffset - (isMobileLs ? 45 : 90), scale: 1.22, duration: 0.25, ease: 'back.out(1.7)' });
 
         setTimeout(() => {
           fanOverlay.remove();
           this.executePlayerDraw();
           SoundManager.playAction('carta_sacada', 0.4);
           onCardPicked?.();
-        }, 300);
+        }, 280);
       };
       container.appendChild(cardBack);
     }
 
     const msg = document.createElement('div');
-    msg.style.cssText = `margin-bottom: 50px; padding: 0 10%; width: 100%; text-align:center; color: #fff; font-size:1.5rem; font-weight:950; letter-spacing:2px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 15px rgba(0,0,0,1);`;
+    msg.style.cssText = isLandscape
+      ? `margin-bottom: clamp(10px, 3.5dvh, 32px); padding: 0 6%; width: 100%; text-align:center; color: #ffe9a8; font-family:'Cinzel', serif; font-size:clamp(0.95rem, 3.4dvh, 1.85rem); font-weight:950; letter-spacing:2.5px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 18px rgba(0,0,0,1), 0 0 20px rgba(212,175,55,0.45);`
+      : `margin-bottom: 45px; padding: 0 10%; width: 100%; text-align:center; color: #ffe9a8; font-family:'Cinzel', serif; font-size:1.3rem; font-weight:950; letter-spacing:3px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 15px rgba(0,0,0,0.9), 0 0 20px rgba(212,175,55,0.4);`;
     msg.textContent = `${t('bt.choose')} (${count} ${t('bt.remaining')})`;
 
     fanOverlay.appendChild(msg);
@@ -1473,11 +1659,11 @@ class BossBattleApp {
     };
 
     gsap.to(container.children, {
-      y: (i) => Math.abs(i - (count - 1) / 2) * (count > 15 ? 4 : 8),
+      y: (i) => Math.abs(i - (count - 1) / 2) * (isLandscape ? (isMobileLs ? 3 : 5) : (count > 15 ? 4 : 8)),
       opacity: 1,
-      duration: 0.7,
-      stagger: count > 20 ? 0.01 : 0.04,
-      ease: 'back.out(1.2)'
+      duration: 0.65,
+      stagger: count > 20 ? 0.012 : 0.03,
+      ease: 'back.out(1.25)'
     });
   }
 
@@ -1498,7 +1684,7 @@ class BossBattleApp {
     const rect = deckEl.getBoundingClientRect();
     const temp = document.createElement('div');
     temp.className = 'card-face matrix-frame-mode card-draw-anim';
-    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:102px; aspect-ratio:680/990; border-radius:10px; overflow:hidden; z-index:10000;`;
+    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:102px; aspect-ratio:680/990; border-radius:10px; overflow:hidden; z-index:10000; background:#0b0814;`;
     temp.innerHTML = renderMatrixCardBackSVG();
     document.body.appendChild(temp);
 
@@ -1508,14 +1694,17 @@ class BossBattleApp {
       top: handRect.top,
       rotation: 720,
       scale: 0.5,
-      opacity: 0,
+      opacity: 1,
       duration: 0.6,
       ease: 'power2.inOut',
       onComplete: () => {
         temp.remove();
         cb?.();
         this.rebuildHand();
-        gsap.from('#hand > *:last-child', { scale: 0, opacity: 0, duration: 0.4, ease: 'back.out' });
+        const lastCard = handCont.querySelector('.hand-card-hifi:last-child') as HTMLElement | null;
+        if (lastCard) {
+          gsap.fromTo(lastCard, { scale: 0.2, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(1.5)' });
+        }
       }
     });
   }

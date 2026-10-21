@@ -106,6 +106,24 @@ export default function App() {
   });
   const [boosterHistory, setBoosterHistory] = useState<BoosterOpenHistoryEntry[]>([]);
   const [isMatrixHydrated, setIsMatrixHydrated] = useState(false);
+  const [activeCustomDeckName, setActiveCustomDeckName] = useState<string>('');
+
+  useEffect(() => {
+    const updateActiveDeckName = () => {
+      try {
+        const activeId = localStorage.getItem('forge_active_deck_id');
+        const raw = localStorage.getItem('slimelands_custom_decks_v1');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const d = list.find((item: any) => item.id === activeId || item.isActive);
+          if (d) setActiveCustomDeckName(d.name);
+        }
+      } catch {}
+    };
+    updateActiveDeckName();
+    window.addEventListener('slimelands:decks-updated', updateActiveDeckName);
+    return () => window.removeEventListener('slimelands:decks-updated', updateActiveDeckName);
+  }, []);
 
   // Hydrate persistent Game Matrix on startup so nothing is lost on reload
   useEffect(() => {
@@ -908,10 +926,23 @@ export default function App() {
             : 'h-14 border-slate-800/80 opacity-100 translate-y-0'
         }`}
       >
-        {/* Zone 1: Brand Title */}
-        <span className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0 font-['Outfit',sans-serif]">
-          Worlds of Slimelands
-        </span>
+        {/* Zone 1: Brand Title & Cohesion Deck Pill */}
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-base font-bold tracking-tight text-white whitespace-nowrap font-['Outfit',sans-serif]">
+            Worlds of Slimelands
+          </span>
+          <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('forge:switch-tab', { detail: 'decks' }));
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-all text-xs font-bold cursor-pointer"
+            title="Voltar para a Galeria de Decks"
+          >
+            <span>🎴</span>
+            <span>Deck: {activeCustomDeckName || 'Principal'}</span>
+            <span className="text-[10px] text-emerald-400 opacity-70">◀ Decks</span>
+          </button>
+        </div>
 
         {/* Zone 2: Clean Single-Line Navigation Links */}
         <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">

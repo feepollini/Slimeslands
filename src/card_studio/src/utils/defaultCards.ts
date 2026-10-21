@@ -2,9 +2,9 @@ import { CardData } from '../types/card';
 import { DEFAULT_PRESET_PALETTES } from './colorExtractor';
 
 export const SAMPLE_ARTWORKS = {
-  hestridiaForest: '',
-  abyssalLeviathan: '',
-  solarArchangel: '',
+  hestridiaForest: '/cards/Slime_Zen_no_Santu_rio_Florestal.png',
+  abyssalLeviathan: '/cards/Slime_oce_nico_surfando_na_concha-7.png',
+  solarArchangel: '/cards/Slime_de_Fogo_em_Investida_Explosiva.png',
 };
 
 /**
@@ -58,7 +58,7 @@ export const BLANK_TEMPLATE_CARD: CardData = {
       isChromaticSpecial: true,
     },
   ],
-  imageUrl: null,
+  imageUrl: '/cards/Slime_lavanda_tocando_instrumento_m_gico-17.png',
   videoUrl: null,
   mediaType: 'image',
   imageScale: 1,

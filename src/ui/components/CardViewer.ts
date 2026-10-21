@@ -98,7 +98,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
 
   const overlay = document.createElement('div');
   overlay.id = 'card-viewer-overlay';
-  overlay.style.cssText = 'position:fixed; inset:0; z-index:99999999; background:radial-gradient(circle at 50% 42%, rgba(30,24,16,0.88), rgba(0,0,0,0.94)); backdrop-filter:blur(10px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:22px 16px; box-sizing:border-box; overflow-y:auto;';
+  overlay.style.cssText = 'position:fixed; inset:0; z-index:99999999; background:radial-gradient(circle at 50% 42%, rgba(30,24,16,0.88), rgba(0,0,0,0.94)); backdrop-filter:blur(10px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(6px, 1.4dvh, 12px); padding:clamp(8px, 2dvh, 22px) 16px; box-sizing:border-box; overflow:hidden;';
   document.body.appendChild(overlay);
 
   const paint = () => {
@@ -111,14 +111,14 @@ export function openCardViewer(opts: OpenViewerOpts) {
         #cv-card .premium-card-container:hover .premium-card-art { filter: brightness(1.06) contrast(1.05); }
         #cv-card .premium-card-overlay { background: radial-gradient(circle at center, transparent 55%, rgba(0,0,0,0.32) 100%); }
       </style>
-      <button id="cv-close" style="position:absolute; top:14px; right:14px; width:40px; height:40px; border-radius:50%; border:2px solid rgba(255,255,255,0.3); background:rgba(0,0,0,0.6); color:#fff; font-size:1rem; font-weight:900; cursor:pointer; z-index:5;">✕</button>
+      <button id="cv-close" style="position:absolute; top:clamp(8px, 2dvh, 14px); right:clamp(10px, 2vw, 14px); width:clamp(32px, 6dvh, 40px); height:clamp(32px, 6dvh, 40px); border-radius:50%; border:2px solid rgba(255,255,255,0.3); background:rgba(0,0,0,0.6); color:#fff; font-size:0.95rem; font-weight:900; cursor:pointer; z-index:5;">✕</button>
       ${list.length > 1 ? `
-      <button id="cv-prev" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">‹</button>
-      <button id="cv-next" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); width:44px; height:64px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">›</button>` : ''}
-      <div id="cv-counter" style="font-size:0.62rem; font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.5);">${list.length > 1 ? `${curIdx + 1} / ${list.length}` : ''}</div>
-      <div id="cv-card" style="width:min(350px, 86vw); max-width:380px; aspect-ratio:680/990; filter:drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderMatrixCardSVG(mock, { mode: 'full', animateChroma: true })}</div>
-      ${opts.priceHtml ? `<div id="cv-price" style="font-size:0.9rem;">${opts.priceHtml}</div>` : ''}
-      <button id="cv-action" style="min-width:220px; padding:13px 34px; border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:0.8rem; letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${opts.actionLabel}</button>
+      <button id="cv-prev" style="position:absolute; left:clamp(8px, 2vw, 18px); top:50%; transform:translateY(-50%); width:clamp(38px, 6.5dvh, 44px); height:clamp(50px, 10dvh, 64px); border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">‹</button>
+      <button id="cv-next" style="position:absolute; right:clamp(8px, 2vw, 18px); top:50%; transform:translateY(-50%); width:clamp(38px, 6.5dvh, 44px); height:clamp(50px, 10dvh, 64px); border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1.1rem; font-weight:900; cursor:pointer; z-index:5;">›</button>` : ''}
+      <div id="cv-counter" style="font-size:clamp(0.54rem, 1.4dvh, 0.65rem); font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.6);">${list.length > 1 ? `${curIdx + 1} / ${list.length}` : ''}</div>
+      <div id="cv-card" style="width:min(350px, 84vw, calc(70dvh * 680 / 990)); max-width:380px; max-height:70dvh; aspect-ratio:680/990; filter:drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderMatrixCardSVG(mock, { mode: 'full', animateChroma: true })}</div>
+      ${opts.priceHtml ? `<div id="cv-price" style="font-size:clamp(0.75rem, 2dvh, 0.9rem);">${opts.priceHtml}</div>` : ''}
+      <button id="cv-action" style="min-width:clamp(180px, 32dvh, 220px); padding:clamp(8px, 1.8dvh, 13px) clamp(22px, 4vw, 34px); border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:clamp(0.68rem, 1.8dvh, 0.8rem); letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${opts.actionLabel}</button>
     `;
 
     const actBtn = overlay.querySelector('#cv-action') as HTMLButtonElement | null;

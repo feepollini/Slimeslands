@@ -21,6 +21,9 @@ const DICT: Record<string, Record<Lang, string>> = {
 'side.eventos': { pt: 'EVENTOS', en: 'EVENTS', es: 'EVENTOS' },
 'side.ajuda': { pt: 'AJUDA', en: 'HELP', es: 'AYUDA' },
 'side.wallet': { pt: 'CARTEIRA', en: 'WALLET', es: 'CARTERA' },
+'side.forja': { pt: 'FORJA', en: 'FORGE', es: 'FORJA' },
+'side.mapa': { pt: 'MAPA', en: 'MAP', es: 'MAPA' },
+'side.mobile': { pt: 'DISPOSITIVO', en: 'DEVICE', es: 'DISPOSITIVO' },
 'side.checkin': { pt: 'CHECK-IN', en: 'CHECK-IN', es: 'CHECK-IN' },
 'side.soon': { pt: 'EM BREVE', en: 'COMING SOON', es: 'PRÓXIMAMENTE' },
 // ─── HUB ───

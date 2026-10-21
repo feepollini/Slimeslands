@@ -282,7 +282,14 @@ export const CardBackSVG: React.FC<CardBackSVGProps> = React.memo(({
           y="0"
           width="680"
           height="990"
-          fill={`url(#back-core-glow-${card.id})`}
+          fill="#0b0814"
+        />
+        <rect
+          x="0"
+          y="0"
+          width="680"
+          height="990"
+          fill={`url(#back-core-glow-${scope})`}
         />
 
         {card.backImageUrl ? (
@@ -370,7 +377,7 @@ export const CardBackSVG: React.FC<CardBackSVGProps> = React.memo(({
               fill={card.frameTopColor}
               stroke={
                 card.isPremium
-                  ? `url(#back-rim-chromatic-${card.id})`
+                  ? `url(#back-rim-chromatic-${scope})`
                   : card.strokeColor
               }
               strokeWidth="3.5"
@@ -381,7 +388,7 @@ export const CardBackSVG: React.FC<CardBackSVGProps> = React.memo(({
               r="18"
               fill={
                 card.isPremium
-                  ? `url(#back-rim-chromatic-${card.id})`
+                  ? `url(#back-rim-chromatic-${scope})`
                   : card.strokeColor
               }
             />

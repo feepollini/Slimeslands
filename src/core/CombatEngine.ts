@@ -31,8 +31,8 @@ export function computeAttack(
     const triggers: AbilityTriggered[] = [];
     const atkIdx = -1; // placeholder — GameEngine knows the real idx
 
-    // ── Enchantment Specific Logic ───────────────────────────────────────────
-    if (atkDef && atkDef.type === 'enchantment' && atkDef.enchantment) {
+    // ── Enchantment Specific Logic (Pure Enchantment OR Embedded on Attack Capsule) ──
+    if (atkDef && atkDef.enchantment) {
         const encId = atkDef.enchantment.id;
         const val = atkDef.enchantment.value;
         const turns = atkDef.enchantment.turns;
@@ -58,19 +58,23 @@ export function computeAttack(
         damage: 0, defPvAfter: def?.pv ?? 0, atkPvAfter: atk.pv,
         defDied: false, atkDied: false, reflected: false, reflectDamage: 0,
         hpDmgE: 0, hpDmgP: 0, revealed: false, typeBonus: false,
-        abilityTriggers: [],
+        abilityTriggers: triggers,
     };
 
     // ── Guard: stunned or flipped attacker can't act ─────────────────────────
-    if (atk.isStunned || atk.isFlipped) return zero;
+    if (atk.isStunned || atk.isFlipped) return { ...zero, abilityTriggers: [] };
 
-    // ── Empty slot direct attack ──────────────────────────────────────────────
+    // ── Pure enchantment or Empty slot direct attack ─────────────────────────
+    if (!isDamage) {
+        return zero;
+    }
     if (!def) {
-        if (defIdx < 3) { // Targeting Enemy Slots
+        if (defIdx < 3 && defIdx >= 0) { // Targeting Enemy Slots
             return { ...zero, damage: baseAtk, hpDmgE: baseAtk };
-        } else { // Targeting Player Slots
+        } else if (defIdx >= 3) { // Targeting Player Slots
             return { ...zero, damage: baseAtk, hpDmgP: baseAtk };
         }
+        return zero;
     }
 
     // ── Reveal if flipped ─────────────────────────────────────────────────────

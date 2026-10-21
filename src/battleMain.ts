@@ -1,5 +1,6 @@
 import './style.css';
 import './ui/styles/Battle.css';
+import './ui/styles/Landscape.css';
 import { gsap } from 'gsap';
 import { GameEngine, Card } from './core/GameEngine';
 import { GameAI, AIDifficulty } from './core/GameAI';
@@ -20,6 +21,8 @@ import {
   resolveMatrixOrGameCard,
 } from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
 import { BoardScreen } from './ui/screens/BoardScreen';
+import { BoardScreenLandscape } from './ui/screens_landscape/BoardScreenLandscape';
+import { OrientationManager } from './ui/OrientationManager';
 
 // Helper to cast FX functions
 const { spawnParticles, deathExplosion, spawnFloatingText, triggerAbilityAnim, animateCapsulePv } = FX;
@@ -42,7 +45,11 @@ function bindLongPress(el: HTMLElement, callback: () => void, ms = 650) {
 
 class BattleApp {
   private engine: GameEngine;
-  private board: BoardScreen;
+  private portraitBoard: BoardScreen;
+  private landscapeBoard: BoardScreenLandscape;
+  private get board(): BoardScreen {
+    return OrientationManager.isLandscape() ? this.landscapeBoard : this.portraitBoard;
+  }
   private container: HTMLElement;
   private timer = 60;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -58,7 +65,14 @@ class BattleApp {
   constructor() {
     this.container = document.getElementById('battle-root')!;
     this.engine = new GameEngine();
-    this.board = new BoardScreen();
+    this.portraitBoard = new BoardScreen();
+    this.landscapeBoard = new BoardScreenLandscape();
+
+    OrientationManager.subscribe(() => {
+      if (this.container && this.container.querySelector('.battle-screen')) {
+        this.render();
+      }
+    });
     getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
     this.initPreBattle();
     gsap.fromTo(document.body, { opacity: 0 }, { opacity: 1, duration: 0.5 });
@@ -226,6 +240,7 @@ class BattleApp {
   // ─── RENDER ───────────────────────────────────────────────────────────────
 
   private render() {
+    this.landscapeBoard.setEnemyHandCount(this.engine.aiHand.length);
     this.container.innerHTML = this.board.render(
       this.engine.board, this.engine.hp, this.engine.mana, this.engine.stamina, this.engine.turn, this.timer, this.engine.grave, this.engine.deck.length
     );
@@ -255,6 +270,22 @@ class BattleApp {
     if (!handCont) return;
     handCont.innerHTML = '';
     const n = this.engine.hand.length;
+    const isLandscape = OrientationManager.isLandscape();
+    const isMobileLs = OrientationManager.isMobileLandscape();
+    const isTabletLs = OrientationManager.isTabletLandscape();
+
+    const spreadX = isLandscape
+      ? isMobileLs
+        ? Math.min(58, Math.max(32, 240 / Math.max(1, n)))
+        : isTabletLs
+        ? Math.min(68, Math.max(40, 340 / Math.max(1, n)))
+        : Math.min(86, Math.max(52, 460 / Math.max(1, n)))
+      : Math.min(38, Math.max(22, 190 / Math.max(1, n - 1)));
+    const rotStep = isLandscape ? (isMobileLs ? 3.5 : 4.5) : Math.min(7, 28 / Math.max(1, n - 1));
+    const tyStep = isLandscape ? (isMobileLs ? 2.5 : 4.5) : Math.min(5, 18 / Math.max(1, n - 1));
+    const hoverLiftY = isLandscape ? (isMobileLs ? -24 : isTabletLs ? -38 : -48) : -50;
+    const hoverScale = isLandscape ? (isMobileLs ? 1.2 : 1.22) : 1.25;
+
     this.engine.hand.forEach((c: Card, i: number) => {
       const el = document.createElement('div');
       el.className = 'hand-card-hifi';
@@ -264,15 +295,33 @@ class BattleApp {
       // Dynamic Alignment Calculation
       const center = (n - 1) / 2;
       const offset = i - center;
-      const rot = offset * 12; // 12 deg step
-      const tx = offset * 45;  // 45px X step
-      const ty = Math.abs(offset) * 8; // 8px Y arc
+      const rot = offset * rotStep;
+      const tx = offset * spreadX;
+      const ty = Math.abs(offset) * tyStep;
+      const baseTransform = `rotate(${rot}deg) translateX(${tx}px) translateY(${ty}px)`;
 
-      el.style.transform = `rotate(${rot}deg) translateX(${tx}px) translateY(${ty}px)`;
+      el.dataset.baseTransform = baseTransform;
+      el.dataset.tx = String(tx);
+      el.style.transform = baseTransform;
       el.style.zIndex = `${100 - Math.abs(Math.round(offset * 2))}`;
 
       el.innerHTML = this.board.renderHandCard(c);
       handCont.appendChild(el);
+
+      el.onmouseenter = () => {
+        if (!el.classList.contains('selected')) {
+          el.style.transform = `translateX(${tx}px) translateY(${hoverLiftY}px) scale(${hoverScale}) rotate(0deg)`;
+          el.style.zIndex = '300';
+        }
+      };
+
+      el.onmouseleave = () => {
+        if (!el.classList.contains('selected')) {
+          el.style.transform = baseTransform;
+          el.style.zIndex = `${100 - Math.abs(Math.round(offset * 2))}`;
+        }
+      };
+
       const select = (e: Event) => {
         e.stopPropagation();
         if (this.engine.turn !== 'p') return;
@@ -383,6 +432,17 @@ class BattleApp {
       deckEl.addEventListener('click', (e) => {
         e.stopPropagation();
         this.handlePlayerDrawClick();
+      });
+    }
+
+    const graveEl = document.querySelector('.sepulture-slot');
+    if (graveEl) {
+      graveEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.engine.grave.length > 0) {
+          SoundManager.playAction('clique_geral', 0.4);
+          this.showFullscreen(this.engine.grave[this.engine.grave.length - 1]);
+        }
       });
     }
 
@@ -513,7 +573,6 @@ class BattleApp {
 
     const themeClass = isWin ? 'win-theme' : 'lose-theme';
     const bannerClass = isWin ? 'win-ribbon' : (isSurrender ? 'coward-ribbon' : 'lose-ribbon');
-    const mascotImg = isWin ? '/victory_slime.jpg' : '/defeat_slime.png';
     const btnClass = isWin ? '' : 'lose-btn';
 
     const overlay = document.createElement('div');
@@ -524,30 +583,28 @@ class BattleApp {
       <div id="er-particles" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
       
       <div class="end-screen-content">
-        <!-- CABEÇALHO: 3 ESTRELAS E MASCOTE -->
+        <!-- CABEÇALHO ESTILO BRAWL STARS / SUPERCELL: 3 ESTRELAS EM DESTAQUE SEM ÍCONE CIRCULAR -->
         <div class="end-top-header">
           <div class="end-stars-wrapper ${isWin ? 'win' : 'lose'}" id="end-stars">
             <span class="end-star-item">⭐</span>
             <span class="end-star-item center-star">⭐</span>
             <span class="end-star-item">⭐</span>
           </div>
-          <div class="end-mini-mascot ${isWin ? 'win' : 'lose'}" id="end-mascot">
-            <img src="${mascotImg}" alt="${isWin ? 'Vitória' : 'Derrota'}" />
-          </div>
         </div>
 
-        <!-- FAIXA 3D (BANNER) -->
+        <!-- FAIXA 3D DE VITÓRIA / DERROTA -->
         <div class="end-ribbon-banner ${bannerClass}" id="end-banner">
           <h1 class="end-ribbon-title">${title}</h1>
         </div>
 
-        <!-- MODAL DE PEDRA / FERRO (REFERÊNCIA DE JOGO) -->
+        <!-- CARD DE RECOMPENSAS E ESTATÍSTICAS -->
         <div class="end-modal-card" id="end-modal-card">
-          <!-- NÍVEL -->
-          <div class="end-level-pill">${t('bt.level')} ${userLevel}</div>
+          <div class="end-modal-top-bar">
+            <div class="end-level-pill">${t('bt.level')} ${userLevel}</div>
+            <div class="end-section-header">${t('bt.end.rewards')}</div>
+          </div>
 
           <!-- 3 CÁPSULAS DE RECOMPENSAS LADO A LADO -->
-          <div class="end-section-header">${t('bt.end.rewards')}</div>
           <div class="end-capsules-row" id="end-capsules">
             <!-- 1. MOEDAS -->
             <div class="end-capsule-card gold-capsule">
@@ -575,7 +632,7 @@ class BattleApp {
           <div class="end-card-divider"></div>
 
           <!-- MÉTRICAS ABAIXO -->
-          <div class="end-section-header">${t('bt.end.metrics')}</div>
+          <div class="end-section-header end-metrics-header">${t('bt.end.metrics')}</div>
           <div class="end-metrics-panel" id="end-metrics">
             <div class="end-metrics-badges-row">
               <div class="end-metric-badge">
@@ -637,7 +694,6 @@ class BattleApp {
     }, 50);
 
     const starsEl = document.getElementById('end-stars');
-    const mascotEl = document.getElementById('end-mascot');
     const bannerEl = document.getElementById('end-banner');
     const modalEl = document.getElementById('end-modal-card');
     const capsulesEl = document.getElementById('end-capsules');
@@ -654,17 +710,10 @@ class BattleApp {
       );
     }
 
-    if (mascotEl) {
-      gsap.fromTo(mascotEl, 
-        { scale: 0.1, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 0.5, delay: 0.1, ease: 'back.out(1.8)' }
-      );
-    }
-
     if (bannerEl) {
       gsap.fromTo(bannerEl,
         { scale: 1.25, opacity: 0, y: 20 },
-        { scale: 1, opacity: 1, y: 0, duration: 0.45, delay: 0.2, ease: 'back.out(1.5)' }
+        { scale: 1, opacity: 1, y: 0, duration: 0.45, delay: 0.12, ease: 'back.out(1.5)' }
       );
     }
 
@@ -976,12 +1025,17 @@ class BattleApp {
       this.showBanner('⚔️ ' + t('bt.aiAttacks'));
       setTimeout(async () => {
         const isAttackingPlayerSlot = action.defIdx! >= 3;
+        const atk = this.engine.board[action.atkIdx!];
+        const atkDef = action.attackIdx === 99
+          ? atk?.specialAttack
+          : atk?.attacks?.[action.attackIdx || 0];
+        const isPureEnchantment = (atkDef as any)?.type === 'enchantment';
+
         let parried = false;
-        if (isAttackingPlayerSlot) {
+        if (isAttackingPlayerSlot && !isPureEnchantment) {
           const defCard = this.engine.board[action.defIdx!];
           // Only cards with 'parry' property > 0 can trigger the QTE
           if (defCard && (defCard.parry ?? 0) > 0) {
-            const atk = this.engine.board[action.atkIdx!];
             const atkCost = action.attackIdx === 99 
               ? (atk?.specialAttack?.cost || 1) 
               : (atk?.attacks?.[action.attackIdx || 0]?.cost || 1);
@@ -1022,7 +1076,7 @@ class BattleApp {
         this.endAITurn();
       }
     } else if (action.action === 'skill' && action.skillIdx !== undefined) {
-      const skill = this.engine.activeSkills[action.skillIdx];
+      const skill = this.engine.aiSkills?.[action.skillIdx] || this.engine.activeSkills[action.skillIdx];
       if (skill) {
         this.showBanner(`💎 IA USA ${skill.name.toUpperCase()}`);
         setTimeout(async () => {
@@ -1044,6 +1098,26 @@ class BattleApp {
             this.endAITurn();
           }
         }, 500);
+      } else {
+        this.isAIProcessing = false;
+        this.endAITurn();
+      }
+    } else if (action.action === 'sacrifice' && action.atkIdx !== undefined) {
+      this.showBanner('🔥 ' + t('bt.sacrifice'));
+      const cardEl = document.querySelector(`[data-idx="${action.atkIdx}"] .card-face`);
+      const finishSac = () => {
+        this.engine.sacrifice(action.atkIdx!, true);
+        this.render();
+        if (this.isGameOver()) return;
+        setTimeout(() => {
+          this.isAIProcessing = false;
+          this.runAI();
+        }, 650);
+      };
+      if (cardEl) {
+        deathExplosion(cardEl, finishSac);
+      } else {
+        setTimeout(finishSac, 400);
       }
     } else if (action.action === 'draw') {
       this.showBanner('🎴 ' + t('bt.oppDrew'));
@@ -1150,6 +1224,7 @@ class BattleApp {
 
   private openAction(idx: number) {
     SoundManager.playAction('clique_geral', 0.4);
+    this.clearHandSelection();
     this.selectedSlotIdx = idx;
     const card = this.engine.board[idx];
     if (!card) return;
@@ -1682,6 +1757,7 @@ class BattleApp {
   // ─── SKILLS ───────────────────────────────────────────────────────────────
 
   private async openSkillDialog(skillIdx: number) {
+    this.clearHandSelection();
     const skill = this.engine.activeSkills[skillIdx];
     if (!skill) return;
     const bar = document.getElementById('inline-skill-bar');
@@ -1755,22 +1831,27 @@ class BattleApp {
   // ─── HAND / CAROUSEL ──────────────────────────────────────────────────────
 
   private selectHandCard(c: Card, el: HTMLElement) {
-    // If already selected, do nothing
     if (this.selectedHandCard?.id === c.id) return;
 
-    // Clear previous selection scale
-    gsap.to('.hand-card-hifi', { scale: 1, y: 0, duration: 0.2 });
+    document.querySelectorAll('.hand-card-hifi').forEach(e => {
+      const cardEl = e as HTMLElement;
+      cardEl.classList.remove('selected');
+      const bt = cardEl.dataset.baseTransform;
+      if (bt) cardEl.style.transform = bt;
+    });
 
     this.selectedHandCard = c;
-    document.querySelectorAll('.hand-card-hifi').forEach(e => e.classList.remove('selected'));
     el.classList.add('selected');
 
-    // Expand animation
-    gsap.to(el, { scale: 1.25, y: -20, zIndex: 100, duration: 0.3, ease: 'back.out(1.7)' });
+    const tx = parseFloat(el.dataset.tx || '0');
+    const isMobileLs = OrientationManager.isMobileLandscape();
+    const selLiftY = isMobileLs ? -20 : -34;
+    const selScale = isMobileLs ? 1.18 : 1.26;
+    el.style.transform = `translateX(${tx}px) translateY(${selLiftY}px) scale(${selScale}) rotate(0deg)`;
+    el.style.zIndex = '350';
 
     this.showBanner(t('bt.chooseSlot'));
 
-    // Highlight available slots
     document.querySelectorAll('.slot-p').forEach(slot => {
       const idx = parseInt((slot as HTMLElement).dataset.idx!);
       if (!this.engine.board[idx]) (slot as HTMLElement).classList.add('highlight');
@@ -1778,9 +1859,13 @@ class BattleApp {
   }
 
   private clearHandSelection() {
-    gsap.to('.hand-card-hifi', { scale: 1, y: 0, duration: 0.2 });
+    document.querySelectorAll('.hand-card-hifi').forEach(e => {
+      const el = e as HTMLElement;
+      el.classList.remove('selected');
+      const baseTransform = el.dataset.baseTransform;
+      if (baseTransform) el.style.transform = baseTransform;
+    });
     this.selectedHandCard = null;
-    document.querySelectorAll('.hand-card-hifi').forEach(e => e.classList.remove('selected'));
     document.querySelectorAll('.slot-p').forEach(slot => slot.classList.remove('highlight'));
   }
 
@@ -1806,50 +1891,95 @@ class BattleApp {
   }
 
   private openDeckFan() {
+    const isLandscape = OrientationManager.isLandscape();
+    const isMobileLs = OrientationManager.isMobileLandscape();
     const fanOverlay = document.createElement('div');
-    fanOverlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;`;
+    fanOverlay.style.cssText = `position:fixed;inset:0;background:rgba(4,4,8,0.88);backdrop-filter:blur(16px);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;`;
 
     const container = document.createElement('div');
-    container.style.cssText = `position:relative; width: min(450px, 95vw); height: 300px; display:flex; justify-content:center; align-items:flex-end; perspective:1200px;`;
+    container.style.cssText = isLandscape
+      ? `position:relative; width: min(1080px, 92vw); height: clamp(160px, 56dvh, 420px); display:flex; justify-content:center; align-items:flex-end; perspective:1400px;`
+      : `position:relative; width: min(400px, 92vw); height: clamp(200px, 32dvh, 260px); display:flex; justify-content:center; align-items:flex-end; perspective:1000px;`;
 
     const count = this.engine.deck.length;
-    // Dynamic fan spread to handle large deck sizes gracefully
-    const maxArc = count > 10 ? 160 : 100;
+    const maxArc = isLandscape ? Math.min(68, Math.max(22, count * 6)) : Math.min(90, Math.max(30, count * 6));
     const angleStep = count > 1 ? maxArc / (count - 1) : 0;
     const startAngle = count > 1 ? -maxArc / 2 : 0;
+    const maxFanSpan = isLandscape ? Math.min(720, window.innerWidth * 0.68) : 175;
+    const xSpread = isLandscape
+      ? Math.min(isMobileLs ? 38 : 58, maxFanSpan / Math.max(1, count - 1))
+      : Math.min(18, 175 / Math.max(1, count - 1));
 
     for (let i = 0; i < count; i++) {
       const cardBack = document.createElement('div');
       cardBack.className = 'card-face matrix-frame-mode';
-      cardBack.style.cssText = `position:absolute; bottom:0; width: 130px; height: 189px; aspect-ratio: 680/990; overflow:hidden; border-radius:12px; box-shadow: -10px 10px 30px rgba(0,0,0,0.8); cursor:pointer; transform-origin:bottom center;`;
+      cardBack.style.cssText = isLandscape
+        ? `position:absolute; left:50%; bottom:8px; width: clamp(78px, 24dvh, 210px); height: auto; aspect-ratio: 680/990; overflow:hidden; border-radius:12px; border: 2px solid rgba(255,215,0,0.45); box-shadow: -10px 12px 30px rgba(0,0,0,0.92), 0 0 16px rgba(212,175,55,0.2); cursor:pointer; transform-origin:bottom center; background:#0b0814;`
+        : `position:absolute; left:50%; bottom:10px; width: clamp(82px, 12dvh, 102px); height: auto; aspect-ratio: 680/990; overflow:hidden; border-radius:12px; border: 1.5px solid rgba(255,215,0,0.3); box-shadow: -8px 8px 25px rgba(0,0,0,0.9); cursor:pointer; transform-origin:bottom center; background:#0b0814;`;
       cardBack.innerHTML = renderMatrixCardBackSVG();
 
+      const centerOffset = i - (count - 1) / 2;
       const angle = startAngle + (i * angleStep);
-      const distFromCenter = Math.abs(i - (count - 1) / 2);
-      const yOffset = distFromCenter * (count > 15 ? 4 : 8);
+      const xOffset = count > 1 ? centerOffset * xSpread : 0;
+      const distFromCenter = Math.abs(centerOffset);
+      const yOffset = distFromCenter * (isLandscape ? (isMobileLs ? 3 : 5) : (count > 12 ? 3.5 : 6));
 
-      gsap.set(cardBack, { rotation: angle, y: yOffset + 300, zIndex: i, opacity: 0 });
+      gsap.set(cardBack, { xPercent: -50, x: xOffset, rotation: angle, y: yOffset + (isLandscape ? 240 : 300), zIndex: i, opacity: 0 });
 
-      // Hover only for the "top" card or slightly emphasize
-      cardBack.onmouseenter = () => { if (!fanOverlay.dataset.picking) gsap.to(cardBack, { y: yOffset - 30, scale: 1.08, zIndex: 500, duration: 0.2 }); };
-      cardBack.onmouseleave = () => { if (!fanOverlay.dataset.picking) gsap.to(cardBack, { y: yOffset, scale: 1, zIndex: i, duration: 0.2 }); };
+      if (isLandscape) {
+        const hoverLift = isMobileLs ? 24 : 44;
+        cardBack.onmouseenter = () => {
+          if (!fanOverlay.dataset.picking) {
+            gsap.to(cardBack, {
+              xPercent: -50,
+              x: xOffset,
+              y: yOffset - hoverLift,
+              rotation: angle * 0.35,
+              scale: 1.14,
+              zIndex: 500,
+              boxShadow: '0 20px 45px rgba(0,0,0,0.95), 0 0 28px rgba(255,215,0,0.65)',
+              duration: 0.22,
+              ease: 'power2.out'
+            });
+          }
+        };
+        cardBack.onmouseleave = () => {
+          if (!fanOverlay.dataset.picking) {
+            gsap.to(cardBack, {
+              xPercent: -50,
+              x: xOffset,
+              y: yOffset,
+              rotation: angle,
+              scale: 1,
+              zIndex: i,
+              boxShadow: '-10px 12px 30px rgba(0,0,0,0.92), 0 0 16px rgba(212,175,55,0.2)',
+              duration: 0.22,
+              ease: 'power2.out'
+            });
+          }
+        };
+      }
 
       cardBack.onclick = () => {
         if (fanOverlay.dataset.picking) return;
         fanOverlay.dataset.picking = "true";
 
+        gsap.to(cardBack, { xPercent: -50, y: yOffset - (isMobileLs ? 45 : 90), scale: 1.22, duration: 0.25, ease: 'back.out(1.7)' });
+
         setTimeout(() => {
           fanOverlay.remove();
           this.executePlayerDraw();
           SoundManager.playAction('carta_sacada', 0.4);
-        }, 300);
+        }, 280);
       };
       container.appendChild(cardBack);
     }
 
     const msg = document.createElement('div');
-    msg.style.cssText = `margin-bottom: 50px; padding: 0 10%; width: 100%; text-align:center; color: #fff; font-size:1.5rem; font-weight:950; letter-spacing:2px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 15px rgba(0,0,0,1);`;
-      msg.textContent = `${t('bt.choose')} (${count} ${t('bt.remaining')})`;
+    msg.style.cssText = isLandscape
+      ? `margin-bottom: clamp(10px, 3.5dvh, 32px); padding: 0 6%; width: 100%; text-align:center; color: #ffe9a8; font-family:'Cinzel', serif; font-size:clamp(0.95rem, 3.4dvh, 1.85rem); font-weight:950; letter-spacing:2.5px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 18px rgba(0,0,0,1), 0 0 20px rgba(212,175,55,0.45);`
+      : `margin-bottom: 45px; padding: 0 10%; width: 100%; text-align:center; color: #ffe9a8; font-family:'Cinzel', serif; font-size:1.3rem; font-weight:950; letter-spacing:3px; line-height:1.2; box-sizing:border-box; text-shadow: 0 4px 15px rgba(0,0,0,0.9), 0 0 20px rgba(212,175,55,0.4);`;
+    msg.textContent = `${t('bt.choose')} (${count} ${t('bt.remaining')})`;
 
     fanOverlay.appendChild(msg);
     fanOverlay.appendChild(container);
@@ -1861,11 +1991,11 @@ class BattleApp {
 
     // Entrance animation
     gsap.to(container.children, {
-      y: (i) => Math.abs(i - (count - 1) / 2) * (count > 15 ? 4 : 8),
+      y: (i) => Math.abs(i - (count - 1) / 2) * (isLandscape ? (isMobileLs ? 3 : 5) : (count > 15 ? 4 : 8)),
       opacity: 1,
-      duration: 0.7,
-      stagger: count > 20 ? 0.01 : 0.04,
-      ease: 'back.out(1.2)'
+      duration: 0.65,
+      stagger: count > 20 ? 0.012 : 0.03,
+      ease: 'back.out(1.25)'
     });
   }
 
@@ -1950,7 +2080,7 @@ class BattleApp {
     const rect = deckEl.getBoundingClientRect();
     const temp = document.createElement('div');
     temp.className = 'card-face matrix-frame-mode card-draw-anim';
-    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:102px; aspect-ratio:680/990; border-radius:10px; overflow:hidden; z-index:10000;`;
+    temp.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:70px; height:102px; aspect-ratio:680/990; border-radius:10px; overflow:hidden; z-index:10000; background:#0b0814;`;
     temp.innerHTML = renderMatrixCardBackSVG();
     document.body.appendChild(temp);
 
@@ -1960,14 +2090,17 @@ class BattleApp {
       top: handRect.top,
       rotation: 720,
       scale: 0.5,
-      opacity: 0,
+      opacity: 1,
       duration: 0.6,
       ease: 'power2.inOut',
       onComplete: () => {
         temp.remove();
         cb?.();
         this.rebuildHand();
-        gsap.from('#hand > *:last-child', { scale: 0, opacity: 0, duration: 0.4, ease: 'back.out' });
+        const lastCard = handCont.querySelector('.hand-card-hifi:last-child') as HTMLElement | null;
+        if (lastCard) {
+          gsap.fromTo(lastCard, { scale: 0.2, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(1.5)' });
+        }
       }
     });
   }

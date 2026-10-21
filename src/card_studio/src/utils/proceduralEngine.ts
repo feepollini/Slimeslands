@@ -17,6 +17,16 @@ import {
 } from '../types/slimelands';
 import { DEFAULT_PRESET_PALETTES } from './colorExtractor';
 import { SAMPLE_ARTWORKS } from './defaultCards';
+import {
+  FORGE_PASSIVE_ABILITIES,
+  FORGE_ACTIVE_SKILLS,
+  ENCHANTMENT_REGISTRY,
+  VFX_REGISTRY,
+  findForgePassiveById,
+  findForgeActiveById,
+  findForgeEnchantmentById,
+  getDefaultVfxForSlot,
+} from './forgeAbilitiesCatalog';
 
 export const RULES_VERSION = 'v2.0-slimelands-matrix';
 
@@ -1368,6 +1378,16 @@ export function createNeutralMatrixCard(input: {
     loreBoxY: 724,
     pillCount: 1,
     dockAutoFit: true,
+    showSummonCostPill: true,
+    summonCostPill: {
+      id: 'pill-summon-cost',
+      mode: 'stat',
+      badgeValue: '—',
+      badgeColor: '#F59E0B',
+      mainText: 'INVOC.',
+      isSummonCost: true,
+      costResource: 'stamina',
+    },
     pills: [
       { id: 'p1', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: 'NEUTRA' },
       { id: 'p2', mode: 'text', badgeValue: '—', badgeColor: '#475569', mainText: '—' },
@@ -1447,6 +1467,9 @@ export function createMatrixFromBaseCharacter(
     elementPaletteMap[char.element.toUpperCase()] || DEFAULT_PRESET_PALETTES[0];
   const assignedRarity: CardClass =
     char.matrixRarity || char.allowedClasses[0] || 'Comum';
+  const isMagic = char.entityType === 'Magia';
+  const defaultPassive = FORGE_PASSIVE_ABILITIES[0];
+  const defaultManaCost = char.magicManaCost ?? 3;
 
   return {
     id: `mtx-${char.id}`,
@@ -1455,31 +1478,63 @@ export function createMatrixFromBaseCharacter(
     editState: 'Pronta para Packs',
     isNeutralMatrix: false,
     title: char.name.split(',')[0].trim(),
-    pvText: char.entityType === 'Magia' ? `MANA${char.magicManaCost ?? 3}` : 'PV—',
+    pvText: 'PV—',
     elementText: char.element.slice(0, 6).toUpperCase(),
     rankBadgeText: '—',
-    loreHeader: `${char.name} · Matriz ${assignedRarity}`,
+    loreHeader: isMagic
+      ? `${char.name} · Magia ${assignedRarity} (Mana ${defaultManaCost})`
+      : `${char.name} · Matriz ${assignedRarity}`,
     loreBody: char.description,
-    magicPrefix:
-      char.entityType === 'Magia'
-        ? `✨ Magia (${char.magicTarget || 'Campo'})`
-        : `🧬 Matriz Base (${char.abilities.length} Habilidades)`,
-    magicDescription:
-      char.abilities[0]?.specialEffect ||
-      char.abilities[0]?.description ||
-      char.description,
+    magicPrefix: isMagic
+      ? `✨ Passiva: ${defaultPassive?.name || char.magicTarget || 'Tabuleiro'}`
+      : `🧬 Matriz Base (${char.abilities.length} Habilidades)`,
+    magicDescription: isMagic
+      ? defaultPassive
+        ? `${defaultPassive.description} (${defaultPassive.effectText})`
+        : char.abilities[0]?.specialEffect || char.description
+      : char.abilities[0]?.specialEffect ||
+        char.abilities[0]?.description ||
+        char.description,
+    magicAbilityKind: isMagic ? 'passive' : undefined,
+    linkedPassiveId: isMagic ? (defaultPassive?.id || 'first_strike') : undefined,
     showLoreBox: true,
     loreBoxOpacity: 92,
     loreBoxY: 724,
-    pillCount: Math.min(4, Math.max(1, char.abilities.length)) as 1 | 2 | 3 | 4,
+    pillCount: isMagic
+      ? 1
+      : (Math.min(4, Math.max(1, char.abilities.length)) as 1 | 2 | 3 | 4),
     dockAutoFit: true,
+    showSummonCostPill: true,
+    summonCostPill: isMagic
+      ? {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: String(defaultManaCost),
+          badgeColor: '#0084FF',
+          mainText: 'MANA',
+          isSummonCost: true,
+          costResource: 'mana',
+        }
+      : {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: '—',
+          badgeColor: '#F59E0B',
+          mainText: 'INVOC.',
+          isSummonCost: true,
+          costResource: 'stamina',
+        },
     pills: [
       {
         id: 'p1',
-        mode: 'text',
-        badgeValue: '1',
+        mode: isMagic ? 'stat' : 'text',
+        badgeValue: isMagic ? String(defaultManaCost) : '1',
         badgeColor: '#0084FF',
-        mainText: char.abilities[0]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 1',
+        mainText: isMagic
+          ? 'MANA'
+          : char.abilities[0]?.name.slice(0, 8).toUpperCase() || 'ATAQUE 1',
+        isSummonCost: isMagic,
+        costResource: isMagic ? 'mana' : undefined,
       },
       {
         id: 'p2',
@@ -1599,7 +1654,7 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     matrix.useFixedVersionInPacks &&
     !matrix.isNeutralMatrix &&
     matrix.cardRank &&
-    (matrix.pvNumber !== undefined || matrix.entityType !== 'Criatura')
+    (matrix.pvNumber !== undefined || matrix.entityType === 'Item')
   ) {
     return {
       ...matrix,
@@ -1611,6 +1666,7 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
       generatedAbilities: matrix.generatedAbilities
         ? matrix.generatedAbilities.map((ab) => ({ ...ab }))
         : [],
+      summonCostPill: matrix.summonCostPill ? { ...matrix.summonCostPill } : undefined,
       pills: [
         { ...matrix.pills[0] },
         { ...matrix.pills[1] },
@@ -1647,18 +1703,28 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
 
   const rankRule = classTable.ranks[chosenRank] || classTable.ranks.B;
 
-  // Section 5.4: "Uma carta de Magia não deverá receber automaticamente PV ou custo de invocação de criatura."
-  const rolledPv = isCreature
-    ? rollSteppedValue(rankRule.pvMin, rankRule.pvMax, rankRule.pvIncrement)
-    : 0;
+  // Both Creature AND Magic cards have PV, Class, and Rank in the Rarity flow!
+  // Only Item cards do not roll PV / Summon Cost.
+  const rolledPv =
+    isCreature || isMagicCard
+      ? rollSteppedValue(rankRule.pvMin, rankRule.pvMax, rankRule.pvIncrement)
+      : 0;
 
+  // Independent of rarity, Creature cards roll Stamina Summon Cost (5th slot) and Magic cards roll Mana Summon Cost!
   const rolledSummonCost = isCreature
     ? Math.max(1, Math.min(9, rollSteppedValue(rankRule.summonCostMin, rankRule.summonCostMax, 1)))
     : isMagicCard
-    ? Math.max(1, Math.min(9, matrix.magicManaCost ?? 3))
+    ? Math.max(
+        1,
+        Math.min(
+          9,
+          matrix.magicManaCost ??
+            rollSteppedValue(rankRule.summonCostMin, rankRule.summonCostMax, 1)
+        )
+      )
     : 0;
 
-  // Determine number of abilities for this Rarity
+  // Determine number of abilities for this Rarity (Magic cards do not use attack ability slots 1-4)
   const abilityCount = !isCreature
     ? 1
     : (Math.max(
@@ -1669,7 +1735,39 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
         )
       ) as 1 | 2 | 3 | 4);
 
-  // Preserve base ability names from the Matrix (Section 9: "Não substituir automaticamente os nomes das habilidades já cadastradas")
+  // Resolve linked Forja Passive / Active for Magic Cards
+  let magicAbilityKind: 'passive' | 'active' = matrix.magicAbilityKind || 'passive';
+  let linkedPassiveId = matrix.linkedPassiveId;
+  let linkedActiveSkillId = matrix.linkedActiveSkillId;
+  let resolvedMagicName = matrix.title;
+  let resolvedMagicPrefix = matrix.magicPrefix;
+  let resolvedMagicDesc = matrix.magicDescription;
+
+  if (isMagicCard) {
+    if (magicAbilityKind === 'active') {
+      const chosenActive =
+        findForgeActiveById(linkedActiveSkillId) ||
+        FORGE_ACTIVE_SKILLS[Math.floor(Math.random() * FORGE_ACTIVE_SKILLS.length)];
+      if (chosenActive) {
+        linkedActiveSkillId = chosenActive.id;
+        resolvedMagicName = chosenActive.name;
+        resolvedMagicPrefix = `⚡ Ativa de Tabuleiro: ${chosenActive.name} (Alcance ${chosenActive.range} · CD ${chosenActive.cooldown}t)`;
+        resolvedMagicDesc = chosenActive.description;
+      }
+    } else {
+      const chosenPassive =
+        findForgePassiveById(linkedPassiveId) ||
+        FORGE_PASSIVE_ABILITIES[Math.floor(Math.random() * FORGE_PASSIVE_ABILITIES.length)];
+      if (chosenPassive) {
+        linkedPassiveId = chosenPassive.id;
+        resolvedMagicName = chosenPassive.name;
+        resolvedMagicPrefix = `✨ Passiva de Tabuleiro: ${chosenPassive.name} (${chosenPassive.triggerText})`;
+        resolvedMagicDesc = `${chosenPassive.description} — ${chosenPassive.effectText}`;
+      }
+    }
+  }
+
+  // Preserve base ability names from the Matrix
   const baseTemplates: CharacterAbilityTemplate[] =
     matrix.baseAbilities && matrix.baseAbilities.length > 0
       ? [...matrix.baseAbilities].sort((a, b) => a.unlockPriority - b.unlockPriority)
@@ -1685,8 +1783,10 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
       : [
           {
             id: `${matrix.id}-ab-1`,
-            name: isMagicCard ? matrix.title : 'Ataque Viscoso',
-            description: matrix.loreBody || 'Habilidade canalizada de Slimelands.',
+            name: isMagicCard ? resolvedMagicName : 'Ataque Viscoso',
+            description: isMagicCard
+              ? resolvedMagicDesc
+              : matrix.loreBody || 'Habilidade canalizada de Slimelands.',
             tier: isMagicCard ? 'Magia' : 'Básica',
             unlockPriority: 1,
           },
@@ -1743,24 +1843,29 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
       ? selectedTemplates.length - 1
       : -1;
 
+  const impactVfxPool = VFX_REGISTRY.filter((v) => v.category === 'impact');
+  const elemVfxPool = VFX_REGISTRY.filter((v) => v.category === 'elemental' || v.category === 'status');
+  const ultVfxPool = VFX_REGISTRY.filter((v) => v.category === 'ultimate');
+
   const generatedAbilities: GeneratedAbilityInstance[] = selectedTemplates.map(
     (tpl, idx) => {
+      const existingPill = matrix.pills?.[idx];
       if (!isCreature) {
-        const mana = isMagicCard
-          ? Math.max(1, Math.min(9, matrix.magicManaCost ?? 3))
-          : 0;
         return {
           id: `${tpl.id}-inst-${idx}`,
           templateId: tpl.id,
-          name: tpl.name,
-          description: tpl.description,
+          name: isMagicCard ? resolvedMagicName : tpl.name,
+          description: isMagicCard ? resolvedMagicDesc : tpl.description,
           tier: isMagicCard ? 'Magia' : 'Básica',
           damage: 0,
-          manaCost: mana,
+          manaCost: isMagicCard ? rolledSummonCost : 0,
           isFree: isItemCard,
-          parryStaminaCost: mana * 0.5,
-          specialEffect: tpl.specialEffect,
+          parryStaminaCost: isMagicCard ? rolledSummonCost * 0.5 : 0,
+          specialEffect: isMagicCard ? resolvedMagicDesc : tpl.specialEffect,
           unlockOrder: idx + 1,
+          attackType: 'damage',
+          vfxId: existingPill?.vfxId || tpl.vfxId || 'vfx_siphon_cast',
+          costResource: 'mana',
         };
       }
 
@@ -1790,25 +1895,90 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
         ? 0
         : Math.max(1, Math.min(9, rollSteppedValue(manaRange[0], manaRange[1], 1)));
 
+      // Resolve Attack Type, Special Effect (Enchantment), Resource, and VFX from Forge V1
+      let attackType: 'damage' | 'enchantment' =
+        existingPill?.attackType || tpl.attackType || 'damage';
+      let enchantmentId: string | undefined =
+        existingPill?.enchantmentId || tpl.enchantmentId;
+      let enchantmentValue: number | undefined =
+        existingPill?.enchantmentValue ?? tpl.enchantmentValue;
+      let enchantmentTurns: number | undefined =
+        existingPill?.enchantmentTurns ?? tpl.enchantmentTurns;
+      let costResource: 'stamina' | 'mana' =
+        existingPill?.costResource ||
+        tpl.costResource ||
+        (idx >= 2 ? 'mana' : 'stamina');
+
+      // On slot 2 or 3 (idx 1 or 2), if not manually configured, roll a Special Effect / Enchantment from Forge V1
+      if (!enchantmentId && (idx === 1 || idx === 2) && ENCHANTMENT_REGISTRY.length > 0) {
+        const shouldRollEnc = idx === 1 ? Math.random() < 0.45 : Math.random() < 0.55;
+        if (shouldRollEnc) {
+          const pickedEnc =
+            ENCHANTMENT_REGISTRY[Math.floor(Math.random() * ENCHANTMENT_REGISTRY.length)];
+          if (pickedEnc) {
+            enchantmentId = pickedEnc.id;
+            enchantmentValue = pickedEnc.defaultValue;
+            enchantmentTurns = pickedEnc.defaultTurns;
+            // Can be pure enchantment or damage + enchantment
+            if (Math.random() < 0.45) {
+              attackType = 'enchantment';
+              costResource = pickedEnc.defaultResource;
+            }
+          }
+        }
+      }
+
+      const encDef = findForgeEnchantmentById(enchantmentId);
+      let vfxId = existingPill?.vfxId || tpl.vfxId;
+      if (!vfxId) {
+        if (idx === 3 && ultVfxPool.length > 0) {
+          vfxId = ultVfxPool[Math.floor(Math.random() * ultVfxPool.length)].id;
+        } else if ((attackType === 'enchantment' || enchantmentId) && elemVfxPool.length > 0) {
+          vfxId = elemVfxPool[Math.floor(Math.random() * elemVfxPool.length)].id;
+        } else if (impactVfxPool.length > 0) {
+          vfxId = impactVfxPool[idx % impactVfxPool.length].id;
+        } else {
+          vfxId = getDefaultVfxForSlot(idx, attackType === 'enchantment');
+        }
+      }
+
+      const finalName =
+        existingPill?.attackName ||
+        (attackType === 'enchantment' && encDef ? encDef.name : tpl.name);
+      const finalSpecialEffect =
+        encDef
+          ? `${encDef.icon} ${encDef.name}: ${encDef.description}`
+          : tpl.specialEffect;
+
       return {
         id: `${tpl.id}-inst-${idx}`,
         templateId: tpl.id,
-        name: tpl.name,
-        description: tpl.description,
+        name: finalName,
+        description: encDef ? encDef.description : tpl.description,
         tier: tpl.tier,
-        damage: dmg,
-        manaCost,
+        damage: attackType === 'enchantment' ? (encDef?.defaultValue || 0) : dmg,
+        manaCost: attackType === 'enchantment' && encDef && !isFree ? encDef.defaultCost : manaCost,
         isFree,
         parryStaminaCost: manaCost * 0.5,
-        specialEffect: tpl.specialEffect,
+        specialEffect: finalSpecialEffect,
         unlockOrder: idx + 1,
+        attackType,
+        enchantmentId,
+        enchantmentValue,
+        enchantmentTurns,
+        vfxId,
+        costResource,
       };
     }
   );
 
   if (isCreature && generatedAbilities.length > 1) {
     for (let i = 1; i < generatedAbilities.length; i++) {
-      if (generatedAbilities[i].damage <= generatedAbilities[i - 1].damage) {
+      if (
+        generatedAbilities[i].attackType !== 'enchantment' &&
+        generatedAbilities[i - 1].attackType !== 'enchantment' &&
+        generatedAbilities[i].damage <= generatedAbilities[i - 1].damage
+      ) {
         generatedAbilities[i].damage = Math.min(
           rankRule.damageMax,
           generatedAbilities[i - 1].damage + rankRule.damageIncrement
@@ -1821,7 +1991,8 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     ? Math.max(...generatedAbilities.map((a) => a.damage), 0)
     : 0;
 
-  const badgePaletteByMana = (mana: number) => {
+  const badgePaletteByMana = (mana: number, res?: 'stamina' | 'mana') => {
+    if (res === 'stamina' && mana <= 3) return '#F59E0B';
     if (mana <= 2) return '#0084FF';
     if (mana <= 4) return '#10B981';
     if (mana <= 6) return '#9333EA';
@@ -1829,10 +2000,10 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
   };
 
   const defaultPills: [BottomStatPill, BottomStatPill, BottomStatPill, BottomStatPill] = [
-    { id: 'p1', mode: 'stat', badgeValue: '2', badgeColor: '#0084FF', mainText: '150' },
-    { id: 'p2', mode: 'stat', badgeValue: '4', badgeColor: '#10B981', mainText: '300' },
-    { id: 'p3', mode: 'stat', badgeValue: '6', badgeColor: '#9333EA', mainText: '600' },
-    { id: 'p4', mode: 'stat', badgeValue: '8', badgeColor: '#DF9A1E', mainText: '900' },
+    { id: 'p1', mode: 'stat', badgeValue: '2', badgeColor: '#F59E0B', mainText: '150', attackName: 'Golpe Básico', attackType: 'damage', costResource: 'stamina', vfxId: 'vfx_slash_basic' },
+    { id: 'p2', mode: 'stat', badgeValue: '4', badgeColor: '#10B981', mainText: '300', attackName: 'Investida Elemental', attackType: 'damage', costResource: 'stamina', vfxId: 'vfx_claw_flurry' },
+    { id: 'p3', mode: 'stat', badgeValue: '6', badgeColor: '#9333EA', mainText: '600', attackName: 'Explosão de Núcleo', attackType: 'damage', costResource: 'mana', vfxId: 'vfx_dimensional_slash' },
+    { id: 'p4', mode: 'stat', badgeValue: '8', badgeColor: '#DF9A1E', mainText: '900', attackName: 'Supremacia Ancestral', attackType: 'damage', costResource: 'mana', vfxId: 'vfx_celestial_judgment', isSpecialUltimate: true },
   ];
 
   generatedAbilities.forEach((ab, i) => {
@@ -1841,10 +2012,14 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
         defaultPills[i] = {
           id: `p${i + 1}`,
           mode: 'stat',
-          badgeValue: String(ab.manaCost),
-          badgeColor: '#9333EA',
-          mainText: 'MAGIA',
-          isChromaticSpecial: ab.isFree,
+          badgeValue: String(rolledSummonCost),
+          badgeColor: '#0084FF',
+          mainText: 'MANA',
+          isChromaticSpecial: false,
+          isSummonCost: true,
+          costResource: 'mana',
+          attackName: resolvedMagicName,
+          vfxId: ab.vfxId,
         };
       } else if (isItemCard) {
         defaultPills[i] = {
@@ -1856,17 +2031,53 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
           isChromaticSpecial: false,
         };
       } else {
+        const encDef = findForgeEnchantmentById(ab.enchantmentId);
+        const isEnc = ab.attackType === 'enchantment' && !!encDef;
         defaultPills[i] = {
           id: `p${i + 1}`,
           mode: 'stat',
           badgeValue: ab.isFree ? '∞' : String(ab.manaCost),
-          badgeColor: badgePaletteByMana(ab.manaCost),
-          mainText: String(ab.damage),
+          badgeColor: badgePaletteByMana(ab.manaCost, ab.costResource),
+          mainText: isEnc ? encDef!.name.split(' ')[0].toUpperCase().slice(0, 7) : String(ab.damage),
           isChromaticSpecial: ab.isFree,
+          costResource: ab.costResource || (i >= 2 ? 'mana' : 'stamina'),
+          attackName: ab.name,
+          attackType: ab.attackType || 'damage',
+          enchantmentId: ab.enchantmentId,
+          enchantmentValue: ab.enchantmentValue,
+          enchantmentTurns: ab.enchantmentTurns,
+          vfxId: ab.vfxId || getDefaultVfxForSlot(i, isEnc),
+          isSpecialUltimate: i === 3 || ab.tier === 'Suprema',
         };
       }
     }
   });
+
+  // 5th Capsule Slot: Custo de Invocação (Stamina for Creatures, Mana for Magic Cards, absent on Items)
+  const summonCostPill: BottomStatPill | undefined = isItemCard
+    ? undefined
+    : isMagicCard
+    ? {
+        id: 'pill-summon-cost',
+        mode: 'stat',
+        badgeValue: String(rolledSummonCost),
+        badgeColor: '#0084FF',
+        mainText:
+          matrix.summonCostPill?.costResource === 'mana' && matrix.summonCostPill?.mainText
+            ? matrix.summonCostPill.mainText
+            : 'MANA',
+        isSummonCost: true,
+        costResource: 'mana',
+      }
+    : {
+        id: 'pill-summon-cost',
+        mode: 'stat',
+        badgeValue: String(rolledSummonCost),
+        badgeColor: '#F59E0B',
+        mainText: matrix.summonCostPill?.mainText || 'INVOC.',
+        isSummonCost: true,
+        costResource: 'stamina',
+      };
 
   const isPremiumByDefault =
     matrixRarity === 'Lendária' ||
@@ -1885,11 +2096,7 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     classificationState: 'Classificada',
     editState: targetRecordKind === 'version' ? 'Versão Aleatória' : 'Pronta para Packs',
     isNeutralMatrix: false,
-    pvText: isMagicCard
-      ? `MANA${rolledSummonCost}`
-      : isItemCard
-      ? 'ITEM'
-      : `PV${rolledPv}`,
+    pvText: isItemCard ? 'ITEM' : `PV${rolledPv}`,
     elementText:
       matrix.elementText && matrix.elementText !== 'NEUTRA' && matrix.elementText !== 'MATRIZ'
         ? matrix.elementText
@@ -1897,14 +2104,23 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     rankBadgeText: chosenRank,
     loreHeader: isCreature
       ? `${matrix.title} · ${matrixRarity} (Estamina ${rolledSummonCost})`
+      : isMagicCard
+      ? `${matrix.title} · Magia ${matrixRarity} (Mana ${rolledSummonCost})`
       : `${matrix.title} · ${entityType} (${matrixRarity})`,
     magicPrefix: isMagicCard
-      ? `✨ Magia (${matrix.magicTarget || 'Campo'})`
+      ? resolvedMagicPrefix
       : isItemCard
       ? `🛡️ Item (${matrixRarity})`
       : `⚔️ ${topAbility.name} (${topAbility.isFree ? 'Custo 0 · ∞' : `${topAbility.manaCost} Mana`})`,
-    magicDescription: topAbility.specialEffect || topAbility.description,
+    magicDescription: isMagicCard
+      ? resolvedMagicDesc
+      : topAbility.specialEffect || topAbility.description,
+    magicAbilityKind: isMagicCard ? magicAbilityKind : undefined,
+    linkedPassiveId: isMagicCard ? linkedPassiveId : undefined,
+    linkedActiveSkillId: isMagicCard ? linkedActiveSkillId : undefined,
     pillCount: abilityCount,
+    showSummonCostPill: isItemCard ? false : (matrix.showSummonCostPill ?? true),
+    summonCostPill,
     pills: defaultPills,
     isPremium: isPremiumByDefault,
     isRankChromatic:
@@ -1921,9 +2137,10 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     entityType,
     origin,
     deckId: deckId || matrix.deckId || 'deck-main',
-    pvNumber: isCreature ? rolledPv : undefined,
+    pvNumber: isCreature || isMagicCard ? rolledPv : undefined,
     maxDamage: isCreature ? maxDamage : undefined,
     summonStaminaCost: isCreature ? rolledSummonCost : undefined,
+    magicManaCost: isMagicCard ? rolledSummonCost : matrix.magicManaCost,
     generatedAbilities,
     baseAbilities: baseTemplates,
     createdAt: new Date().toISOString(),

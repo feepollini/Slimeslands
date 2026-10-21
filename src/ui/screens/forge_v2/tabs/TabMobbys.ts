@@ -38,7 +38,7 @@ export class TabMobbys {
     this.previewCurrentHp = this.currentMobby.hp;
 
     this.initPreviewPlayerCards();
-    getMergedGameTemplates(CARD_TEMPLATES).then(() => {
+    getMergedGameTemplates([]).then(() => {
       this.initPreviewPlayerCards();
     });
   }
@@ -66,7 +66,7 @@ export class TabMobbys {
     const base =
       this.state && Array.isArray(this.state.templates) && this.state.templates.length > 0
         ? this.state.templates
-        : CARD_TEMPLATES;
+        : [];
     return getMergedGameTemplatesSync(base);
   }
 
@@ -292,9 +292,16 @@ export class TabMobbys {
     const offY = m.offsetY ?? 0;
     const rot = m.rotation ?? 0;
 
-    // Carta de recompensa encontrada e seus detalhes visuais
     const templates = this.getTemplates();
-    const rewardCardTmpl = templates.find((c: any) => c.name === m.rewardCardId) || templates[0] || CARD_TEMPLATES[0];
+    const rewardCardTmpl = templates.find((c: any) => c.name === m.rewardCardId) || templates[0] || {
+      name: 'Nenhuma carta vinculada',
+      image: '/cards/Slime_Zen_no_Santu_rio_Florestal.png',
+      manaCost: 1,
+      basePv: 100,
+      baseAtk: 10,
+      preferredRarity: 'common',
+      flavorText: 'Crie cartas na Forja Matriz para selecionar como drop.'
+    };
     const rewardRarityKey = (rewardCardTmpl.preferredRarity || 'common').toLowerCase();
     const rewardRarityDef = (RARITIES as any)[rewardRarityKey] || { label: 'Comum', color: '#aaaaaa', icon: '⬜' };
     const rewardRarityColor = rewardCardTmpl.borderColor || rewardRarityDef.color || '#4da6ff';

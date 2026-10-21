@@ -352,37 +352,68 @@ export class TabPacks {
         </div>
       </div>
 
-      <!-- PAINEL SUPERIOR: 3D STUDIO + PROPRIEDADES DA EMBALAGEM E VENDA -->
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:18px;">
-        <!-- 1. PREVIEW 3D DO BOOSTER (STUDIO) -->
-        <div style="background:#09090b; border:1px solid rgba(255,255,255,0.12); border-radius:14px; position:relative; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,0.5); min-height:450px;">
-          <div id="pack-3d-canvas-container" style="width:100%; height:100%; min-height:430px; background:#111218; touch-action:none; cursor:grab;"></div>
+      <style>
+        .tab-packs-3col-container {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1.15fr;
+          gap: 16px;
+          align-items: stretch;
+          width: 100%;
+        }
+        @media (max-width: 1200px) {
+          .tab-packs-3col-container {
+            grid-template-columns: 1fr 1fr;
+          }
+          .tab-packs-col-distribution {
+            grid-column: span 2;
+          }
+        }
+        @media (max-width: 768px) {
+          .tab-packs-3col-container {
+            grid-template-columns: 1fr;
+          }
+          .tab-packs-col-distribution {
+            grid-column: span 1;
+          }
+        }
+      </style>
+
+      <!-- 3 MENUS UM DO LADO DO OUTRO (LAYOUT COESO) -->
+      <div class="tab-packs-3col-container">
+        
+        <!-- MENU 1: PREVIEW 3D DO BOOSTER (STUDIO) -->
+        <div style="background:#09090b; border:1px solid rgba(255,255,255,0.12); border-radius:14px; position:relative; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 8px 30px rgba(0,0,0,0.5); min-height:540px;">
+          <div style="padding:12px 14px 6px 14px; font-size:0.8rem; font-weight:900; letter-spacing:1px; color:#ffd700; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; gap:6px;">
+            <span>📦</span> PREVIEW 3D DA EMBALAGEM
+          </div>
+
+          <div id="pack-3d-canvas-container" style="flex:1; width:100%; min-height:430px; background:#111218; touch-action:none; cursor:grab; position:relative;"></div>
           
-          <div style="position:absolute; top:12px; left:14px; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px 10px; font-size:0.65rem; color:#ddd; pointer-events:none;">
+          <div style="position:absolute; top:42px; left:14px; background:rgba(0,0,0,0.75); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px 10px; font-size:0.65rem; color:#ddd; pointer-events:none; z-index:10;">
             🖱️ Arraste para girar a embalagem em 3D
           </div>
 
-          <div style="position:absolute; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:10px; z-index:10; white-space:nowrap;">
-            <button id="btn-open-interactive-modal" style="padding:10px 22px; background:linear-gradient(180deg, #38bdf8, #0284c7); border:2px solid #bae6fd; border-radius:999px; color:#fff; font-size:0.75rem; font-weight:900; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 16px rgba(2,132,199,0.5);">
+          <div style="position:absolute; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; white-space:nowrap;">
+            <button id="btn-open-interactive-modal" style="padding:9px 18px; background:linear-gradient(180deg, #38bdf8, #0284c7); border:2px solid #bae6fd; border-radius:999px; color:#fff; font-size:0.72rem; font-weight:900; letter-spacing:0.5px; cursor:pointer; box-shadow:0 4px 16px rgba(2,132,199,0.5);">
               ✨ TESTAR ABERTURA (3D)
             </button>
-            <button id="btn-reset-3d-preview" style="padding:10px 16px; background:rgba(0,0,0,0.75); border:1px solid rgba(255,255,255,0.25); border-radius:999px; color:#fff; font-size:0.72rem; font-weight:600; cursor:pointer;">
-              🔄 Resetar Ângulo
+            <button id="btn-reset-3d-preview" style="padding:9px 14px; background:rgba(0,0,0,0.75); border:1px solid rgba(255,255,255,0.25); border-radius:999px; color:#fff; font-size:0.7rem; font-weight:600; cursor:pointer;">
+              🔄 Resetar
             </button>
           </div>
         </div>
 
-        <!-- 2. PAINEL DE ARTES DA EMBALAGEM E DADOS DE VENDA -->
-        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:16px;">
+        <!-- MENU 2: PAINEL DE ARTES DA EMBALAGEM E DADOS DE VENDA -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:14px; min-height:540px;">
           
           <!-- ARTES DA EMBALAGEM -->
-          <div style="font-size:0.8rem; font-weight:900; letter-spacing:1px; color:#ffd700; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px;">
-            🎨 ARTES DA EMBALAGEM (FRENTE & VERSO)
+          <div style="font-size:0.8rem; font-weight:900; letter-spacing:1px; color:#ffd700; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>🎨</span> ARTES DA EMBALAGEM (FRENTE & VERSO)
           </div>
 
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          <div style="display:flex; flex-direction:column; gap:10px;">
             <!-- FRENTE -->
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px;">
+            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:8px;">
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:0.7rem; font-weight:900; color:#fff;">FRENTE:</span>
                 <span id="txt-front-status" style="font-size:0.62rem; color:${pack.customFront ? '#4ade80' : '#aaa'}; font-weight:700;">
@@ -390,7 +421,7 @@ export class TabPacks {
                 </span>
               </div>
               <div style="display:flex; gap:10px; align-items:center;">
-                <div id="front-thumb-preview" style="width:48px; height:72px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.6); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <div id="front-thumb-preview" style="width:44px; height:66px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.6); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                   ${pack.customFront ? `<img src="${pack.customFront}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size:1.2rem;">📦</span>'}
                 </div>
                 <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
@@ -413,7 +444,7 @@ export class TabPacks {
             </div>
 
             <!-- VERSO -->
-            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px;">
+            <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:8px;">
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-size:0.7rem; font-weight:900; color:#fff;">VERSO:</span>
                 <span id="txt-back-status" style="font-size:0.62rem; color:${pack.customBack && (pack.customBack.startsWith('data:') || pack.customBack.startsWith('/')) ? '#4ade80' : '#aaa'}; font-weight:700;">
@@ -421,7 +452,7 @@ export class TabPacks {
                 </span>
               </div>
               <div style="display:flex; gap:10px; align-items:center;">
-                <div id="back-thumb-preview" style="width:48px; height:72px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.6); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <div id="back-thumb-preview" style="width:44px; height:66px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.6); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
                   ${pack.customBack && (pack.customBack.startsWith('data:') || pack.customBack.startsWith('/')) ? `<img src="${pack.customBack}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size:1.2rem;">🛡️</span>'}
                 </div>
                 <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
@@ -440,22 +471,23 @@ export class TabPacks {
           </div>
 
           <!-- DADOS DE VENDA -->
-          <div style="font-size:0.8rem; font-weight:900; letter-spacing:1px; color:#38bdf8; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-top:4px;">
-            ⚙️ DADOS DO BOOSTER NA LOJA
+          <div style="font-size:0.8rem; font-weight:900; letter-spacing:1px; color:#38bdf8; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-top:4px; display:flex; align-items:center; gap:6px;">
+            <span>⚙️</span> DADOS DO BOOSTER NA LOJA
           </div>
 
-          <div style="display:grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap:10px;">
-            <div>
-              <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Nome:</label>
-              <input type="text" id="pack-input-name" class="editor-input" value="${this.esc(pack.name)}" style="font-size:0.75rem; font-weight:900; color:#ffd700; width:100%;">
-            </div>
+          <div>
+            <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Nome:</label>
+            <input type="text" id="pack-input-name" class="editor-input" value="${this.esc(pack.name)}" style="font-size:0.75rem; font-weight:900; color:#ffd700; width:100%; box-sizing:border-box;">
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
             <div>
               <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Preço:</label>
-              <input type="number" id="pack-input-price" class="editor-input" value="${pack.price ?? 0}" min="0" style="font-size:0.75rem; width:100%;">
+              <input type="number" id="pack-input-price" class="editor-input" value="${pack.price ?? 0}" min="0" style="font-size:0.75rem; width:100%; box-sizing:border-box;">
             </div>
             <div>
               <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Moeda:</label>
-              <select id="pack-input-currency" class="editor-input" style="font-size:0.72rem; width:100%;">
+              <select id="pack-input-currency" class="editor-input" style="font-size:0.72rem; width:100%; box-sizing:border-box;">
                 <option value="gold" ${pack.currency !== 'gems' && pack.currency !== 'enjin' ? 'selected' : ''}>🪙 Ouro</option>
                 <option value="gems" ${pack.currency === 'gems' ? 'selected' : ''}>💎 Gemas</option>
                 <option value="enjin" ${pack.currency === 'enjin' ? 'selected' : ''}>🟣 ENJ</option>
@@ -463,122 +495,118 @@ export class TabPacks {
             </div>
             <div>
               <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Cartas:</label>
-              <input type="number" id="pack-input-count" class="editor-input" value="${pack.cardsCount || 3}" min="1" max="15" style="font-size:0.75rem; width:100%;">
+              <input type="number" id="pack-input-count" class="editor-input" value="${pack.cardsCount || 3}" min="1" max="15" style="font-size:0.75rem; width:100%; box-sizing:border-box;">
             </div>
           </div>
 
           <div>
             <label style="font-size:0.65rem; color:#aaa; font-weight:700; display:block; margin-bottom:4px;">Descrição / Lore do Pacote:</label>
-            <textarea id="pack-input-desc" class="editor-input" rows="2" style="font-size:0.72rem; width:100%;">${this.esc(pack.desc || '')}</textarea>
+            <textarea id="pack-input-desc" class="editor-input" rows="2" style="font-size:0.72rem; width:100%; box-sizing:border-box;">${this.esc(pack.desc || '')}</textarea>
           </div>
 
         </div>
-      </div>
 
-      <!-- PAINEL INFERIOR: SELEÇÃO E DISTRIBUIÇÃO DAS CARTAS DO JOGO -->
-      <div style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:20px; display:flex; flex-direction:column; gap:16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-          <div>
-            <div style="font-size:0.85rem; font-weight:900; color:#ffd700; letter-spacing:1px; display:flex; align-items:center; gap:8px;">
-              <span>🃏</span> DISTRIBUIÇÃO DE CARTAS DO JOGO (COLEÇÃO REAL)
+        <!-- MENU 3: DISTRIBUIÇÃO DAS CARTAS DO JOGO (COLEÇÃO REAL) -->
+        <div class="tab-packs-col-distribution" style="background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:14px; min-height:540px;">
+          
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px;">
+            <div>
+              <div style="font-size:0.8rem; font-weight:900; color:#ffd700; letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                <span>🃏</span> DISTRIBUIÇÃO DE CARTAS
+              </div>
+              <div style="font-size:0.65rem; color:#aaa; margin-top:2px;">
+                Total: <strong>${this.templates.length} cartas</strong> (${totalCom} Comuns, ${totalRare} Raras, ${totalLeg} Lendárias)
+              </div>
             </div>
-            <div style="font-size:0.68rem; color:#aaa; margin-top:2px;">
-              Total no jogo: <strong>${this.templates.length} cartas</strong> (${totalCom} Comuns, ${totalRare} Raras, ${totalLeg} Lendárias)
+
+            <!-- ALTERNÂNCIA DE MODO -->
+            <div style="display:flex; gap:6px; background:rgba(255,255,255,0.05); padding:4px 8px; border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+              <label style="display:flex; align-items:center; gap:4px; font-size:0.68rem; cursor:pointer;">
+                <input type="radio" name="pack-mode" value="random" ${pack.mode !== 'special' ? 'checked' : ''}>
+                <span style="font-weight:700; color:#fff;">🎲 Probabilidade</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:4px; font-size:0.68rem; cursor:pointer;">
+                <input type="radio" name="pack-mode" value="special" ${pack.mode === 'special' ? 'checked' : ''}>
+                <span style="font-weight:700; color:#38bdf8;">⭐ Temático</span>
+              </label>
             </div>
           </div>
 
-          <!-- ALTERNÂNCIA DE MODO -->
-          <div style="display:flex; gap:12px; background:rgba(255,255,255,0.05); padding:6px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
-            <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; cursor:pointer;">
-              <input type="radio" name="pack-mode" value="random" ${pack.mode !== 'special' ? 'checked' : ''}>
-              <span style="font-weight:700; color:#fff;">🎲 Coleção Inteira por Probabilidade</span>
-            </label>
-            <label style="display:flex; align-items:center; gap:6px; font-size:0.72rem; cursor:pointer;">
-              <input type="radio" name="pack-mode" value="special" ${pack.mode === 'special' ? 'checked' : ''}>
-              <span style="font-weight:700; color:#38bdf8;">⭐ Booster Temático (Cartas Específicas)</span>
-            </label>
-          </div>
-        </div>
+          ${pack.mode !== 'special' ? `
+            <!-- MODO 1: PROBABILIDADES DAS RARIDADES -->
+            <div style="display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); flex:1;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.68rem; color:#cbd5e1;">Chances de sorteio por raridade:</span>
+                <span id="rates-total-badge" style="font-size:0.68rem; font-weight:900; padding:3px 10px; border-radius:999px; ${isRateBalanced ? 'background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid #22c55e;' : 'background:rgba(234,179,8,0.15); color:#facc15; border:1px solid #eab308;'}">
+                  ${isRateBalanced ? '✅ Total: 100%' : `⚠️ Total: ${totalRate}%`}
+                </span>
+              </div>
 
-        ${pack.mode !== 'special' ? `
-          <!-- MODO 1: PROBABILIDADES DAS RARIDADES -->
-          <div style="display:flex; flex-direction:column; gap:12px; background:rgba(255,255,255,0.02); padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:0.72rem; color:#cbd5e1;">Defina as chances de sorteio de cada raridade na abertura:</span>
-              <span id="rates-total-badge" style="font-size:0.72rem; font-weight:900; padding:4px 12px; border-radius:999px; ${isRateBalanced ? 'background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid #22c55e;' : 'background:rgba(234,179,8,0.15); color:#facc15; border:1px solid #eab308;'}">
-                ${isRateBalanced ? '✅ Total: 100% (Balanceado)' : `⚠️ Total: ${totalRate}% (Ajuste para somar 100%)`}
-              </span>
-            </div>
-
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:14px;">
               <!-- COMUM -->
-              <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:900; color:#fff;">⬜ CARTAS COMUNS</span>
-                  <span style="font-size:0.65rem; color:#aaa;">${totalCom} disponíveis</span>
+              <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <div>
+                  <div style="font-size:0.75rem; font-weight:900; color:#fff;">⬜ CARTAS COMUNS</div>
+                  <div style="font-size:0.62rem; color:#aaa;">${totalCom} disponíveis no acervo</div>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
-                  <input type="number" id="pack-rate-common" class="editor-input" value="${pack.rates.common ?? 70}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="pack-rate-common" class="editor-input" value="${pack.rates.common ?? 70}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:65px;">
                   <span style="font-size:0.75rem; color:#aaa; font-weight:700;">%</span>
                 </div>
               </div>
 
               <!-- RARA -->
-              <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.3); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:900; color:#38bdf8;">🔷 CARTAS RARAS</span>
-                  <span style="font-size:0.65rem; color:#38bdf8;">${totalRare} disponíveis</span>
+              <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.3); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <div>
+                  <div style="font-size:0.75rem; font-weight:900; color:#38bdf8;">🔷 CARTAS RARAS</div>
+                  <div style="font-size:0.62rem; color:#38bdf8;">${totalRare} disponíveis no acervo</div>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
-                  <input type="number" id="pack-rate-rare" class="editor-input" value="${pack.rates.rare ?? 25}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="pack-rate-rare" class="editor-input" value="${pack.rates.rare ?? 25}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:65px;">
                   <span style="font-size:0.75rem; color:#aaa; font-weight:700;">%</span>
                 </div>
               </div>
 
               <!-- LENDÁRIA -->
-              <div style="background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.3); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:900; color:#ffd700;">⭐ CARTAS LENDÁRIAS</span>
-                  <span style="font-size:0.65rem; color:#ffd700;">${totalLeg} disponíveis</span>
+              <div style="background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.3); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <div>
+                  <div style="font-size:0.75rem; font-weight:900; color:#ffd700;">⭐ CARTAS LENDÁRIAS</div>
+                  <div style="font-size:0.62rem; color:#ffd700;">${totalLeg} disponíveis no acervo</div>
                 </div>
-                <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
-                  <input type="number" id="pack-rate-legendary" class="editor-input" value="${pack.rates.legendary ?? 5}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:100%;">
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="pack-rate-legendary" class="editor-input" value="${pack.rates.legendary ?? 5}" min="0" max="100" style="font-size:0.85rem; font-weight:900; text-align:center; width:65px;">
                   <span style="font-size:0.75rem; color:#aaa; font-weight:700;">%</span>
                 </div>
               </div>
             </div>
-          </div>
-        ` : `
-          <!-- MODO 2: BOOSTER TEMÁTICO (CARTAS FIXAS DO JOGO) -->
-          <div style="display:flex; flex-direction:column; gap:12px; background:rgba(255,255,255,0.02); padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,0.06);">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-              <div>
-                <span style="font-size:0.75rem; font-weight:900; color:#38bdf8;">CARTAS DA NOVA MATRIZ INCLUÍDAS NESTE BOOSTER (${pack.fixedCards.length}):</span>
-                <div style="font-size:0.65rem; color:#aaa;">Apenas as cartas oficiais da Matriz selecionadas abaixo serão sorteadas no Booster 3D.</div>
+          ` : `
+            <!-- MODO 2: BOOSTER TEMÁTICO (CARTAS FIXAS DO JOGO) -->
+            <div style="display:flex; flex-direction:column; gap:10px; background:rgba(255,255,255,0.02); padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,0.06); flex:1; min-height:0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <span style="font-size:0.72rem; font-weight:900; color:#38bdf8;">CARTAS INCLUÍDAS (${pack.fixedCards.length}):</span>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                  <input type="text" id="input-catalog-search" class="editor-input" placeholder="🔍 Filtrar..." value="${this.esc(this.cardCatalogSearch)}" style="font-size:0.65rem; padding:3px 8px; width:100px;">
+                  <button id="btn-clean-ghost-fixed" class="editor-btn-secondary" style="font-size:0.62rem; color:#f59e0b; border-color:#f59e0b; padding:3px 6px;" title="Limpar cartas que não existem">
+                    🧹 Órfãs
+                  </button>
+                  <button id="btn-clear-all-fixed" class="editor-btn-secondary" style="font-size:0.62rem; color:#ef4444; border-color:#ef4444; padding:3px 6px;">
+                    ✕ Limpar
+                  </button>
+                </div>
               </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                <input type="text" id="input-catalog-search" class="editor-input" placeholder="🔍 Filtrar cartas..." value="${this.esc(this.cardCatalogSearch)}" style="font-size:0.68rem; padding:4px 10px; width:150px;">
-                <button id="btn-clean-ghost-fixed" class="editor-btn-secondary" style="font-size:0.65rem; color:#f59e0b; border-color:#f59e0b; padding:4px 10px;" title="Remove nomes de cartas de versões antigas que não existem na Matriz atual">
-                  🧹 Limpar Órfãs
-                </button>
-                <button id="btn-clear-all-fixed" class="editor-btn-secondary" style="font-size:0.65rem; color:#ef4444; border-color:#ef4444; padding:4px 10px;">
-                  ✕ Desmarcar Todas
-                </button>
+
+              <!-- FILTRO DE CATEGORIAS / FAMÍLIAS DA MATRIZ -->
+              <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
+                ${this.renderCategoryFilterButtons()}
+              </div>
+
+              <!-- SELETOR VISUAL POR RARIDADE -->
+              <div style="max-height:360px; overflow-y:auto; padding:6px; background:rgba(0,0,0,0.3); border-radius:10px; border:1px solid rgba(255,255,255,0.05); flex:1;">
+                ${this.renderCardCatalogGrid(pack)}
               </div>
             </div>
+          `}
+        </div>
 
-            <!-- FILTRO DE CATEGORIAS / FAMÍLIAS DA MATRIZ -->
-            <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; border-top:1px solid rgba(255,255,255,0.06); padding-top:8px;">
-              <span style="font-size:0.65rem; font-weight:800; color:#cbd5e1; margin-right:4px;">CATEGORIA:</span>
-              ${this.renderCategoryFilterButtons()}
-            </div>
-
-            <!-- SELETOR VISUAL POR RARIDADE -->
-            <div style="max-height:420px; overflow-y:auto; padding:8px; background:rgba(0,0,0,0.3); border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
-              ${this.renderCardCatalogGrid(pack)}
-            </div>
-          </div>
-        `}
       </div>
     `;
   }

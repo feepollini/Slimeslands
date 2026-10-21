@@ -4,14 +4,19 @@
     display: grid !important;
     grid-template-columns: repeat(3, 1fr) !important;
     grid-template-rows: auto auto !important;
-    gap: 10px 10px !important;
-    width: 92% !important;
-    max-width: 350px !important;
+    gap: clamp(6px, 1dvh, 10px) clamp(6px, 1dvh, 10px) !important;
+    width: min(84%, 35dvh) !important;
+    max-width: 296px !important;
     margin: 0 auto !important;
     align-content: center !important;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
 }
 
-/* O SLOT ÚNICO DO CHEFE NO TOPO: SEM CAIXA, SEM QUADRADO, DESCIDO MAIS UM POUCO */
+/* O SLOT ÚNICO DO CHEFE NO TOPO: SEM CAIXA, SEM QUADRADO, PROPORCIONAL */
 .boss-single-slot-wrap,
 #boss-sprite-slot,
 #prev-boss-sprite-slot {
@@ -21,19 +26,19 @@
     align-items: center;
     position: relative;
     height: 100%;
-    min-height: 175px;
-    max-height: 230px;
-    margin-top: 36px !important; /* Descer a PNG mais um pouco conforme solicitado */
+    min-height: clamp(110px, 16dvh, 155px);
+    max-height: clamp(135px, 19dvh, 185px);
+    margin-top: clamp(6px, 1.5dvh, 18px) !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     cursor: pointer;
 }
 
-/* ASSET PNG COM ANIMAÇÃO DE GELATINA (AUMENTADO) */
+/* ASSET PNG COM ANIMAÇÃO DE GELATINA (PROPORCIONAL) */
 .boss-jelly-asset {
-    max-height: 185px !important; /* Aumentar um pouco a PNG conforme solicitado */
-    max-width: 275px !important;
+    max-height: clamp(105px, 15.5dvh, 155px) !important;
+    max-width: min(220px, 65%) !important;
     object-fit: contain;
     filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.95));
     transform-origin: bottom center;
@@ -174,7 +179,7 @@
     aspect-ratio: 680 / 990;
     height: auto;
     max-width: 85vw;
-    max-height: 68vh;
+    max-height: 64dvh;
     border-radius: 14px;
     position: relative;
     box-sizing: border-box;
@@ -187,48 +192,78 @@
     aspect-ratio: auto !important;
 }
 
-/* Botão COLETAR pulsante - Centralizado e com identidade visual nobre */
+/* Botão COLETAR em Cápsula Simples — Identidade Visual Nobre do Jogo (Compatível com Retrato e Paisagem) */
 .btn-collect-reward-pulse {
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    background: linear-gradient(135deg, #ffd700 0%, #ffae19 50%, #b8860b 100%);
-    border: 2px solid #ffffff;
-    color: #0b0710;
+    height: clamp(34px, 7.2dvh, 46px);
+    padding: 0 clamp(18px, 3.2vw, 32px);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(38, 26, 14, 0.98) 0%, rgba(16, 10, 5, 0.99) 100%);
+    border: 2px solid #d4af37;
+    border-bottom: 3.5px solid #8a6615;
+    outline: 1.5px solid rgba(0, 0, 0, 0.9);
+    color: #ffe9a8;
     font-family: 'Cinzel', 'Outfit', sans-serif;
-    font-size: 1.05rem;
+    font-size: clamp(0.68rem, 1.85dvh, 0.9rem);
     font-weight: 950;
-    letter-spacing: 2px;
+    letter-spacing: 1.8px;
     text-transform: uppercase;
-    padding: 13px 42px;
-    border-radius: 8px;
+    white-space: nowrap;
     cursor: pointer;
-    box-shadow: 0 0 25px rgba(255, 215, 0, 0.85), 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 1px 1px #fff;
+    box-shadow:
+        0 8px 22px rgba(0, 0, 0, 0.92),
+        0 0 18px rgba(212, 175, 55, 0.45),
+        inset 0 1px 0 rgba(255, 236, 180, 0.35);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    transition: box-shadow 0.2s, filter 0.2s;
-    animation: pulseCollect 1.6s infinite ease-in-out;
+    gap: 8px;
+    box-sizing: border-box;
+    transition: transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    animation: pulseCollect 1.8s infinite ease-in-out;
+}
+
+.btn-collect-reward-pulse .collect-capsule-icon {
+    color: #ffd700;
+    font-size: clamp(0.75rem, 2dvh, 0.98rem);
+    filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.8));
+    line-height: 1;
+}
+
+.btn-collect-reward-pulse .collect-capsule-label {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+    line-height: 1;
 }
 
 .btn-collect-reward-pulse:hover {
-    box-shadow: 0 0 45px rgba(255, 215, 0, 1), 0 14px 35px rgba(0, 0, 0, 0.9), inset 0 1px 1px #fff;
-    filter: brightness(1.15);
+    box-shadow:
+        0 10px 26px rgba(0, 0, 0, 0.95),
+        0 0 28px rgba(255, 215, 0, 0.75),
+        inset 0 1px 0 rgba(255, 245, 200, 0.55);
+    filter: brightness(1.12);
 }
 
 .btn-collect-reward-pulse:active {
-    transform: translateX(-50%) scale(0.96) !important;
+    transform: translateX(-50%) translateY(2px) scale(0.97) !important;
 }
 
 @keyframes pulseCollect {
     0%, 100% {
-        box-shadow: 0 0 22px rgba(255, 215, 0, 0.65), 0 8px 22px rgba(0, 0, 0, 0.7);
+        box-shadow:
+            0 8px 20px rgba(0, 0, 0, 0.9),
+            0 0 14px rgba(212, 175, 55, 0.4),
+            inset 0 1px 0 rgba(255, 236, 180, 0.3);
         transform: translateX(-50%) scale(1);
     }
     50% {
-        box-shadow: 0 0 40px rgba(255, 215, 0, 1), 0 12px 30px rgba(255, 160, 0, 0.7);
-        transform: translateX(-50%) scale(1.05);
+        box-shadow:
+            0 10px 26px rgba(0, 0, 0, 0.95),
+            0 0 26px rgba(255, 215, 0, 0.75),
+            inset 0 1px 0 rgba(255, 245, 200, 0.5);
+        transform: translateX(-50%) scale(1.03);
     }
 }
+
 

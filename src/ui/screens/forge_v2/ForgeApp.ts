@@ -12,11 +12,12 @@ import { QuestMakerHub } from './tabs/quest_maker/QuestMakerHub';
 import { SoundCentralScreen } from './tabs/SoundCentralScreen';
 import { TabMobbys } from './tabs/TabMobbys';
 import { TabMatrix } from './tabs/TabMatrix';
+import { TabDecks } from './tabs/TabDecks';
 import { ForgeCore } from './core/ForgeCore';
 
 export class ForgeApp {
   private container: HTMLElement;
-  private currentMode: 'matrix' | 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'questmaker' | 'mobbys' = 'matrix';
+  private currentMode: 'decks' | 'matrix' | 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'questmaker' | 'mobbys' = 'decks';
   private tabMatrix: TabMatrix | null = null;
   private selectedIndex: number = 0;
   private habilidadesSelectedIndex: number = 0;
@@ -109,6 +110,14 @@ export class ForgeApp {
         if (data.packsSelectedIndex !== undefined) this.packsSelectedIndex = data.packsSelectedIndex;
       } catch(e) { console.warn('Failed to restore forge persistence', e); }
     }
+
+    window.addEventListener('forge:switch-tab', ((ev: CustomEvent) => {
+      if (ev?.detail) {
+        this.currentMode = ev.detail;
+        this.savePersistence();
+        this.render();
+      }
+    }) as EventListener);
   }
 
   private savePersistence() {
@@ -131,6 +140,7 @@ export class ForgeApp {
           <button id="btn-back-editor" class="editor-btn-secondary" style="font-size: 0.72rem; padding: 6px 12px; white-space: nowrap; flex-shrink: 0;">◀ VOLTAR</button>
           
           <div class="editor-tabs" style="display: flex; gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding: 4px 6px; border-radius: 9999px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.06); max-width: calc(100vw - 300px); scrollbar-width: none;">
+            <button class="editor-tab ${this.currentMode === 'decks' ? 'active' : ''}" data-mode="decks" style="background: ${this.currentMode === 'decks' ? 'linear-gradient(135deg, #10b981, #059669)' : 'transparent'}; color: #fff; font-weight: 900; border-radius: 9999px; padding: 5px 12px; font-size: 0.72rem; white-space: nowrap;" title="Galeria de Decks: Gerencie e monte seus decks de batalha">🎴 GALERIA DE DECKS</button>
             <button class="editor-tab ${this.currentMode === 'matrix' ? 'active' : ''}" data-mode="matrix" style="background: ${this.currentMode === 'matrix' ? 'linear-gradient(135deg, #7928ca, #ff0080)' : 'transparent'}; color: #fff; font-weight: 900; border-radius: 9999px; padding: 5px 12px; font-size: 0.72rem; white-space: nowrap;" title="Forja Matriz: Estúdio Oficial de Criação de Cartas">✨ FORJA MATRIZ</button>
             <button class="editor-tab ${this.currentMode === 'habilidades' ? 'active' : ''}" data-mode="habilidades" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">PASSIVAS</button>
             <button class="editor-tab ${this.currentMode === 'artefatos' ? 'active' : ''}" data-mode="artefatos" style="border-radius: 9999px; padding: 5px 11px; font-size: 0.7rem; white-space: nowrap;">ATIVAS(Artf)</button>
@@ -231,7 +241,11 @@ export class ForgeApp {
         this.tabMatrix.unmount();
      }
 
-     if (this.currentMode === 'matrix') {
+     if (this.currentMode === 'decks') {
+        const tab = new TabDecks(state, callbacks);
+        main.innerHTML = tab.render();
+        tab.bind(main);
+     } else if (this.currentMode === 'matrix') {
         if (!this.tabMatrix) this.tabMatrix = new TabMatrix();
         main.innerHTML = this.tabMatrix.render();
         this.tabMatrix.bind(main);

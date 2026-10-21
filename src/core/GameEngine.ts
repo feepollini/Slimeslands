@@ -19,6 +19,7 @@ export class GameEngine {
     public aiDeck: Card[] = [];
     public grave: Card[] = [];
     public activeSkills: (Skill | null)[] = Array(3).fill(null);
+    public aiSkills: (Skill | null)[] = Array(3).fill(null);
     public selectedSkills: Skill[] = [];
     public inventory: Skill[] = [];
     public hp = { p: 1500, e: 1500 };
@@ -46,6 +47,7 @@ export class GameEngine {
         this.stamina = { p: 9, e: 9 };
         this.board = Array(6).fill(null);
         this.hand = [];
+        this.aiHand = [];
         this.grave = [];
         this.deck = pDeck && pDeck.length > 0 ? pDeck : this.generateDeck('p', 12);
         this.aiDeck = this.generateDeck('e', 12);
@@ -55,6 +57,12 @@ export class GameEngine {
             this.selectedSkills[1] ?? null,
             this.selectedSkills[2] ?? null,
         ];
+        const shuffledAiSkills = [...SKILL_POOL].sort(() => Math.random() - 0.5);
+        this.aiSkills = [
+            shuffledAiSkills[0] ? { ...shuffledAiSkills[0] } : null,
+            shuffledAiSkills[1] ? { ...shuffledAiSkills[1] } : null,
+            shuffledAiSkills[2] ? { ...shuffledAiSkills[2] } : null,
+        ];
         this.turn = 'p';
         this.actionsLeft = 1;
         this.nextAtkCombo = 1.0;
@@ -62,11 +70,14 @@ export class GameEngine {
         this.stats = { turns: 0, cardsPlayed: 0, attacksMade: 0 };
         this.state = 'battle';
         for (let i = 0; i < 3; i++) this.draw();
+        for (let i = 0; i < 3; i++) {
+            const aiCard = this.drawAI();
+            if (aiCard) this.aiHand.push(aiCard);
+        }
     }
 
     public generateDeck(owner: 'p' | 'e' = 'p', count: number = 30): Card[] {
-        const allTemplates = getMergedGameTemplatesSync(CARD_TEMPLATES);
-        const pool = allTemplates.length > 0 ? allTemplates : CARD_TEMPLATES;
+        const pool = getMergedGameTemplatesSync([]);
 
         let chosenTemplates: any[] = [];
         if (owner === 'p') {
@@ -102,11 +113,11 @@ export class GameEngine {
             } catch (_) {}
         }
 
-        if (chosenTemplates.length === 0) {
+        if (chosenTemplates.length === 0 && pool.length > 0) {
             chosenTemplates = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
         }
 
-        return chosenTemplates.map((tmpl: any, i: number) => {
+        return chosenTemplates.filter(Boolean).map((tmpl: any, i: number) => {
             const rarity = tmpl.preferredRarity || tmpl.rarity || RARITY_POOL[Math.floor(Math.random() * RARITY_POOL.length)];
             const abilityPool = rarity === 'common'
                 ? ['none']
@@ -289,22 +300,29 @@ export class GameEngine {
     }
 
     /** Sacrifice: draw 1 card as strategic resource. Costs 1 action. */
-    public sacrifice(idx: number): boolean {
-        if (this.turn !== 'p' || this.actionsLeft <= 0) return false;
+    public sacrifice(idx: number, isAI: boolean = false): boolean {
+        const expectedOwner = isAI ? 'e' : 'p';
+        if (this.turn !== expectedOwner || this.actionsLeft <= 0) return false;
         const card = this.board[idx];
-        if (!card || card.owner !== 'p') return false;
+        if (!card || card.owner !== expectedOwner) return false;
         this.grave.push(card);
         this.board[idx] = null;
-        this.draw(); // Resource gain
+        if (isAI) {
+            if (this.aiDeck.length > 0 && this.aiHand.length < 7) {
+                this.aiHand.push(this.aiDeck.pop()!);
+            }
+        } else {
+            this.draw(); // Resource gain
+        }
         this.actionsLeft--;
         return true;
     }
 
     /** Use skill. Applies result from CombatEngine to state. */
-    /** Use skill. Applies result from CombatEngine to state. */
     public useSkill(skillIdx: number, targetIdx?: number, isAI: boolean = false): { success: boolean; message: string; comboMessage?: string } {
         if (this.actionsLeft <= 0) return { success: false, message: '⛔ Sem ações restantes!' };
-        const skill = this.activeSkills[skillIdx];
+        const skillSlots = isAI ? this.aiSkills : this.activeSkills;
+        const skill = skillSlots[skillIdx];
         if (!skill) return { success: false, message: 'Slot vazio!' };
 
         const owner = isAI ? 'e' : 'p';
@@ -345,8 +363,13 @@ export class GameEngine {
         
         // Draw logic for AI vs Player
         for (let i = 0; i < result.drawCount; i++) {
-            if (isAI) this.aiDeck.pop(); // AI doesn't have hand yet
-            else this.draw();
+            if (isAI) {
+                if (this.aiDeck.length > 0 && this.aiHand.length < 7) {
+                    this.aiHand.push(this.aiDeck.pop()!);
+                }
+            } else {
+                this.draw();
+            }
         }
 
         if (result.divineAction) {
@@ -359,7 +382,7 @@ export class GameEngine {
         // Store combo for next attack
         if (result.comboBonus) this.nextAtkCombo = result.comboBonus;
 
-        this.activeSkills[skillIdx] = null;
+        skillSlots[skillIdx] = null;
         return { success: true, message: result.message, comboMessage: result.comboMessage };
     }
 

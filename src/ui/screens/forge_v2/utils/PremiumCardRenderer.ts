@@ -4,7 +4,7 @@ import { renderMatrixCardSVG, renderMatrixCardBackSVG } from './HestridiaMatrixR
 
 export function renderPremiumCard(c: Card): string {
     return `
-        <div class="premium-card-container matrix-frame-mode card-face" data-id="${c.id}" style="width:100%; height:100%; max-width:380px; aspect-ratio:680/990; margin:0 auto; background:transparent; box-shadow:0 25px 60px rgba(0,0,0,0.85); border-radius:14px; overflow:hidden;">
+        <div class="premium-card-container matrix-frame-mode card-face" data-id="${c.id}" style="width:min(380px, 86vw, calc(86dvh * 680 / 990)); max-width:100%; max-height:86dvh; height:auto; aspect-ratio:680/990; margin:0 auto; background:transparent; box-shadow:0 25px 60px rgba(0,0,0,0.85); border-radius:14px; overflow:hidden;">
             ${renderMatrixCardSVG(c, { mode: 'full', animateChroma: true })}
         </div>
     `;

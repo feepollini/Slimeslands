@@ -18,6 +18,16 @@ export interface BottomStatPill {
   badgeColor: string;
   mainText: string;
   isChromaticSpecial?: boolean; // Chromatic rainbow circle with Infinity (∞) symbol for zero-cost special attacks
+  isSummonCost?: boolean;       // Marks the 5th capsule slot as the Summon Cost (Stamina for Creatures, Mana for Magic)
+  costResource?: 'stamina' | 'mana';
+  // Linked Real Battle Attack / Special Effect / Animation (from Forge V1)
+  attackName?: string;
+  attackType?: 'damage' | 'enchantment';
+  enchantmentId?: string;
+  enchantmentValue?: number;
+  enchantmentTurns?: number;
+  vfxId?: string;
+  isSpecialUltimate?: boolean;
 }
 
 export interface CardColorPalette {
@@ -45,9 +55,12 @@ export interface CardData {
   loreBoxOpacity: number; // 0 to 100
   loreBoxY: number; // Vertical position adjustment (default 725)
   loreTextScale?: number; // 70 to 135
-  pillCount: 1 | 2 | 3 | 4; // Variable number of bottom capsules (1, 2, 3, or 4)
+  pillCount: 1 | 2 | 3 | 4; // Variable number of ability capsules (1, 2, 3, or 4)
   dockAutoFit: boolean; // Whether the bottom recessed dock contour shrinks to hug the active capsules or stays full-width
   pills: [BottomStatPill, BottomStatPill, BottomStatPill, BottomStatPill];
+  // 5th Capsule Slot: Summon Cost (Stamina for Creatures, Mana for Magic Cards)
+  showSummonCostPill?: boolean; // Default true: renders the 5th slot (Summon Cost) on the card dock
+  summonCostPill?: BottomStatPill; // Custom overrides for the 5th Summon Cost capsule
   // Image & Video Media settings
   imageUrl: string | null;
   videoUrl: string | null;
@@ -106,12 +119,15 @@ export interface CardData {
   entityType?: CardEntityType;   // 'Criatura' | 'Magia' | 'Item'
   pvNumber?: number;
   maxDamage?: number;
-  summonStaminaCost?: number;    // 1 to 9 Stamina
+  summonStaminaCost?: number;    // 1 to 9 Stamina (5th Capsule Slot for Creatures)
   generatedAbilities?: GeneratedAbilityInstance[];
   baseAbilities?: CharacterAbilityTemplate[];
-  magicManaCost?: number;
+  magicManaCost?: number;        // 1 to 9 Mana (Summon Cost for Magic Cards)
   magicTarget?: string;
   magicCondition?: string;
+  magicAbilityKind?: 'passive' | 'active'; // Linked board effect type for Magic Cards
+  linkedPassiveId?: string;      // Linked Passive ID from Forja (abilities.json)
+  linkedActiveSkillId?: string;  // Linked Active Skill ID from Forja (skills.json)
   origin?: CardOrigin;
   deckId?: string;
   createdAt?: string;

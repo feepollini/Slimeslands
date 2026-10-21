@@ -228,22 +228,38 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
     if (targetRarity === 'Magia') {
       onReplaceCards(
-        cards.map((c) =>
-          targetIds.includes(c.id)
-            ? {
-                ...c,
-                entityType: 'Magia',
-                elementText: 'MAGIA',
-                magicManaCost: c.magicManaCost ?? 3,
-                pvNumber: undefined,
-                summonStaminaCost: undefined,
-                pvText: `MANA${c.magicManaCost ?? 3}`,
-                classificationState: 'Classificada',
-                editState: 'Classificada',
-                isNeutralMatrix: false,
-              }
-            : c
-        )
+        cards.map((c) => {
+          if (!targetIds.includes(c.id)) return c;
+          const manaCost = c.magicManaCost ?? 3;
+          return {
+            ...c,
+            entityType: 'Magia',
+            cardClass: c.cardClass || 'Rara',
+            magicManaCost: manaCost,
+            summonStaminaCost: undefined,
+            pvText:
+              c.pvText && !c.pvText.startsWith('MANA')
+                ? c.pvText
+                : c.pvNumber
+                ? `PV${c.pvNumber}`
+                : 'PV—',
+            showSummonCostPill: true,
+            summonCostPill: {
+              id: 'pill-summon-cost',
+              mode: 'stat',
+              badgeValue: String(manaCost),
+              badgeColor: '#0084FF',
+              mainText: 'MANA',
+              isSummonCost: true,
+              costResource: 'mana',
+            },
+            magicAbilityKind: c.magicAbilityKind || 'passive',
+            linkedPassiveId: c.linkedPassiveId || 'first_strike',
+            classificationState: 'Classificada',
+            editState: 'Classificada',
+            isNeutralMatrix: false,
+          };
+        })
       );
     } else {
       onReplaceCards(
@@ -443,13 +459,45 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       if (batchEntityType) {
         next.entityType = batchEntityType;
         if (batchEntityType === 'Magia') {
-          next.pvNumber = undefined;
+          const manaCost = next.magicManaCost ?? 3;
+          next.cardClass = next.cardClass || 'Rara';
           next.summonStaminaCost = undefined;
-          next.pvText = `MANA${next.magicManaCost ?? 3}`;
+          next.magicManaCost = manaCost;
+          next.pvText =
+            next.pvText && !next.pvText.startsWith('MANA')
+              ? next.pvText
+              : next.pvNumber
+              ? `PV${next.pvNumber}`
+              : 'PV—';
+          next.showSummonCostPill = true;
+          next.summonCostPill = {
+            id: 'pill-summon-cost',
+            mode: 'stat',
+            badgeValue: String(manaCost),
+            badgeColor: '#0084FF',
+            mainText: 'MANA',
+            isSummonCost: true,
+            costResource: 'mana',
+          };
+          next.magicAbilityKind = next.magicAbilityKind || 'passive';
+          next.linkedPassiveId = next.linkedPassiveId || 'first_strike';
         } else if (batchEntityType === 'Item') {
           next.pvNumber = undefined;
           next.summonStaminaCost = undefined;
+          next.showSummonCostPill = false;
           next.pvText = 'ITEM';
+        } else if (batchEntityType === 'Criatura') {
+          const stamCost = next.summonStaminaCost ?? 3;
+          next.showSummonCostPill = true;
+          next.summonCostPill = {
+            id: 'pill-summon-cost',
+            mode: 'stat',
+            badgeValue: String(stamCost),
+            badgeColor: '#F59E0B',
+            mainText: 'INVOC.',
+            isSummonCost: true,
+            costResource: 'stamina',
+          };
         }
       }
       return next;
@@ -1065,22 +1113,38 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                       // Move all checked cards to this category on click!
                       if (cat.key === 'Magia') {
                         onReplaceCards(
-                          cards.map((c) =>
-                            validSelectedCardIds.includes(c.id)
-                              ? {
-                                  ...c,
-                                  entityType: 'Magia',
-                                  elementText: 'MAGIA',
-                                  magicManaCost: c.magicManaCost ?? 3,
-                                  pvNumber: undefined,
-                                  summonStaminaCost: undefined,
-                                  pvText: `MANA${c.magicManaCost ?? 3}`,
-                                  classificationState: 'Classificada',
-                                  editState: 'Classificada',
-                                  isNeutralMatrix: false,
-                                }
-                              : c
-                          )
+                          cards.map((c) => {
+                            if (!validSelectedCardIds.includes(c.id)) return c;
+                            const manaCost = c.magicManaCost ?? 3;
+                            return {
+                              ...c,
+                              entityType: 'Magia',
+                              cardClass: c.cardClass || 'Rara',
+                              magicManaCost: manaCost,
+                              summonStaminaCost: undefined,
+                              pvText:
+                                c.pvText && !c.pvText.startsWith('MANA')
+                                  ? c.pvText
+                                  : c.pvNumber
+                                  ? `PV${c.pvNumber}`
+                                  : 'PV—',
+                              showSummonCostPill: true,
+                              summonCostPill: {
+                                id: 'pill-summon-cost',
+                                mode: 'stat',
+                                badgeValue: String(manaCost),
+                                badgeColor: '#0084FF',
+                                mainText: 'MANA',
+                                isSummonCost: true,
+                                costResource: 'mana',
+                              },
+                              magicAbilityKind: c.magicAbilityKind || 'passive',
+                              linkedPassiveId: c.linkedPassiveId || 'first_strike',
+                              classificationState: 'Classificada',
+                              editState: 'Classificada',
+                              isNeutralMatrix: false,
+                            };
+                          })
                         );
                       } else {
                         onReplaceCards(
@@ -1830,7 +1894,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                       {unclassified
                         ? 'Sem Atributos'
                         : card.entityType === 'Magia'
-                        ? `Mana ${card.magicManaCost ?? 3}`
+                        ? `${card.pvText} · ${card.magicManaCost ?? 3} Mana`
                         : `${card.pvText} · ${card.summonStaminaCost ?? '—'} Est.`}
                     </span>
                   </div>

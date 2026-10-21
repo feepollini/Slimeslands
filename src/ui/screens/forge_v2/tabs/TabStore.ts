@@ -160,21 +160,21 @@ export class TabStore {
 
   constructor(state: any, callbacks: any, core: any) {
     this.data = normalizeStoreData(state.storeItems);
-    this.templates = getMergedGameTemplatesSync(state.templates || CARD_TEMPLATES);
+    this.templates = getMergedGameTemplatesSync(state.templates || []);
     this.skills = state.skills || [];
     this.reRender = callbacks.reRender;
     this.showToast = callbacks.showToast;
     this.openMediaPicker = callbacks.openMediaPicker;
     this.saveJson = core.saveJson.bind(core);
 
-    getMergedGameTemplates(state.templates || CARD_TEMPLATES).then((merged) => {
+    getMergedGameTemplates(state.templates || []).then((merged) => {
       if (merged && merged.length > 0) {
         this.templates = merged;
       }
     });
 
     window.addEventListener('hestridia:matrix-updated', () => {
-      this.templates = getMergedGameTemplatesSync(state.templates || CARD_TEMPLATES);
+      this.templates = getMergedGameTemplatesSync(state.templates || []);
     });
 
     // Garante que o módulo ativo e o índice da vitrine estejam sempre em sincronia

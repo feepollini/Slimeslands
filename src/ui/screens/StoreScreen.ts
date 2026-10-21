@@ -9,6 +9,7 @@ import {
   getMergedGameTemplatesSync,
   getMergedGameTemplates,
   resolveMatrixOrGameCard,
+  getAvailableCustomDecks,
 } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t } from '../../core/i18n';
 import storeData from '../../core/store.json';
@@ -46,7 +47,7 @@ export class StoreScreen {
       } catch (_) {}
     }
     const d: any = customData || localOverride || storeData || {};
-    this.customTemplates = getMergedGameTemplatesSync(d.templates || CARD_TEMPLATES);
+    this.customTemplates = getMergedGameTemplatesSync(d.templates || []);
     this.boosterDisplayMode = (d.boosterDisplayMode === 'split') ? 'split' : 'carousel';
 
     this.data = {
@@ -54,7 +55,20 @@ export class StoreScreen {
       banners: (d.banners || []).filter((u: string) => !!u).slice(0, 3),
       dailyPool: (d.dailyPool || []).filter((o: any) => o && o.card),
       rare: (d.rare || []).filter((o: any) => o && o.card),
-      decks: d.decks || [],
+      decks: [
+        ...(d.decks || []),
+        ...getAvailableCustomDecks()
+          .filter((cd) => Array.isArray(cd.cards) && cd.cards.length > 0)
+          .map((cd) => ({
+            id: cd.id,
+            name: cd.name,
+            price: 400,
+            currency: 'gold',
+            cards: cd.cards,
+            theme: cd.archetype || 'custom',
+            published: true
+          }))
+      ],
       packs: d.packs || [],
       coinPacks: d.coinPacks || [],
       gemPacks: d.gemPacks || [],
@@ -92,7 +106,6 @@ export class StoreScreen {
     return (
       resolveMatrixOrGameCard(name, [
         ...(this.customTemplates || []),
-        ...(CARD_TEMPLATES as any[]),
       ]) || null
     );
   }
@@ -1083,7 +1096,7 @@ export class StoreScreen {
 
     if (!container.dataset.matrixStoreSynced) {
       container.dataset.matrixStoreSynced = '1';
-      getMergedGameTemplates(CARD_TEMPLATES).then((merged) => {
+      getMergedGameTemplates([]).then((merged) => {
         if (merged && merged.length > 0) {
           this.customTemplates = merged;
         }

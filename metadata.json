@@ -1,0 +1,6 @@
+{
+  "name": "Slimeslands - Legends of Winter",
+  "description": "A rich strategic fantasy TCG card battler, scenario quest maker, and slime-themed arcade card ecosystem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

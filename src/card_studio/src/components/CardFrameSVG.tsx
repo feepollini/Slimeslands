@@ -51,12 +51,12 @@ export function getOuterRoundedRectPath(r = 14): string {
   `;
 }
 
-export function getInnerWindowPath(pillCount: 1 | 2 | 3 | 4 = 4, dockAutoFit = true): string {
-  const pillWidth = 103;
-  const gap = 8.5;
-  const sidePadding = 11.5;
+export function getInnerWindowPath(pillCount: 1 | 2 | 3 | 4 | 5 = 4, dockAutoFit = true): string {
+  const effectiveCount = dockAutoFit ? pillCount : Math.max(4, pillCount);
+  const pillWidth = effectiveCount >= 5 ? 86 : 103;
+  const gap = effectiveCount >= 5 ? 6.5 : 8.5;
+  const sidePadding = effectiveCount >= 5 ? 10.5 : 11.5;
 
-  const effectiveCount = dockAutoFit ? pillCount : 4;
   const totalPillsWidth = effectiveCount * pillWidth + (effectiveCount - 1) * gap;
   const dockHalfWidth = totalPillsWidth / 2 + sidePadding;
 
@@ -111,7 +111,7 @@ export function getInnerWindowPath(pillCount: 1 | 2 | 3 | 4 = 4, dockAutoFit = t
   `;
 }
 
-export function getOuterFrameCompoundPath(pillCount: 1 | 2 | 3 | 4 = 4, dockAutoFit = true): string {
+export function getOuterFrameCompoundPath(pillCount: 1 | 2 | 3 | 4 | 5 = 4, dockAutoFit = true): string {
   return `
     ${getOuterRoundedRectPath(14)}
     ${getInnerWindowPath(pillCount, dockAutoFit)}
@@ -208,23 +208,85 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
     setDragStart(null);
   };
 
-  const pillCount = card.pillCount || 4;
+  const isMagicCard = card.entityType === 'Magia';
+  const showSummonSlot = card.showSummonCostPill ?? true;
+  const abilityPillCount = card.pillCount || 4;
   const dockAutoFit = card.dockAutoFit ?? true;
 
-  // Dynamic paths based on 1, 2, 3, or 4 capsules
-  const innerWindowPath = getInnerWindowPath(pillCount, dockAutoFit);
-  const outerFrameCompoundPath = getOuterFrameCompoundPath(pillCount, dockAutoFit);
+  const summonPill = useMemo(() => {
+    if (isMagicCard) {
+      const manaVal = card.isNeutralMatrix
+        ? '—'
+        : String(
+            card.summonCostPill?.badgeValue ??
+              card.magicManaCost ??
+              card.summonStaminaCost ??
+              3
+          );
+      return {
+        id: 'pill-summon-mana',
+        mode: card.summonCostPill?.mode || ('stat' as const),
+        badgeValue: manaVal,
+        badgeColor: card.summonCostPill?.badgeColor || '#0284C7',
+        mainText: card.summonCostPill?.mainText || '💎MANA',
+        isSummonCost: true,
+        costResource: 'mana' as const,
+      };
+    }
+    const stamVal = card.isNeutralMatrix
+      ? '—'
+      : String(
+          card.summonCostPill?.badgeValue ??
+            card.summonStaminaCost ??
+            3
+        );
+    return {
+      id: 'pill-summon-stamina',
+      mode: card.summonCostPill?.mode || ('stat' as const),
+      badgeValue: stamVal,
+      badgeColor: card.summonCostPill?.badgeColor || '#D97706',
+      mainText: card.summonCostPill?.mainText || '⚡EST',
+      isSummonCost: true,
+      costResource: 'stamina' as const,
+    };
+  }, [
+    isMagicCard,
+    card.isNeutralMatrix,
+    card.summonCostPill,
+    card.magicManaCost,
+    card.summonStaminaCost,
+  ]);
+
+  const activePills = useMemo(() => {
+    if (isMagicCard) {
+      return [summonPill];
+    }
+    const baseAbilityPills = card.pills.slice(0, abilityPillCount);
+    if (!showSummonSlot) {
+      return baseAbilityPills;
+    }
+    return [...baseAbilityPills, summonPill];
+  }, [isMagicCard, card.pills, abilityPillCount, showSummonSlot, summonPill]);
+
+  const renderedPillCount = Math.max(
+    1,
+    Math.min(5, activePills.length)
+  ) as 1 | 2 | 3 | 4 | 5;
+
+  // Dynamic paths based on 1, 2, 3, 4, or 5 capsules
+  const innerWindowPath = getInnerWindowPath(renderedPillCount, dockAutoFit);
+  const outerFrameCompoundPath = getOuterFrameCompoundPath(renderedPillCount, dockAutoFit);
   const fullBleedPath = getOuterRoundedRectPath(14);
 
   // Pill X positions inside the bottom dock (centered around X = 335)
-  const pillWidth = 103;
+  const pillWidth = renderedPillCount >= 5 ? 86 : 103;
   const pillHeight = 46;
-  const pillGap = 8.5;
+  const pillGap = renderedPillCount >= 5 ? 6.5 : 8.5;
   const pillY = 928;
   const dockCenter = 335;
 
-  const activePills = card.pills.slice(0, pillCount);
-  const totalActiveWidth = pillCount * pillWidth + (pillCount - 1) * pillGap;
+  const totalActiveWidth =
+    renderedPillCount * pillWidth + (renderedPillCount - 1) * pillGap;
   const startX = dockCenter - totalActiveWidth / 2;
 
   // Dynamic vertical spacing & font size for PV chars (y from 500 to 628)
@@ -280,11 +342,11 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
       ? 13.2
       : 14.2;
 
-  // Calculate background fill inside the art cutout
+  // Calculate background fill inside the art cutout (never transparent if no media is present)
   const windowFill =
     card.backgroundFill === 'white'
       ? '#FFFFFF'
-      : card.backgroundFill === 'dark'
+      : card.backgroundFill === 'dark' || (!card.imageUrl && !card.videoUrl)
       ? '#0B0C10'
       : 'none';
 
@@ -369,11 +431,11 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
    * while these Key Lights pulse with chromatic lens flares at different staggered timings.
    */
   const contourKeyLights = useMemo(() => {
-    const pillWidth = 103;
-    const gap = 8.5;
-    const sidePadding = 11.5;
-    const effectiveCount = dockAutoFit ? pillCount : 4;
-    const totalPillsWidth = effectiveCount * pillWidth + (effectiveCount - 1) * gap;
+    const effectiveCount = dockAutoFit ? renderedPillCount : Math.max(4, renderedPillCount);
+    const pw = effectiveCount >= 5 ? 86 : 103;
+    const gap = effectiveCount >= 5 ? 6.5 : 8.5;
+    const sidePadding = effectiveCount >= 5 ? 10.5 : 11.5;
+    const totalPillsWidth = effectiveCount * pw + (effectiveCount - 1) * gap;
     const dockHalfWidth = totalPillsWidth / 2 + sidePadding;
     const dockLeft = Math.round((335 - dockHalfWidth) * 10) / 10;
     const dockRight = Math.round((335 + dockHalfWidth) * 10) / 10;
@@ -390,7 +452,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
       { x: dockLeft + 14, y: 922, delay: 0.3, dur: 2.7, scale: 1.1 },  // Bottom dock left corner key light
       { x: dockRight - 14, y: 922, delay: 1.4, dur: 3.0, scale: 1.1 }, // Bottom dock right corner key light
     ];
-  }, [pillCount, dockAutoFit]);
+  }, [renderedPillCount, dockAutoFit]);
 
   // Exact 1:1 artwork fit by default so no edges of the artwork are ever cropped unless user manually adjusts Zoom/Pos
   const parallaxFactor = card.isPremium ? (card.parallaxDepth ?? 65) / 100 : 0;
@@ -1324,7 +1386,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
           </text>
         </g>
 
-        {/* 8. BOTTOM STAT CAPSULES (Variable 1, 2, 3, or 4 capsules with dynamic font sizing) */}
+        {/* 8. BOTTOM STAT CAPSULES (1..4 Ability Capsules + 5th Summon Cost Capsule, or Mana Summon Capsule in Magic Mode) */}
         <g
           onClick={() => onSelectSection?.('bottom')}
           className={interactive ? 'cursor-pointer' : ''}
@@ -1333,25 +1395,69 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
             const px = startX + index * (pillWidth + pillGap);
             const mainLen = (pill.mainText || '').trim().length;
             const badgeLen = (pill.badgeValue || '').trim().length;
-            const statMainFontSize =
-              mainLen <= 3
-                ? 20.5
+            const isCompact5 = renderedPillCount >= 5;
+            const circleCx = isCompact5 ? 20 : 22;
+            const circleR = isCompact5 ? 15.2 : 16.5;
+            const textCenterX = isCompact5 ? 59 : 67;
+
+            const statMainFontSize = isCompact5
+              ? mainLen <= 3
+                ? 18
                 : mainLen === 4
-                ? 17
+                ? 15
                 : mainLen === 5
-                ? 14
-                : Math.max(10.5, Math.floor(52 / (mainLen * 0.6)));
+                ? 12.5
+                : Math.max(9.5, Math.floor(44 / (mainLen * 0.6)))
+              : mainLen <= 3
+              ? 20.5
+              : mainLen === 4
+              ? 17
+              : mainLen === 5
+              ? 14
+              : Math.max(10.5, Math.floor(52 / (mainLen * 0.6)));
+
             const textModeFontSize =
               mainLen <= 5
-                ? 19
+                ? isCompact5
+                  ? 16.5
+                  : 19
                 : mainLen <= 7
-                ? 15.5
-                : Math.max(10.5, Math.floor(86 / (mainLen * 0.6)));
-            const badgeFontSize = badgeLen <= 1 ? 19 : badgeLen === 2 ? 15.5 : 12.5;
+                ? isCompact5
+                  ? 13.5
+                  : 15.5
+                : Math.max(10, Math.floor((isCompact5 ? 72 : 86) / (mainLen * 0.6)));
+            const badgeFontSize =
+              badgeLen <= 1
+                ? isCompact5
+                  ? 17.5
+                  : 19
+                : badgeLen === 2
+                ? isCompact5
+                  ? 14
+                  : 15.5
+                : 11.5;
+
+            const isSummonSlot = Boolean(pill.isSummonCost);
+            const isManaSummon = isSummonSlot && pill.costResource === 'mana';
+            const capsuleFill = isSummonSlot
+              ? isManaSummon
+                ? '#E0F2FE'
+                : '#FEF3C7'
+              : '#FFFFFF';
+            const capsuleStroke = isSummonSlot
+              ? isManaSummon
+                ? '#0284C7'
+                : '#F59E0B'
+              : 'none';
+            const mainTextColor = isSummonSlot
+              ? isManaSummon
+                ? '#0369A1'
+                : '#92400E'
+              : '#09090B';
 
             return (
               <g key={pill.id} transform={`translate(${px}, ${pillY})`}>
-                {/* White Stadium Capsule */}
+                {/* Stadium Capsule */}
                 <rect
                   x="0"
                   y="0"
@@ -1359,15 +1465,17 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
                   height={pillHeight}
                   rx="23"
                   ry="23"
-                  fill="#FFFFFF"
+                  fill={capsuleFill}
+                  stroke={capsuleStroke}
+                  strokeWidth={isSummonSlot ? 2 : 0}
                 />
 
                 {pill.mode === 'stat' ? (
                   <>
                     <circle
-                      cx="22"
+                      cx={circleCx}
                       cy="23"
-                      r="16.5"
+                      r={circleR}
                       fill={
                         pill.isChromaticSpecial
                           ? `url(#chromatic-badge-grad-${scope})`
@@ -1376,7 +1484,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
                     />
 
                     {pill.isChromaticSpecial ? (
-                      <g transform="translate(22, 23)">
+                      <g transform={`translate(${circleCx}, 23)`}>
                         <path
                           d="M -2.2 -2.2 C -4.8 -4.8, -9.8 -4.5, -9.8 0 C -9.8 4.5, -4.8 4.8, -2.2 2.2 L 2.2 -2.2 C 4.8 -4.8, 9.8 -4.5, 9.8 0 C 9.8 4.5, 4.8 4.8, 2.2 2.2 Z"
                           fill="none"
@@ -1388,7 +1496,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
                       </g>
                     ) : (
                       <text
-                        x="22"
+                        x={circleCx}
                         y={23 + badgeFontSize * 0.35}
                         textAnchor="middle"
                         fill="#FFFFFF"
@@ -1404,10 +1512,10 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
                     )}
 
                     <text
-                      x="67"
+                      x={textCenterX}
                       y={23 + statMainFontSize * 0.36}
                       textAnchor="middle"
-                      fill="#09090B"
+                      fill={mainTextColor}
                       fontSize={statMainFontSize}
                       fontWeight="900"
                       fontStyle="italic"
@@ -1424,7 +1532,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
                     x={pillWidth / 2}
                     y={23 + textModeFontSize * 0.35}
                     textAnchor="middle"
-                    fill="#09090B"
+                    fill={mainTextColor}
                     fontSize={textModeFontSize}
                     fontWeight="900"
                     fontStyle="italic"

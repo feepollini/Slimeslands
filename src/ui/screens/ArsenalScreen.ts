@@ -269,6 +269,20 @@ export class ArsenalScreen {
 
         if (this.activeTab === 'cards') {
             const allCards = this.getCardsList();
+            if (allCards.length === 0) {
+                return `
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 48px 20px; text-align:center; color:#94a3b8; gap:16px;">
+                        <div style="font-size:3rem;">🎴</div>
+                        <div style="font-size:1.15rem; font-weight:900; color:#f1f5f9;">Nenhuma Carta Criada na Matriz</div>
+                        <div style="font-size:0.82rem; max-width:440px; color:#cbd5e1; line-height:1.5;">
+                            Os presets antigos foram desativados para manter coesão com a Forja e a Galeria de Decks. Acesse a <strong>Forja Matriz</strong> para criar seus slimes e magias ou monte seus decks na <strong>Galeria de Decks</strong>!
+                        </div>
+                        <button onclick="window.location.href='forge.html'" style="margin-top:8px; padding:10px 24px; background:linear-gradient(135deg, #7928ca, #ff0080); color:#fff; border:none; border-radius:9999px; font-weight:900; font-size:0.85rem; cursor:pointer; box-shadow:0 4px 15px rgba(255,0,128,0.35);">
+                            ✨ ABRIR FORJA MATRIZ
+                        </button>
+                    </div>
+                `;
+            }
             let filtered = allCards.filter(t => t.name.toLowerCase().includes(q));
             if (this.rarityFilter !== 'all') {
                 filtered = filtered.filter(t => (t.preferredRarity || 'common') === this.rarityFilter);

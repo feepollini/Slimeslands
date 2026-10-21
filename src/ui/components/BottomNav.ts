@@ -19,7 +19,8 @@ export class BottomNav {
     public render(): string {
         return `
             <div class="menu-bottom-nav" style="position: absolute; bottom: 45px; left: 50%; transform: translateX(-50%); z-index: 1000; pointer-events: none; display: flex; align-items: center; justify-content: center;">
-                <div class="nav-pill-container" id="nav-pill" style="display: flex; align-items: center; width: fit-content; height: 54px; padding: 6px; gap: 6px; border-radius: 26px; border: 3px solid #140d05; background: linear-gradient(180deg, #6b4e2e 0%, #4a351e 14%, #2c1f11 60%, #191007 100%); box-shadow: 0 6px 0 rgba(0,0,0,0.55), 0 14px 34px rgba(0,0,0,0.75), inset 0 2px 0 rgba(255,236,190,0.4), inset 0 -3px 0 rgba(0,0,0,0.55); pointer-events: auto; overflow: visible; white-space: nowrap;">
+                <!-- BARRA RETRATO ORIGINAL -->
+                <div class="nav-pill-container portrait-only-nav" id="nav-pill" style="display: flex; align-items: center; width: fit-content; height: 54px; padding: 6px; gap: 6px; border-radius: 26px; border: 3px solid #140d05; background: linear-gradient(180deg, #6b4e2e 0%, #4a351e 14%, #2c1f11 60%, #191007 100%); box-shadow: 0 6px 0 rgba(0,0,0,0.55), 0 14px 34px rgba(0,0,0,0.75), inset 0 2px 0 rgba(255,236,190,0.4), inset 0 -3px 0 rgba(0,0,0,0.55); pointer-events: auto; overflow: visible; white-space: nowrap;">
                     <div class="nav-pill-segment" data-tab="arsenal" style="display: flex; align-items: center; cursor: pointer; border-radius: 100px; height: 40px; width: 40px; min-width: 40px; overflow: hidden; transition: 0.3s; flex: 0 0 auto; position: relative;">
                         <div class="nav-fx-overlay" style="position: absolute; inset: 0; pointer-events: none; z-index: 10; border-radius: inherit; transition: 0.3s;"></div>
                         <div class="nav-icon-container" style="width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -61,6 +62,30 @@ export class BottomNav {
                         </div>
                         <span class="nav-label coc-side-label" style="font-size: 0.72rem; font-weight: 950; letter-spacing: 1.2px; color: #fff; padding-right: 16px; display: none; opacity: 0;">${t('nav.store')}</span>
                     </div>
+                </div>
+
+                <!-- BARRA PAISAGEM CENTRAL (ESTILO WILD RIFT / MOBILE LEGENDS — LADO A LADO COM TELA DESLIZANTE) -->
+                <div class="landscape-only-nav" id="nav-pill-landscape" style="pointer-events: auto;">
+                    <button class="ls-nav-item" data-ls-tab="arsenal">
+                        <span class="ls-nav-icon">🃏</span>
+                        <span class="ls-nav-text">${t('nav.deck')}</span>
+                    </button>
+                    <button class="ls-nav-item" data-ls-tab="map">
+                        <span class="ls-nav-icon">🗺️</span>
+                        <span class="ls-nav-text">${t('nav.map')}</span>
+                    </button>
+                    <button class="ls-nav-item ls-nav-battle-center active" data-ls-tab="battle" id="ls-seg-battle">
+                        <span class="ls-nav-icon">⚔️</span>
+                        <span class="ls-nav-text" id="ls-battle-label">${t('nav.battle')}</span>
+                    </button>
+                    <button class="ls-nav-item" data-ls-tab="academy">
+                        <span class="ls-nav-icon">🎓</span>
+                        <span class="ls-nav-text">${t('nav.academy')}</span>
+                    </button>
+                    <button class="ls-nav-item" data-ls-tab="store">
+                        <span class="ls-nav-icon">💎</span>
+                        <span class="ls-nav-text">${t('nav.store')}</span>
+                    </button>
                 </div>
             </div>
             <style>
@@ -310,6 +335,58 @@ export class BottomNav {
         window.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
         window.addEventListener('mouseup', onEnd);
         window.addEventListener('touchend', onEnd);
+
+        // Bind Landscape 5-button side-by-side dock
+        const lsPill = document.getElementById('nav-pill-landscape');
+        if (lsPill) {
+            const lsItems = lsPill.querySelectorAll('.ls-nav-item');
+            lsItems.forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const tab = (btn as HTMLElement).dataset.lsTab as TabId;
+                    if (tab === 'battle') {
+                        if (this.currentTab !== 'battle') {
+                            SoundManager.playAction('clique_geral', 0.5);
+                            this.onTabSwitch('battle');
+                        } else if (!this.isPrepMode) {
+                            SoundManager.playAction('clique_geral', 0.6);
+                            this.onTabSwitch('battle');
+                        } else {
+                            SoundManager.playAction('clique_geral', 0.6);
+                            this.onPrepConfirm();
+                        }
+                    } else {
+                        SoundManager.playAction('clique_geral', 0.5);
+                        this.onTabSwitch(tab);
+                    }
+                });
+            });
+
+            // Horizontal drag/swipe on Landscape dock to slide side-by-side
+            let lsStartX = 0;
+            let lsDragging = false;
+            const lsTabsOrder: TabId[] = ['arsenal', 'map', 'battle', 'academy', 'store'];
+            lsPill.addEventListener('mousedown', (e) => { lsStartX = e.clientX; lsDragging = true; });
+            lsPill.addEventListener('touchstart', (e) => { lsStartX = e.touches[0].clientX; lsDragging = true; }, { passive: true });
+            window.addEventListener('mousemove', (e) => {
+                if (!lsDragging) return;
+                const dx = e.clientX - lsStartX;
+                if (Math.abs(dx) > 65) {
+                    const idx = lsTabsOrder.indexOf(this.currentTab);
+                    if (idx !== -1) {
+                        if (dx < 0 && idx < lsTabsOrder.length - 1) {
+                            this.onTabSwitch(lsTabsOrder[idx + 1]);
+                            lsDragging = false;
+                        } else if (dx > 0 && idx > 0) {
+                            this.onTabSwitch(lsTabsOrder[idx - 1]);
+                            lsDragging = false;
+                        }
+                    }
+                }
+            });
+            window.addEventListener('mouseup', () => { lsDragging = false; });
+            window.addEventListener('touchend', () => { lsDragging = false; });
+        }
     }
 
     public update(tab: TabId, isPrepMode: boolean) {
@@ -320,7 +397,25 @@ export class BottomNav {
         const segments = document.querySelectorAll('.nav-pill-segment');
         const pillContainer = document.getElementById('nav-pill');
         if (pillContainer) {
-            pillContainer.style.display = tab === 'settings' ? 'none' : 'flex';
+            pillContainer.style.display = tab === 'settings' ? 'none' : '';
+        }
+
+        // Atualiza barra horizontal 5 botões do Modo Paisagem
+        const lsPill = document.getElementById('nav-pill-landscape');
+        if (lsPill) {
+            lsPill.style.display = tab === 'settings' ? 'none' : '';
+            const lsBattleLabel = document.getElementById('ls-battle-label');
+            if (lsBattleLabel) {
+                lsBattleLabel.textContent = isPrepMode ? t('nav.start') : t('nav.battle');
+            }
+            lsPill.querySelectorAll('.ls-nav-item').forEach((el) => {
+                const btn = el as HTMLElement;
+                const isAct = btn.dataset.lsTab === tab || (isPrepMode && btn.dataset.lsTab === 'battle');
+                btn.classList.toggle('active', isAct);
+                if (btn.dataset.lsTab === 'battle') {
+                    btn.classList.toggle('prep-mode', isPrepMode);
+                }
+            });
         }
         
         segments.forEach((seg) => {

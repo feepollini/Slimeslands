@@ -53,6 +53,12 @@ export interface CharacterAbilityTemplate {
   unlockPriority: 1 | 2 | 3 | 4;
   canBeFreeInMythic?: boolean;
   isProvisional?: boolean;
+  attackType?: 'damage' | 'enchantment';
+  enchantmentId?: string;
+  enchantmentValue?: number;
+  enchantmentTurns?: number;
+  vfxId?: string;
+  costResource?: 'stamina' | 'mana';
 }
 
 export interface BaseCharacter {
@@ -95,6 +101,12 @@ export interface GeneratedAbilityInstance {
   parryStaminaCost: number; // manaCost * 0.5
   specialEffect?: string;
   unlockOrder: number;
+  attackType?: 'damage' | 'enchantment';
+  enchantmentId?: string;
+  enchantmentValue?: number;
+  enchantmentTurns?: number;
+  vfxId?: string;
+  costResource?: 'stamina' | 'mana';
 }
 
 export interface RankBalanceRule {

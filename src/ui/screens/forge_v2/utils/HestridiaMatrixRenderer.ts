@@ -10,6 +10,8 @@ import {
   saveGameMatrixSnapshot,
   SlimelandsGameMatrixSnapshot,
 } from '../../../../card_studio/src/utils/matrixPersistence';
+import { ENCHANTMENT_REGISTRY } from '../../../../core/enchantments';
+import { getDefaultVfxForSlot } from '../../../../card_studio/src/utils/forgeAbilitiesCatalog';
 
 const SNAPSHOT_STORAGE_KEY = 'slimelands_active_matrix_v1';
 
@@ -54,16 +56,51 @@ if (typeof window !== 'undefined') {
   });
 }
 
+function resolveValidCardImageUrl(cardOrRaw: any): string {
+  const candidate =
+    cardOrRaw?.imageUrl ||
+    cardOrRaw?.image ||
+    cardOrRaw?.cardData?.imageUrl ||
+    cardOrRaw?.matrixCard?.imageUrl ||
+    '';
+  if (
+    typeof candidate === 'string' &&
+    candidate.trim().length > 0 &&
+    !candidate.includes('Slime_no_Jardim_de_Outono.png')
+  ) {
+    return candidate;
+  }
+  const idAndName = `${cardOrRaw?.id || ''} ${cardOrRaw?.baseCharacterId || ''} ${cardOrRaw?.title || ''} ${cardOrRaw?.name || ''} ${cardOrRaw?.elementText || ''} ${cardOrRaw?.element || ''}`.toUpperCase();
+  if (idAndName.includes('LUMYS') || idAndName.includes('ARCANO')) {
+    return '/cards/Slime_lavanda_tocando_instrumento_m_gico-17.png';
+  }
+  if (idAndName.includes('KAELEN') || idAndName.includes('AGUA') || idAndName.includes('ABISS')) {
+    return '/cards/Slime_oce_nico_surfando_na_concha-7.png';
+  }
+  if (idAndName.includes('IGNIS') || idAndName.includes('FOGO') || idAndName.includes('MAGMA') || idAndName.includes('VULC')) {
+    return '/cards/Slime_de_Fogo_em_Investida_Explosiva.png';
+  }
+  if (idAndName.includes('VENENO') || idAndName.includes('TOXIC')) {
+    return '/cards/Slime_violeta_lan_a_espiral_venenosa-3.png';
+  }
+  if (idAndName.includes('ESCUDO') || idAndName.includes('VISCOSIDADE')) {
+    return '/cards/Cavaleiro_slime_prateado_bloqueia_o_golpe-16.png';
+  }
+  if (idAndName.includes('CONVERG') || idAndName.includes('ESTELAR') || idAndName.includes('MAGIA')) {
+    return '/cards/Slime_astronauta_no_campo_de_asteroides-14.png';
+  }
+  return '/cards/Slime_Zen_no_Santu_rio_Florestal.png';
+}
+
 export function convertMatrixCardToGameTemplate(cd: CardData): any {
-  const p1 = cd.pills?.[0];
-  const p2 = cd.pills?.[1];
-  const p3 = cd.pills?.[2];
-  const p4 = cd.pills?.[3];
-  const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, '')) || 400;
-  const atk1 = parseInt(p1?.mainText || '200') || 200;
-  const atk2 = parseInt(p2?.mainText || '350') || 350;
-  const atk3 = parseInt(p3?.mainText || '500') || 500;
-  const ultiDmg = parseInt(p4?.mainText || '650') || 650;
+  const isMagicCard = cd.entityType === 'Magia';
+  const basePv = cd.pvNumber || parseInt((cd.pvText || '').replace(/\D/g, ''), 10) || 400;
+  const resolvedImage = resolveValidCardImageUrl(cd);
+  const hydratedCd: CardData = {
+    ...cd,
+    imageUrl: resolvedImage,
+    backgroundFill: cd.backgroundFill === 'transparent' ? 'dark' : (cd.backgroundFill || 'dark'),
+  };
 
   const clsLower = (cd.cardClass || '').toLowerCase();
   const rankUpper = (cd.cardRank || cd.rankBadgeText || '').toUpperCase();
@@ -92,12 +129,103 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
   }
 
   const genAbilities = cd.generatedAbilities || [];
+  const pillCount = isMagicCard
+    ? 0
+    : Math.max(1, Math.min(4, cd.pillCount || genAbilities.length || 4));
+
+  const realAttacks: any[] = [];
+  for (let idx = 0; idx < pillCount; idx++) {
+    const pill = cd.pills?.[idx];
+    const genAb = genAbilities[idx];
+    const isChromatic = Boolean(
+      pill?.isChromaticSpecial || pill?.badgeValue === '∞' || genAb?.isFree
+    );
+    const encId = pill?.enchantmentId || genAb?.enchantmentId;
+    const encDef = encId ? ENCHANTMENT_REGISTRY.find((e) => e.id === encId) : undefined;
+    const attackType: 'damage' | 'enchantment' =
+      pill?.attackType || genAb?.attackType || 'damage';
+
+    const rawDmg = parseInt((pill?.mainText || '').replace(/\D/g, ''), 10);
+    const damage =
+      attackType === 'enchantment'
+        ? encDef?.defaultValue || 0
+        : !isNaN(rawDmg) && rawDmg > 0
+        ? rawDmg
+        : genAb?.damage || (idx + 1) * 200;
+
+    const rawCost = parseInt((pill?.badgeValue || '').replace(/\D/g, ''), 10);
+    const cost = isChromatic
+      ? 0
+      : !isNaN(rawCost)
+      ? rawCost
+      : genAb?.manaCost ?? idx + 1;
+
+    const costType: 'stamina' | 'mana' =
+      pill?.costResource || genAb?.costResource || (idx >= 2 ? 'mana' : 'stamina');
+
+    const vfxId =
+      pill?.vfxId ||
+      genAb?.vfxId ||
+      getDefaultVfxForSlot(idx, attackType === 'enchantment' || Boolean(encDef));
+
+    const defaultAttackTitle =
+      idx === 0
+        ? 'GOLPE BÁSICO'
+        : idx === 1
+        ? 'INVESTIDA ELEMENTAL'
+        : idx === 2
+        ? 'EXPLOSÃO DE NÚCLEO'
+        : 'SUPREMACIA ANCESTRAL';
+
+    const name =
+      pill?.attackName ||
+      genAb?.name ||
+      (attackType === 'enchantment' && encDef ? encDef.name : defaultAttackTitle);
+
+    realAttacks.push({
+      type: attackType,
+      name,
+      damage,
+      cost,
+      costType,
+      isFreeChromatic: isChromatic,
+      vfxId,
+      description: genAb?.description || encDef?.description || '',
+      ...(encDef
+        ? {
+            enchantment: {
+              id: encDef.id,
+              value:
+                pill?.enchantmentValue ??
+                genAb?.enchantmentValue ??
+                encDef.defaultValue,
+              turns:
+                pill?.enchantmentTurns ??
+                genAb?.enchantmentTurns ??
+                encDef.defaultTurns,
+            },
+          }
+        : {}),
+    });
+  }
+
+  // Summon Cost from 5th slot (Stamina for Creatures, Mana for Magic Cards)
+  const rawSummonBadge = parseInt(
+    (cd.summonCostPill?.badgeValue || '').replace(/\D/g, ''),
+    10
+  );
+  const summonCostVal = isMagicCard
+    ? cd.magicManaCost ?? (!isNaN(rawSummonBadge) ? rawSummonBadge : 3)
+    : cd.summonStaminaCost ?? (!isNaN(rawSummonBadge) ? rawSummonBadge : 2);
+
+  const atk1 = realAttacks[0]?.damage || 200;
+  const fourthAttack = realAttacks.length >= 4 ? realAttacks[3] : null;
 
   return {
     id: cd.id,
     name: cd.title,
-    image: cd.imageUrl || '',
-    imageUrl: cd.imageUrl || '',
+    image: resolvedImage,
+    imageUrl: resolvedImage,
     animationUrl: cd.videoUrl || undefined,
     cardBack: cd.backImageUrl || undefined,
     baseAtk: atk1,
@@ -105,56 +233,43 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     basePv: basePv,
     pv: basePv,
     maxPv: basePv,
-    manaCost: cd.summonStaminaCost || 2,
-    staminaCost: cd.summonStaminaCost || 2,
+    manaCost: summonCostVal,
+    staminaCost: summonCostVal,
+    summonCostResource: isMagicCard ? 'mana' : 'stamina',
+    entityType: cd.entityType || 'Criatura',
     preferredRarity,
     rarity: preferredRarity,
     classId: (cd.elementText || 'FERRO').toLowerCase(),
+    abilityId: cd.linkedPassiveId || 'none',
+    linkedActiveSkillId: cd.linkedActiveSkillId,
     flavorText: cd.loreBody,
     deckId: cd.deckId,
     family: cd.family,
     biome: cd.biome,
     collections: cd.collections,
-    attacks: [
-      {
-        name: genAbilities[0]?.name || 'GOLPE 1',
-        damage: atk1,
-        cost: parseInt(p1?.badgeValue || '1') || 1,
-        costType: 'stamina',
-        description: genAbilities[0]?.description || '',
-      },
-      {
-        name: genAbilities[1]?.name || 'GOLPE 2',
-        damage: atk2,
-        cost: parseInt(p2?.badgeValue || '2') || 2,
-        costType: 'stamina',
-        description: genAbilities[1]?.description || '',
-      },
-      {
-        name: genAbilities[2]?.name || 'GOLPE 3',
-        damage: atk3,
-        cost: parseInt(p3?.badgeValue || '3') || 3,
-        costType: 'mana',
-        description: genAbilities[2]?.description || '',
-      },
-    ],
-    specialAttack: {
-      name: cd.magicPrefix || genAbilities[3]?.name || 'GOLPE FINAL',
-      damage: ultiDmg,
-      cost: 0,
-      costType: 'mana',
-      description: cd.magicDescription || genAbilities[3]?.description || '',
-    },
-    cardData: cd,
-    matrixCard: cd,
+    pillCount,
+    attacks: realAttacks,
+    specialAttack: fourthAttack
+      ? {
+          name: fourthAttack.name,
+          damage: fourthAttack.damage,
+          cost: fourthAttack.cost,
+          costType: fourthAttack.costType,
+          vfxId: fourthAttack.vfxId,
+          videoUrl: cd.videoUrl || undefined,
+          description: cd.magicDescription || fourthAttack.description || '',
+          isFreeChromatic: fourthAttack.isFreeChromatic,
+          enchantment: fourthAttack.enchantment,
+          type: fourthAttack.type,
+        }
+      : undefined,
+    cardData: hydratedCd,
+    matrixCard: hydratedCd,
   };
 }
 
 function extractUniqueMatrixCards(snapshot: SlimelandsGameMatrixSnapshot | null): CardData[] {
-  if (!snapshot) {
-    return [...INITIAL_CARDS];
-  }
-  if (snapshot.isLibraryCleared) {
+  if (!snapshot || snapshot.isLibraryCleared) {
     return [];
   }
   const combined: CardData[] = [];
@@ -177,30 +292,123 @@ function extractUniqueMatrixCards(snapshot: SlimelandsGameMatrixSnapshot | null)
   if (Array.isArray(snapshot.playerInventory)) {
     snapshot.playerInventory.forEach(addCard);
   }
-  if (combined.length === 0 && !snapshot.isLibraryCleared) {
-    INITIAL_CARDS.forEach(addCard);
-  }
+  // Presets removidos: não injetamos INITIAL_CARDS de fábrica
   return combined;
 }
 
 function mergeWithBaseTemplates(
   matrixCards: CardData[],
-  baseTemplates: any[] = [],
+  _baseTemplates: any[] = [],
   isLibraryCleared: boolean = false
 ): any[] {
   if (isLibraryCleared) return [];
   const matrixConverted = matrixCards.map(convertMatrixCardToGameTemplate);
-  const idSet = new Set(matrixConverted.map((c) => c.id));
-  const nameSet = new Set(
-    matrixConverted.map((c) => String(c.name || '').trim().toLowerCase())
-  );
-  const filteredBase = (baseTemplates || []).filter(
-    (b) =>
-      b &&
-      !idSet.has(b.id) &&
-      !nameSet.has(String(b.name || '').trim().toLowerCase())
-  );
-  return [...matrixConverted, ...filteredBase];
+  // Presets de cartas removidos conforme solicitado: retornamos estritamente as cartas criadas na Matriz.
+  return matrixConverted;
+}
+
+export interface CustomDeckData {
+  id: string;
+  name: string;
+  archetype: string;
+  accentColor: string;
+  cards: string[]; // IDs ou nomes de cartas da matriz
+  artifacts: string[]; // 3 IDs de artefatos
+  board: string;
+  isActive?: boolean;
+  isAvailable?: boolean; // ON / OFF: Disponível nos menus do jogo (Mobby Duelos, Boosters, Loja, etc.)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+const CUSTOM_DECKS_STORAGE_KEY = 'slimelands_custom_decks_v1';
+
+export function getCustomDecks(): CustomDeckData[] {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_DECKS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  const defaultDeck: CustomDeckData = {
+    id: 'deck_main_1',
+    name: 'Deck 1 (Principal)',
+    archetype: 'Guerreiro',
+    accentColor: '#10B981',
+    cards: [],
+    artifacts: ['art_escudo', 'art_golpe', 'art_queimadura'],
+    board: 'floresta',
+    isActive: true,
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  saveCustomDecks([defaultDeck]);
+  return [defaultDeck];
+}
+
+export function saveCustomDecks(decks: CustomDeckData[]): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(CUSTOM_DECKS_STORAGE_KEY, JSON.stringify(decks));
+    window.dispatchEvent(new CustomEvent('slimelands:decks-updated', { detail: decks }));
+  } catch {}
+}
+
+export function getAvailableCustomDecks(): CustomDeckData[] {
+  return getCustomDecks().filter((d) => d.isAvailable !== false);
+}
+
+export function toggleDeckAvailability(deckId: string): boolean {
+  const decks = getCustomDecks();
+  let nextState = true;
+  const updated = decks.map((d) => {
+    if (d.id === deckId) {
+      const current = d.isAvailable !== false;
+      nextState = !current;
+      return { ...d, isAvailable: nextState, updatedAt: new Date().toISOString() };
+    }
+    return d;
+  });
+  saveCustomDecks(updated);
+  return nextState;
+}
+
+export function getActiveCustomDeck(): CustomDeckData | null {
+  const decks = getCustomDecks();
+  const available = decks.filter((d) => d.isAvailable !== false);
+  const active = available.find((d) => d.isActive);
+  return active || available[0] || decks[0] || null;
+}
+
+export function setActiveCustomDeck(deckId: string): void {
+  const decks = getCustomDecks();
+  let selectedDeck: CustomDeckData | null = null;
+  const updated = decks.map((d) => {
+    const isActive = d.id === deckId;
+    if (isActive) selectedDeck = d;
+    return { ...d, isActive };
+  });
+  saveCustomDecks(updated);
+  if (selectedDeck) {
+    syncActiveDeckWithArsenal(selectedDeck);
+  }
+}
+
+export function syncActiveDeckWithArsenal(deck: CustomDeckData): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    const data = {
+      cards: deck.cards,
+      artifacts: deck.artifacts,
+      board: deck.board
+    };
+    window.localStorage.setItem('arsenal_predeck', JSON.stringify(data));
+    window.localStorage.setItem('arsenal_predeck_s1', JSON.stringify(data));
+    window.localStorage.setItem('forge_active_deck_id', deck.id);
+  } catch {}
 }
 
 export function getMergedGameTemplatesSync(baseTemplates: any[] = []): any[] {
@@ -417,21 +625,50 @@ export function toMatrixCardData(raw: any): CardData {
     }
   ];
 
+  const isMagicCard = raw.entityType === 'Magia';
+  const isItemCard = raw.entityType === 'Item';
+  const summonCostPill: BottomStatPill =
+    raw.summonCostPill ||
+    (isMagicCard
+      ? {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: String(raw.magicManaCost ?? manaCost),
+          badgeColor: '#0084FF',
+          mainText: 'MANA',
+          isSummonCost: true,
+          costResource: 'mana',
+        }
+      : {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: String(raw.summonStaminaCost ?? staminaCost),
+          badgeColor: '#F59E0B',
+          mainText: 'INVOC.',
+          isSummonCost: true,
+          costResource: 'stamina',
+        });
+
   return {
     id: String(raw.id || `card-${Date.now()}`),
     title: name,
-    pvText: `PV${pvNum}`,
+    pvText: isItemCard ? 'ITEM' : `PV${pvNum}`,
     elementText: (raw.classId || raw.element || 'FERRO').toUpperCase().slice(0, 8),
     rankBadgeText,
     loreHeader: raw.loreHeader || name,
     loreBody: raw.loreBody || raw.flavorText || 'Forjada nas névoas eternas de Hestridia.',
     magicPrefix: raw.magicPrefix || (raw.abilityId ? `✨ Habilidade: ${raw.abilityId}` : '⚔️ Golpe Especial'),
     magicDescription: raw.magicDescription || (raw.specialAttack?.description || 'Libera a fúria ancestral do inverno.'),
+    magicAbilityKind: raw.magicAbilityKind || (isMagicCard ? 'passive' : undefined),
+    linkedPassiveId: raw.linkedPassiveId || raw.abilityId,
+    linkedActiveSkillId: raw.linkedActiveSkillId || raw.skillId,
     showLoreBox: raw.showLoreBox ?? true,
     loreBoxOpacity: raw.loreBoxOpacity ?? 88,
     loreBoxY: raw.loreBoxY ?? 724,
-    pillCount: (raw.pillCount || 4) as 1 | 2 | 3 | 4,
+    pillCount: (isMagicCard ? 1 : (raw.pillCount || 4)) as 1 | 2 | 3 | 4,
     dockAutoFit: raw.dockAutoFit ?? true,
+    showSummonCostPill: raw.showSummonCostPill ?? !isItemCard,
+    summonCostPill,
     pills,
     imageUrl: raw.imageUrl || raw.image || null,
     videoUrl: raw.videoUrl || null,
@@ -462,7 +699,11 @@ export function toMatrixCardData(raw: any): CardData {
     invertElementCapsule: raw.invertElementCapsule ?? true,
     showcaseVfx: raw.showcaseVfx || 'none',
     showcaseVfxIntensity: raw.showcaseVfxIntensity ?? 80,
-    backImageUrl: raw.backImageUrl || raw.cardBack || null
+    backImageUrl: raw.backImageUrl || raw.cardBack || null,
+    entityType: isMagicCard ? 'Magia' : isItemCard ? 'Item' : 'Criatura',
+    pvNumber: pvNum,
+    summonStaminaCost: isMagicCard ? undefined : (raw.summonStaminaCost ?? staminaCost),
+    magicManaCost: isMagicCard ? (raw.magicManaCost ?? manaCost) : undefined,
   };
 }
 
@@ -496,10 +737,13 @@ export function renderMatrixCardSVG(cardInput: any, opts: MatrixRenderOptions = 
  */
 export function renderMatrixCardBackSVG(cardInput?: any): string {
   const card = toMatrixCardData(cardInput || {});
+  scopeCounter++;
+  const uniqueScope = `back-${card.id}-${scopeCounter}`;
   try {
     return renderToStaticMarkup(
       React.createElement(CardBackSVG, {
-        card
+        card,
+        idScope: uniqueScope,
       })
     );
   } catch (err) {

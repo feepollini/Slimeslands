@@ -162,44 +162,44 @@ export class BoardScreen {
 
   public renderDifficultyScreen(): string {
     return `
-      <div class="startup-screen difficulty-phase" style="background:#050505; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:35px; padding:48px 0 0 0; position:relative;">
+      <div class="startup-screen difficulty-phase" style="background:#050505; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(14px, 2.5dvh, 28px); padding:clamp(28px, 5dvh, 44px) 0 12px 0; position:relative;">
         <button id="btn-diff-back" style="position:absolute; top:14px; left:14px; z-index:50; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:3px solid #0e0903; color:#ffe9a8; padding:8px 15px; border-radius:10px; font-weight:900; font-size:0.6rem; letter-spacing:1px; cursor:pointer; box-shadow:0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35); text-shadow:0 2px 0 #000;">⟨ ${t('board.back')}</button>
         <!-- Atmosphere Glow -->
         <div style="position:absolute; inset:0; background:radial-gradient(circle at center, rgba(212,175,55,0.05) 0%, transparent 70%);"></div>
         <div id="er-particles-diff" style="position:absolute; inset:0; pointer-events:none; overflow:hidden;"></div>
 
-        <div id="diff-title-wrap" style="text-align:center; position:relative; z-index:10; opacity:0; transform:translateY(20px); width:100%; max-width:100%; padding:0 24px; box-sizing:border-box;">
-           <h1 style="font-family:'Cinzel', serif; font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight:900; letter-spacing:6px; color:#ffd76a; margin:0; text-transform:uppercase; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6), 0 0 22px rgba(212,175,55,0.4); line-height:1.2;">${t('board.destiny')}</h1>
-           <div style="width:100%; height:1px; background:radial-gradient(circle, #d4af37 0%, transparent 100%); opacity:0.3; margin-top:15px;"></div>
+        <div id="diff-title-wrap" style="text-align:center; position:relative; z-index:10; opacity:0; transform:translateY(20px); width:100%; max-width:100%; padding:0 20px; box-sizing:border-box;">
+           <h1 style="font-family:'Cinzel', serif; font-size: clamp(1.15rem, 3.2dvh, 1.85rem); font-weight:900; letter-spacing:5px; color:#ffd76a; margin:0; text-transform:uppercase; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6), 0 0 22px rgba(212,175,55,0.4); line-height:1.2;">${t('board.destiny')}</h1>
+           <div style="width:100%; height:1px; background:radial-gradient(circle, #d4af37 0%, transparent 100%); opacity:0.3; margin-top:10px;"></div>
         </div>
 
         <div style="display:flex; flex-direction:column; gap:0; width:100%; max-width:640px; position:relative; z-index:10; opacity:0; transform:translateY(30px);" id="difficulty-options">
           <div style="position:relative;">
-            <button class="diff-btn facile" data-diff="easy" style="border:none; cursor:pointer; padding:34px 20px 34px 20px; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(12,18,14,0.74), rgba(8,12,9,0.8)), url('/cards/Slime_explorador_deslizando_na_neve-18.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
-              <span style="color:#ffe9a8; font-size:1rem; letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.easy')}</span>
-              <span style="color:rgba(255,255,255,0.6); font-size:0.66rem; letter-spacing:1px; font-style:italic;">${t('board.easyDesc')}</span>
-              <div style="margin-top:6px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:4px 20px; font-size:0.6rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierEasy')}</div>
+            <button class="diff-btn facile" data-diff="easy" style="border:none; cursor:pointer; padding:clamp(18px, 3dvh, 30px) 16px; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(12,18,14,0.74), rgba(8,12,9,0.8)), url('/cards/Slime_explorador_deslizando_na_neve-18.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
+              <span style="color:#ffe9a8; font-size:clamp(0.85rem, 2dvh, 1rem); letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.easy')}</span>
+              <span style="color:rgba(255,255,255,0.6); font-size:0.62rem; letter-spacing:1px; font-style:italic;">${t('board.easyDesc')}</span>
+              <div style="margin-top:4px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:3px 16px; font-size:0.56rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierEasy')}</div>
             </button>
           </div>
 
-          <div style="position:relative; margin-top:-20px;">
-            <button class="diff-btn normal" data-diff="medium" style="border:none; cursor:pointer; padding:34px 20px 34px 20px; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(16,14,8,0.74), rgba(10,8,5,0.8)), url('/cards/Slime_Zen_no_Santu_rio_Florestal.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
-              <span style="color:#ffe9a8; font-size:1rem; letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.mid')}</span>
-              <span style="color:rgba(255,255,255,0.6); font-size:0.66rem; letter-spacing:1px; font-style:italic;">${t('board.midDesc')}</span>
-              <div style="margin-top:6px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:4px 20px; font-size:0.6rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierMid')}</div>
+          <div style="position:relative; margin-top:-16px;">
+            <button class="diff-btn normal" data-diff="medium" style="border:none; cursor:pointer; padding:clamp(18px, 3dvh, 30px) 16px; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(16,14,8,0.74), rgba(10,8,5,0.8)), url('/cards/Slime_Zen_no_Santu_rio_Florestal.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
+              <span style="color:#ffe9a8; font-size:clamp(0.85rem, 2dvh, 1rem); letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.mid')}</span>
+              <span style="color:rgba(255,255,255,0.6); font-size:0.62rem; letter-spacing:1px; font-style:italic;">${t('board.midDesc')}</span>
+              <div style="margin-top:4px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:3px 16px; font-size:0.56rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierMid')}</div>
             </button>
           </div>
 
-          <div style="position:relative; margin-top:-20px;">
-            <button class="diff-btn hard" data-diff="hard" style="border:none; cursor:pointer; padding:34px 20px 34px 20px; display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(22,10,12,0.74), rgba(12,6,7,0.8)), url('/cards/Slime_de_Fogo_em_Investida_Explosiva.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
-              <span style="color:#ffe9a8; font-size:1rem; letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.hard')}</span>
-              <span style="color:rgba(255,255,255,0.6); font-size:0.66rem; letter-spacing:1px; font-style:italic;">${t('board.hardDesc')}</span>
-              <div style="margin-top:6px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:4px 20px; font-size:0.6rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierHard')}</div>
+          <div style="position:relative; margin-top:-16px;">
+            <button class="diff-btn hard" data-diff="hard" style="border:none; cursor:pointer; padding:clamp(18px, 3dvh, 30px) 16px; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; font-family:'Cinzel',serif; color:#fff; background:linear-gradient(rgba(22,10,12,0.74), rgba(12,6,7,0.8)), url('/cards/Slime_de_Fogo_em_Investida_Explosiva.png') center/cover; box-shadow:inset 0 3px 0 rgba(255,236,190,0.2), inset 0 -4px 0 rgba(0,0,0,0.55); clip-path:polygon(0 7%, 100% 0, 100% 93%, 0 100%);">
+              <span style="color:#ffe9a8; font-size:clamp(0.85rem, 2dvh, 1rem); letter-spacing:4px; font-weight:900; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${t('board.hard')}</span>
+              <span style="color:rgba(255,255,255,0.6); font-size:0.62rem; letter-spacing:1px; font-style:italic;">${t('board.hardDesc')}</span>
+              <div style="margin-top:4px; background:linear-gradient(180deg, #5a4128, #2a1c0d); border:2px solid #d4af37; border-radius:10px; padding:3px 16px; font-size:0.56rem; font-weight:950; letter-spacing:3px; text-indent:3px; color:#ffe9a8; text-shadow:0 1px 0 #000; box-shadow:0 3px 0 rgba(0,0,0,0.5);">${t('board.tierHard')}</div>
             </button>
           </div>
         </div>
 
-        <button id="btn-confirm-diff" style="opacity:0; pointer-events:none; transform:translateY(10px); margin-top:26px; position:relative; z-index:10; font-family:'Cinzel',serif; font-weight:950; font-size:0.85rem; letter-spacing:3px; color:#0f1f00; padding:14px 54px; border-radius:16px; border:3px solid #0e1f00; cursor:pointer; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">✓ ${t('board.confirmGo')}</button>
+        <button id="btn-confirm-diff" style="opacity:0; pointer-events:none; transform:translateY(10px); margin-top:8px; position:relative; z-index:10; font-family:'Cinzel',serif; font-weight:950; font-size:0.8rem; letter-spacing:3px; color:#0f1f00; padding:12px 44px; border-radius:16px; border:3px solid #0e1f00; cursor:pointer; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">✓ ${t('board.confirmGo')}</button>
 
         <style>
           .diff-btn { transition: transform 0.25s ease, filter 0.25s ease; }

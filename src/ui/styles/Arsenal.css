@@ -198,7 +198,7 @@
 
 .ars-card-slot {
     width: 100%;
-    min-width: 50px;
+    min-width: 0;
     aspect-ratio: 680 / 990;
 }
 

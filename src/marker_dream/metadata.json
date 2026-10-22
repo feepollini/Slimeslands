@@ -1,0 +1,6 @@
+{
+  "name": "TileScroll - Mapas Verticais de Biomas & Rotas",
+  "description": "Criador e navegador de mapas com rolagem vertical usando tiles PNG, múltiplos biomas configuráveis, marcadores interativos e traçados de rotas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

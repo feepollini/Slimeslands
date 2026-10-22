@@ -12,6 +12,7 @@ import { QuestMakerHub } from './tabs/quest_maker/QuestMakerHub';
 import { SoundCentralScreen } from './tabs/SoundCentralScreen';
 import { TabMobbys } from './tabs/TabMobbys';
 import { TabMatrix } from './tabs/TabMatrix';
+import { TabMarkerDream } from './tabs/TabMarkerDream';
 import { TabDecks } from './tabs/TabDecks';
 import { ForgeCore } from './core/ForgeCore';
 
@@ -22,6 +23,7 @@ export class ForgeApp {
   private arsenalSubMode: 'passivas' | 'ativas' = 'passivas';
   private comercialSubMode: 'store' | 'config' = 'store';
   private tabMatrix: TabMatrix | null = null;
+  private tabMarkerDream: TabMarkerDream | null = null;
   private tabDecks: TabDecks | null = null;
   private tabAssets: TabAssets | null = null;
   private tabPacks: TabPacks | null = null;
@@ -171,7 +173,7 @@ export class ForgeApp {
   }
 
   private isMatrixActive(): boolean {
-    return this.currentMode === 'matrix' || (this.currentMode === 'cardengine' && this.cardEngineSubMode === 'matrix');
+    return this.currentMode === 'matrix' || (this.currentMode === 'cardengine' && this.cardEngineSubMode === 'matrix') || this.currentMode === 'markerdream';
   }
 
   public render() {
@@ -313,6 +315,9 @@ export class ForgeApp {
 
      if (!this.isMatrixActive() && this.tabMatrix) {
         this.tabMatrix.unmount();
+     }
+     if (this.currentMode !== 'markerdream' && this.tabMarkerDream) {
+        this.tabMarkerDream.unmount();
      }
      if (this.currentMode !== 'packs' && this.tabPacks) {
         this.tabPacks.unmount();
@@ -495,15 +500,9 @@ export class ForgeApp {
          main.innerHTML = tab.render();
          tab.bind(main);
       } else if (this.currentMode === 'markerdream') {
-         main.innerHTML = `
-           <div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at center, rgba(35, 14, 52, 0.7) 0%, rgba(10, 11, 16, 0.95) 100%); color: #fff; text-align: center; padding: 40px; box-sizing: border-box;">
-             <div style="width: 76px; height: 76px; border-radius: 22px; background: linear-gradient(135deg, #ec4899, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 2.3rem; box-shadow: 0 0 35px rgba(236, 72, 153, 0.6); margin-bottom: 22px; border: 1.5px solid rgba(255,255,255,0.25);">
-               🌌
-             </div>
-             <h2 style="font-size: 1.7rem; font-weight: 900; letter-spacing: 3px; margin: 0 0 10px 0; background: linear-gradient(90deg, #ec4899, #a855f7, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">MARKER DREAM</h2>
-             <p style="color: rgba(255,255,255,0.55); font-size: 0.85rem; max-width: 440px; margin: 0; line-height: 1.6;">Aba reservada e configurada com acesso prioritário. Espaço pronto para receber o novo projeto.</p>
-           </div>
-         `;
+         if (!this.tabMarkerDream) this.tabMarkerDream = new TabMarkerDream();
+         main.innerHTML = this.tabMarkerDream.render();
+         this.tabMarkerDream.bind(main);
       }
   }
 

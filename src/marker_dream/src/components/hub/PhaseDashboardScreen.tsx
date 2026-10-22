@@ -24,6 +24,7 @@ import {
   Sliders,
   Eye,
   Move,
+  Brain,
 } from 'lucide-react';
 import { PhasePreviewCard } from './PhasePreviewCard';
 import { CreatePhaseModal } from './CreatePhaseModal';
@@ -62,6 +63,7 @@ interface Props {
   onOpenInventory?: () => void;
   onOpenQuests?: () => void;
   onOpenHudUniversal?: (screenId?: string) => void;
+  onOpenMindMap?: () => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
 }
 
@@ -84,6 +86,7 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
   onOpenInventory,
   onOpenQuests,
   onOpenHudUniversal,
+  onOpenMindMap,
   onUpdateProject,
 }) => {
   const currentProjectMap = project ? getOrCreateWorldMapConfig(project) : null;
@@ -392,7 +395,7 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
             {/* 1. EDITOR DE FASE */}
             <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-orange-500/50 transition-all group shadow-sm">
               <div className="space-y-2">
@@ -583,6 +586,37 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
                 >
                   <Smartphone className="w-3.5 h-3.5" />
                   <span>Abrir HUD Universal</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 7. EDITOR DE MAPA MENTAL & CONCEITOS */}
+            <div className="rounded-xl bg-gradient-to-b from-pink-950/40 via-zinc-900/90 to-zinc-950 border border-pink-500/40 p-5 flex flex-col justify-between hover:border-pink-400 transition-all group shadow-sm">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-lg bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-sm">
+                    <Brain className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 font-bold">
+                    Conceitos • GDD
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white group-hover:text-pink-300 transition-colors">
+                  7. Mapa Mental
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Estruture ideias, fluxo de fases, árvores de bosses, lore, mecânicas e conexões em nós com curvas Bézier.
+                </p>
+              </div>
+
+              <div className="pt-4 mt-3 border-t border-zinc-850">
+                <button
+                  type="button"
+                  onClick={() => (onOpenMindMap ? onOpenMindMap() : onGoToEditor())}
+                  className="w-full py-2 px-3 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-extrabold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-pink-600/20"
+                >
+                  <Brain className="w-3.5 h-3.5" />
+                  <span>Abrir Mapa Mental</span>
                 </button>
               </div>
             </div>

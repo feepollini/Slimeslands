@@ -368,6 +368,7 @@ export default function App() {
           }
           setHubView('hud_universal');
         }}
+        onOpenMindMap={() => setHubView('mindmap')}
         onUpdateProject={(updates) => {
           if (updates && typeof updates === 'object' && !(updates instanceof Event)) {
             setProject((prev) => ({ ...prev, ...updates }));

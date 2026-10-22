@@ -527,13 +527,48 @@ let scopeCounter = 0;
 export function toMatrixCardData(raw: any): CardData {
   if (!raw) raw = {};
 
+  const checkIsHighRarity = (obj: any): boolean => {
+    if (!obj) return false;
+    if (typeof obj.rarityWeight === 'number' && obj.rarityWeight >= 4) return true;
+    const cls = String(obj.cardClass || obj.matrixRarity || '').toLowerCase();
+    const rar = String(obj.rarity || obj.preferredRarity || '').toLowerCase();
+    const rnk = String(obj.cardRank || obj.rankBadgeText || '').toLowerCase();
+    return (
+      cls.includes('mítica') ||
+      cls.includes('mitica') ||
+      cls.includes('lendária') ||
+      cls.includes('lendaria') ||
+      cls.includes('limitada') ||
+      rar.includes('legendary') ||
+      rar.includes('mítica') ||
+      rar.includes('mitica') ||
+      rar.includes('lendária') ||
+      rar.includes('lendaria') ||
+      rnk === 's'
+    );
+  };
+
   if (raw.pills && raw.frameTopColor && raw.dockAutoFit !== undefined) {
-    return raw as CardData;
+    const isHigh = checkIsHighRarity(raw);
+    return (isHigh
+      ? {
+          ...raw,
+          isPremium: true,
+          isRankChromatic: true,
+          isPvChromatic: true,
+          invertElementCapsule: true,
+          strokeGlow: 100,
+          prismaticIntensity: 100,
+          microGlitterIntensity: 100,
+          contourLightSpeed: 1.8,
+        }
+      : raw) as CardData;
   }
 
   const embedded = raw.cardData || raw.matrixCard;
   if (embedded && embedded.pills) {
     const livePv = raw.pv ?? raw.pvNumber ?? embedded.pvNumber;
+    const isHigh = checkIsHighRarity(raw) || checkIsHighRarity(embedded);
     return {
       ...embedded,
       title: raw.name || embedded.title,
@@ -541,6 +576,18 @@ export function toMatrixCardData(raw: any): CardData {
       pvNumber: livePv !== undefined ? Number(livePv) : embedded.pvNumber,
       imageUrl: raw.image || raw.imageUrl || embedded.imageUrl,
       backImageUrl: raw.cardBack || raw.backImageUrl || embedded.backImageUrl || null,
+      ...(isHigh
+        ? {
+            isPremium: true,
+            isRankChromatic: true,
+            isPvChromatic: true,
+            invertElementCapsule: true,
+            strokeGlow: 100,
+            prismaticIntensity: 100,
+            microGlitterIntensity: 100,
+            contourLightSpeed: 1.8,
+          }
+        : {}),
     } as CardData;
   }
 

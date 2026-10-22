@@ -54,6 +54,7 @@ import {
   extractAdaptivePalettesFromImage,
 } from '../utils/colorExtractor';
 import { BLANK_TEMPLATE_CARD } from '../utils/defaultCards';
+import { MobbyManager } from '../../../core/MobbyManager';
 
 interface GalleryProductionDrawerProps {
   cards: CardData[];
@@ -119,29 +120,89 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   isExpandedWide,
   onToggleExpandedWide,
 }) => {
+  // Load persisted drawer UI state so reloading the page never resets the active step
+  const loadPersistedDrawerUI = () => {
+    try {
+      const raw = localStorage.getItem('slimelands_matrix_drawer_ui_v1');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+  const persistedUI = loadPersistedDrawerUI();
+
   // Mode switcher: Guided Pipeline (4 Steps) vs Free Matrix Grid
-  const [galleryFlowMode, setGalleryFlowMode] = useState<GalleryFlowMode>('guided');
-  const [pipelineStep, setPipelineStep] = useState<PipelineStep>(1);
+  const [galleryFlowMode, setGalleryFlowMode] = useState<GalleryFlowMode>(
+    persistedUI?.galleryFlowMode === 'free' ? 'free' : 'guided'
+  );
+  const [pipelineStep, setPipelineStep] = useState<PipelineStep>(
+    persistedUI?.pipelineStep === 2 || persistedUI?.pipelineStep === 3 || persistedUI?.pipelineStep === 4
+      ? persistedUI.pipelineStep
+      : 1
+  );
+
+  // Target entity type when importing files/folders in Step 1 (Criatura vs Magia)
+  const [ingestionEntityType, setIngestionEntityType] = useState<'Criatura' | 'Magia'>(
+    persistedUI?.ingestionEntityType === 'Magia' ? 'Magia' : 'Criatura'
+  );
 
   // Drag and Drop State for Step 2 Triagem
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [activeDropZone, setActiveDropZone] = useState<string | null>(null);
 
   // Section 7: Primary Navigation by Rarity ("Não classificadas", "Comum", "Rara", "Lendária", "Mítica", "Limitada", etc.)
-  const [selectedRarityTab, setSelectedRarityTab] = useState<RarityNavFilter>('ALL');
-  const [selectedDeckId, setSelectedDeckId] = useState<string>('ALL');
+  const [selectedRarityTab, setSelectedRarityTab] = useState<RarityNavFilter>(
+    persistedUI?.selectedRarityTab || 'ALL'
+  );
+  const [selectedDeckId, setSelectedDeckId] = useState<string>(
+    persistedUI?.selectedDeckId || 'ALL'
+  );
 
   // Combined Subgroup Filters (Section 5, 6 & 7)
   const [filterFamily, setFilterFamily] = useState<string>('ALL');
   const [filterBiome, setFilterBiome] = useState<string>('ALL');
   const [filterCollection, setFilterCollection] = useState<string>('ALL');
-  const [filterEntityType, setFilterEntityType] = useState<string>('ALL');
+  const [filterEntityType, setFilterEntityType] = useState<string>(
+    persistedUI?.filterEntityType || 'ALL'
+  );
   const [filterRecordState, setFilterRecordState] = useState<string>('ALL');
   const [filterSourceMatrixId, setFilterSourceMatrixId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Step 2 specific filter: show unclassified only vs all
-  const [step2ShowOnlyUnclassified, setStep2ShowOnlyUnclassified] = useState<boolean>(true);
+  const [step2ShowOnlyUnclassified, setStep2ShowOnlyUnclassified] = useState<boolean>(
+    typeof persistedUI?.step2ShowOnlyUnclassified === 'boolean'
+      ? persistedUI.step2ShowOnlyUnclassified
+      : true
+  );
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(
+        'slimelands_matrix_drawer_ui_v1',
+        JSON.stringify({
+          galleryFlowMode,
+          pipelineStep,
+          ingestionEntityType,
+          selectedRarityTab,
+          selectedDeckId,
+          filterEntityType,
+          step2ShowOnlyUnclassified,
+        })
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [
+    galleryFlowMode,
+    pipelineStep,
+    ingestionEntityType,
+    selectedRarityTab,
+    selectedDeckId,
+    filterEntityType,
+    step2ShowOnlyUnclassified,
+  ]);
 
   // Multi-selection for Batch Classification & Version generation
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
@@ -188,6 +249,47 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   const unclassifiedCount = cards.filter(isCardUnclassified).length;
   const classifiedCount = cards.length - unclassifiedCount;
 
+  // Converts a card between Criatura and Magia while preserving its rarity classification state!
+  const convertCardToEntityType = (c: CardData, targetEntity: 'Criatura' | 'Magia'): CardData => {
+    if (targetEntity === 'Magia') {
+      const manaCost = c.magicManaCost ?? 3;
+      return {
+        ...c,
+        entityType: 'Magia',
+        magicManaCost: manaCost,
+        summonStaminaCost: undefined,
+        showSummonCostPill: true,
+        summonCostPill: {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: String(manaCost),
+          badgeColor: '#0084FF',
+          mainText: 'MANA',
+          isSummonCost: true,
+          costResource: 'mana',
+        },
+        magicAbilityKind: c.magicAbilityKind || 'passive',
+        linkedPassiveId: c.linkedPassiveId || 'first_strike',
+      };
+    } else {
+      const stamCost = c.summonStaminaCost ?? 2;
+      return {
+        ...c,
+        entityType: 'Criatura',
+        summonStaminaCost: stamCost,
+        summonCostPill: {
+          id: 'pill-summon-cost',
+          mode: 'stat',
+          badgeValue: String(stamCost),
+          badgeColor: '#F59E0B',
+          mainText: 'EST',
+          isSummonCost: true,
+          costResource: 'stamina',
+        },
+      };
+    }
+  };
+
   const toggleCardSelection = (cardId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setSelectedCardIds((prev) =>
@@ -227,39 +329,11 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       : [droppedId];
 
     if (targetRarity === 'Magia') {
+      // Converts card(s) to Magia WITHOUT overwriting rarity or removing them from unclassified rarity triage!
       onReplaceCards(
-        cards.map((c) => {
-          if (!targetIds.includes(c.id)) return c;
-          const manaCost = c.magicManaCost ?? 3;
-          return {
-            ...c,
-            entityType: 'Magia',
-            cardClass: c.cardClass || 'Rara',
-            magicManaCost: manaCost,
-            summonStaminaCost: undefined,
-            pvText:
-              c.pvText && !c.pvText.startsWith('MANA')
-                ? c.pvText
-                : c.pvNumber
-                ? `PV${c.pvNumber}`
-                : 'PV—',
-            showSummonCostPill: true,
-            summonCostPill: {
-              id: 'pill-summon-cost',
-              mode: 'stat',
-              badgeValue: String(manaCost),
-              badgeColor: '#0084FF',
-              mainText: 'MANA',
-              isSummonCost: true,
-              costResource: 'mana',
-            },
-            magicAbilityKind: c.magicAbilityKind || 'passive',
-            linkedPassiveId: c.linkedPassiveId || 'first_strike',
-            classificationState: 'Classificada',
-            editState: 'Classificada',
-            isNeutralMatrix: false,
-          };
-        })
+        cards.map((c) =>
+          targetIds.includes(c.id) ? convertCardToEntityType(c, 'Magia') : c
+        )
       );
     } else {
       onReplaceCards(
@@ -326,12 +400,15 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           // fallback
         }
 
-        const neutralMatrix = createNeutralMatrixCard({
+        let neutralMatrix = createNeutralMatrixCard({
           title: baseTitle,
           imageUrl: dataUrl,
           deckId: targetDeck,
           palette: extractedPalettes[0],
         });
+        if (ingestionEntityType === 'Magia') {
+          neutralMatrix = convertCardToEntityType(neutralMatrix, 'Magia');
+        }
         if (globalBackImageUrl) {
           neutralMatrix.backImageUrl = globalBackImageUrl;
         }
@@ -345,6 +422,9 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
         // Direct guided flow to triage if currently on Step 1
         if (pipelineStep === 1) {
           setPipelineStep(2);
+          if (ingestionEntityType === 'Magia') {
+            setFilterEntityType('Magia');
+          }
         }
       }
     } finally {
@@ -356,7 +436,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
   const handleCreateNeutralMatrix = () => {
     const targetDeck = selectedDeckId !== 'ALL' ? selectedDeckId : 'deck-main';
-    const newBlank: CardData = {
+    let newBlank: CardData = {
       ...BLANK_TEMPLATE_CARD,
       id: `mtx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: `Nova Matriz ${cards.length + 1}`,
@@ -365,6 +445,9 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       backImageUrl: globalBackImageUrl || null,
       createdAt: new Date().toISOString(),
     };
+    if (ingestionEntityType === 'Magia') {
+      newBlank = convertCardToEntityType(newBlank, 'Magia');
+    }
     onAddCards([newBlank]);
     onSelectCard(newBlank.id);
   };
@@ -708,8 +791,8 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
     },
     {
       key: 'Magia',
-      label: 'Magia',
-      sublabel: 'Feitiços e Auras · Slots 7-8',
+      label: '🔮 Converter p/ Magia',
+      sublabel: 'Define tipo Magia (Mantém Triagem)',
       bgClass: 'bg-sky-950/40',
       borderClass: 'border-sky-500/50',
       textClass: 'text-sky-300',
@@ -1002,23 +1085,70 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
          ===================================================================== */}
       {galleryFlowMode === 'guided' && pipelineStep === 1 && (
         <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <Database className="w-4 h-4 text-emerald-400" />
                 <span>Etapa 1: Ingestão de Base de Cartas</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Alimente o banco com ilustrações locais ou crie matrizes neutras. Elas entram como Não Classificadas sem sortear atributos precipitados.
+                Escolha o modo da Matriz abaixo (<strong>Criaturas</strong> ou <strong>Magias</strong>) antes de importar pastas ou imagens. Elas entram prontas para separação de raridades na Etapa 2.
               </p>
             </div>
             <button
               onClick={() => setPipelineStep(2)}
               className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
             >
-              <span>Avançar para Triagem</span>
+              <span>Avançar para Triagem ({unclassifiedCount} pendentes)</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
+          </div>
+
+          {/* Seletor de Matriz de Ingestão: Criaturas vs Magias */}
+          <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-900/90 border border-slate-800 rounded-xl p-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider px-1">
+                Tipo da Matriz ao Importar:
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIngestionEntityType('Criatura');
+                  setFilterEntityType('ALL');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  ingestionEntityType === 'Criatura'
+                    ? 'bg-emerald-600 text-white shadow ring-2 ring-emerald-400/50'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>🐉 Matriz de Criaturas (Slimes)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIngestionEntityType('Magia');
+                  setFilterEntityType('Magia');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  ingestionEntityType === 'Magia'
+                    ? 'bg-purple-600 text-white shadow ring-2 ring-purple-400/50'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>🔮 Matriz de Cartas de Magia (Com Raridades)</span>
+              </button>
+            </div>
+
+            {unclassifiedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setPipelineStep(2)}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/50 text-amber-300 hover:bg-amber-500/30 text-[11px] font-extrabold flex items-center gap-1"
+              >
+                <span>⚡ Continuar separando {unclassifiedCount} cartas pendentes →</span>
+              </button>
+            )}
           </div>
 
           {/* 3 Action Cards */}
@@ -1030,10 +1160,12 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             >
               <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
                 <FolderUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>Importar Pasta Completa</span>
+                <span>
+                  Importar Pasta ({ingestionEntityType === 'Magia' ? '🔮 Magias' : '🐉 Criaturas'})
+                </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Carrega todos os arquivos de imagem de uma pasta local de uma vez em estado neutro.
+                Carrega todas as imagens de uma pasta direto como {ingestionEntityType === 'Magia' ? 'Cartas de Magia' : 'Criaturas'} aguardando raridade.
               </p>
             </button>
 
@@ -1043,10 +1175,12 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             >
               <div className="flex items-center gap-2 text-sky-400 font-bold text-xs">
                 <ImagePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>Adicionar Imagens Locais</span>
+                <span>
+                  Adicionar Imagens ({ingestionEntityType === 'Magia' ? '🔮 Magias' : '🐉 Criaturas'})
+                </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Selecione uma ou mais imagens avulsas para registrar na Matriz.
+                Selecione imagens avulsas para registrar como {ingestionEntityType === 'Magia' ? 'Magia' : 'Criatura'} e separar raridade na Etapa 2.
               </p>
             </button>
 
@@ -1056,10 +1190,12 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             >
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                 <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>Criar Matriz em Branco</span>
+                <span>
+                  Criar Matriz em Branco ({ingestionEntityType === 'Magia' ? '🔮 Magia' : '🐉 Criatura'})
+                </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Cria uma matriz vazia para configurar arte, nome e lore manualmente no estúdio.
+                Cria uma matriz vazia de {ingestionEntityType} para configurar arte, nome e raridade.
               </p>
             </button>
           </div>
@@ -1072,10 +1208,10 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <Move className="w-4 h-4 text-emerald-400" />
-                <span>Etapa 2: Triagem & Distribuição de Raridades</span>
+                <span>Etapa 2: Triagem & Distribuição de Raridades (Criaturas & Magias)</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Arraste as cartas pendentes para as caixas de raridade abaixo, ou selecione cartas e clique na categoria para mover em lote.
+                Tanto <strong>Criaturas</strong> quanto <strong>Cartas de Magia</strong> possuem raridades (Comum a Limitada). Arraste para as caixas abaixo ou selecione e clique!
               </p>
             </div>
 
@@ -1110,41 +1246,13 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                   onDrop={(e) => handleDropOnCategory(e, cat.key)}
                   onClick={() => {
                     if (hasChecked) {
-                      // Move all checked cards to this category on click!
                       if (cat.key === 'Magia') {
                         onReplaceCards(
-                          cards.map((c) => {
-                            if (!validSelectedCardIds.includes(c.id)) return c;
-                            const manaCost = c.magicManaCost ?? 3;
-                            return {
-                              ...c,
-                              entityType: 'Magia',
-                              cardClass: c.cardClass || 'Rara',
-                              magicManaCost: manaCost,
-                              summonStaminaCost: undefined,
-                              pvText:
-                                c.pvText && !c.pvText.startsWith('MANA')
-                                  ? c.pvText
-                                  : c.pvNumber
-                                  ? `PV${c.pvNumber}`
-                                  : 'PV—',
-                              showSummonCostPill: true,
-                              summonCostPill: {
-                                id: 'pill-summon-cost',
-                                mode: 'stat',
-                                badgeValue: String(manaCost),
-                                badgeColor: '#0084FF',
-                                mainText: 'MANA',
-                                isSummonCost: true,
-                                costResource: 'mana',
-                              },
-                              magicAbilityKind: c.magicAbilityKind || 'passive',
-                              linkedPassiveId: c.linkedPassiveId || 'first_strike',
-                              classificationState: 'Classificada',
-                              editState: 'Classificada',
-                              isNeutralMatrix: false,
-                            };
-                          })
+                          cards.map((c) =>
+                            validSelectedCardIds.includes(c.id)
+                              ? convertCardToEntityType(c, 'Magia')
+                              : c
+                          )
                         );
                       } else {
                         onReplaceCards(
@@ -1184,7 +1292,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
                   <div className="mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
                     <span className="text-slate-400">
-                      {isOver ? 'Solte para mover!' : hasChecked ? 'Clique p/ Mover' : 'Solte aqui'}
+                      {isOver ? 'Solte para aplicar!' : hasChecked ? 'Clique p/ Aplicar' : 'Solte aqui'}
                     </span>
                     {hasChecked && (
                       <span className="text-emerald-400 font-bold">
@@ -1197,10 +1305,10 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             })}
           </div>
 
-          {/* Step 2 filter toggle */}
-          <div className="flex items-center justify-between pt-1 text-xs text-slate-400">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-300">Visualizar na Grade:</span>
+          {/* Step 2 filter toggle + Entity Matrix Switcher */}
+          <div className="flex items-center justify-between flex-wrap gap-2 pt-1 text-xs text-slate-400">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-300">Visualizar:</span>
               <button
                 onClick={() => setStep2ShowOnlyUnclassified(true)}
                 className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
@@ -1219,7 +1327,40 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     : 'bg-slate-800 text-slate-300 hover:text-white'
                 }`}
               >
-                Todas as Cartas ({cards.length})
+                Todas ({cards.length})
+              </button>
+
+              <span className="text-slate-600 mx-1">|</span>
+              <span className="font-semibold text-slate-300">Matriz:</span>
+              <button
+                onClick={() => setFilterEntityType('ALL')}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
+                  filterEntityType === 'ALL'
+                    ? 'bg-sky-500 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                Todas
+              </button>
+              <button
+                onClick={() => setFilterEntityType('Criatura')}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
+                  filterEntityType === 'Criatura'
+                    ? 'bg-emerald-500 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                🐉 Criaturas ({cards.filter((c) => (c.entityType || 'Criatura') === 'Criatura').length})
+              </button>
+              <button
+                onClick={() => setFilterEntityType('Magia')}
+                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
+                  filterEntityType === 'Magia'
+                    ? 'bg-purple-500 text-white font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                }`}
+              >
+                🔮 Magias ({cards.filter((c) => c.entityType === 'Magia').length})
               </button>
             </div>
 
@@ -1852,11 +1993,24 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     </span>
                   </div>
 
-                  {/* Subgroup Tags */}
+                  {/* Subgroup Tags + 1-Click Entity Toggle (Criatura <-> Magia) */}
                   <div className="mt-1 flex items-center gap-1 flex-wrap min-h-[20px]">
-                    <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[9px] font-semibold text-sky-300">
-                      {card.entityType || 'Criatura'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextEntity = card.entityType === 'Magia' ? 'Criatura' : 'Magia';
+                        updateTargetCards([card.id], (c) => convertCardToEntityType(c, nextEntity));
+                      }}
+                      title="Clique para alternar entre Criatura (Slime) e Carta de Magia mantendo a raridade"
+                      className={`px-1.5 py-0.5 rounded border text-[9px] font-bold transition-colors cursor-pointer ${
+                        card.entityType === 'Magia'
+                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-200 hover:bg-purple-900'
+                          : 'bg-slate-900 border-slate-700 text-sky-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {card.entityType === 'Magia' ? '🔮 Magia' : '🐉 Criatura'} ⇄
+                    </button>
                     {card.biome && (
                       <span className="px-1.5 py-0.5 rounded bg-emerald-950/50 border border-emerald-500/30 text-[9px] font-semibold text-emerald-300">
                         {card.biome}
@@ -1897,6 +2051,51 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                         ? `${card.pvText} · ${card.magicManaCost ?? 3} Mana`
                         : `${card.pvText} · ${card.summonStaminaCost ?? '—'} Est.`}
                     </span>
+                  </div>
+
+                  {/* Bidirectional Mobby Link Parameter Row */}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 flex items-center gap-1"
+                  >
+                    {(() => {
+                      const mobbysList = MobbyManager.getMobbys();
+                      const linkedMobby =
+                        mobbysList.find((m) => m.id === card.linkedMobbyId) ||
+                        MobbyManager.getLinkedMobbyForCard(card.id, card.title);
+                      return (
+                        <select
+                          value={linkedMobby?.id || ''}
+                          onChange={(e) => {
+                            const nextMobbyId = e.target.value;
+                            const found = mobbysList.find((m) => m.id === nextMobbyId);
+                            MobbyManager.setBidirectionalLink(
+                              nextMobbyId || null,
+                              card.id,
+                              card.title
+                            );
+                            updateTargetCards([card.id], (c) => ({
+                              ...c,
+                              linkedMobbyId: found ? found.id : undefined,
+                              linkedMobbyName: found ? found.name : undefined,
+                            }));
+                          }}
+                          title="Parâmetro de Vínculo Bidirecional: Vincular esta Carta a um Mobby de Mobbys Duelos"
+                          className={`w-full px-1.5 py-0.5 rounded border text-[9px] font-bold truncate cursor-pointer ${
+                            linkedMobby
+                              ? 'bg-amber-950/60 border-amber-500/60 text-amber-300'
+                              : 'bg-slate-900/80 border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          <option value="">👾 Vincular Mobby (Duelos)...</option>
+                          {mobbysList.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              👾 {m.name} (HP {m.hp})
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
 
                   {/* Card Footer Actions */}

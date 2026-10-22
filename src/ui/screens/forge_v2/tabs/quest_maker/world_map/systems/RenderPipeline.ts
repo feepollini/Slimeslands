@@ -5,7 +5,7 @@ export class RenderPipeline {
   private ctx: CanvasRenderingContext2D | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private shapeRenderer: ShapeRenderer;
-  private zoom: number = 1;
+  public zoom: number = 1;
   private panX: number = 0;
   private panY: number = 0;
   private state: any = {};

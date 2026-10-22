@@ -535,7 +535,7 @@ export class AETimeline {
     this.container.innerHTML = this.render();
     
     // Restore ArtboardsPanel content after re-render
-    const newLayersPanelWrap = this.container.querySelector('#ae-layers-panel-wrapper');
+    const newLayersPanelWrap = this.container.querySelector('#ae-layers-panel-wrapper') as HTMLElement | null;
     if (newLayersPanelWrap && savedArtboardsContent) {
       newLayersPanelWrap.innerHTML = savedArtboardsContent;
       // Rebind events

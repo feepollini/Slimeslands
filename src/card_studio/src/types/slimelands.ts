@@ -87,6 +87,9 @@ export interface BaseCharacter {
   magicManaCost?: number;
   magicTarget?: string;
   magicCondition?: string;
+  // Linked Mobby parameter
+  linkedMobbyId?: string;
+  linkedMobbyName?: string;
 }
 
 export interface GeneratedAbilityInstance {

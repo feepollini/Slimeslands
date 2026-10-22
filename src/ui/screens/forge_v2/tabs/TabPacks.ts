@@ -49,6 +49,9 @@ export class TabPacks {
   private currentRotX: number = 0.08;
   private currentRotY: number = 0;
 
+  private cleanupWindowListeners: (() => void) | null = null;
+  private mountedContainer: HTMLElement | null = null;
+
   constructor(state: any, callbacks: any, core: any) {
     this.data = normalizeStoreData(state.storeItems);
     this.templates = [];
@@ -73,7 +76,9 @@ export class TabPacks {
       });
       this.saveJson('/api/save-store', this.data);
       this._lastSyncHash = 'EMPTY_CLEARED';
-      this.reRender();
+      if (this.mountedContainer && document.body.contains(this.mountedContainer)) {
+        this.reRender();
+      }
     });
 
     window.addEventListener('matrix_card_deleted', () => {
@@ -104,6 +109,38 @@ export class TabPacks {
         }
       ];
     }
+  }
+
+  public updateContext(state: any, callbacks: any, core: any) {
+    this.data = normalizeStoreData(state.storeItems);
+    this.callbacks = callbacks;
+    this.reRender = callbacks.reRender;
+    this.showToast = callbacks.showToast;
+    this.openMediaPicker = callbacks.openMediaPicker;
+    this.saveJson = core.saveJson.bind(core);
+    if (typeof state.selectedIndex === 'number') {
+      this.selectedPackIdx = Math.max(0, state.selectedIndex);
+    }
+  }
+
+  public unmount() {
+    if (this.previewAnimId) {
+      cancelAnimationFrame(this.previewAnimId);
+      this.previewAnimId = null;
+    }
+    if (this.cleanupWindowListeners) {
+      this.cleanupWindowListeners();
+      this.cleanupWindowListeners = null;
+    }
+    if (this.previewRenderer) {
+      this.previewRenderer.dispose();
+      this.previewRenderer = null;
+    }
+    this.previewScene = null;
+    this.previewPackGroup = null;
+    this.previewFoilFrontMat = null;
+    this.previewFoilBackMat = null;
+    this.mountedContainer = null;
   }
 
   private async syncMatrixTemplates() {
@@ -240,7 +277,9 @@ export class TabPacks {
       const fullHash = `${hash}:::${packsHash}`;
       if (this._lastSyncHash !== fullHash) {
         this._lastSyncHash = fullHash;
-        this.reRender();
+        if (this.mountedContainer && document.body.contains(this.mountedContainer)) {
+          this.reRender();
+        }
       }
     } catch (err) {
       console.warn('Falha ao sincronizar Matriz no TabPacks:', err);
@@ -758,6 +797,7 @@ export class TabPacks {
   }
 
   public bind(container: HTMLElement) {
+    this.mountedContainer = container;
     const packs = this.data.packs || [];
     const activeIdx = Math.max(0, Math.min(packs.length - 1, this.selectedPackIdx));
     const pack = packs[activeIdx] || packs[0];
@@ -1313,6 +1353,14 @@ export class TabPacks {
       cancelAnimationFrame(this.previewAnimId);
       this.previewAnimId = null;
     }
+    if (this.cleanupWindowListeners) {
+      this.cleanupWindowListeners();
+      this.cleanupWindowListeners = null;
+    }
+    if (this.previewRenderer) {
+      this.previewRenderer.dispose();
+      this.previewRenderer = null;
+    }
 
     const W = canvasWrap.clientWidth || 500;
     const H = canvasWrap.clientHeight || 450;
@@ -1323,9 +1371,9 @@ export class TabPacks {
     const camera = new THREE.PerspectiveCamera(38, W / H, 0.1, 100);
     camera.position.set(0, 0, 12);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.setSize(W, H);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     canvasWrap.innerHTML = '';
@@ -1492,8 +1540,20 @@ export class TabPacks {
     window.addEventListener('touchmove', onPointerMove, { passive: true });
     window.addEventListener('touchend', onPointerUp);
 
+    this.cleanupWindowListeners = () => {
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('mouseup', onPointerUp);
+      window.removeEventListener('touchmove', onPointerMove);
+      window.removeEventListener('touchend', onPointerUp);
+    };
+
     let idleTimer = 0;
     const animate = () => {
+      if (!document.body.contains(canvasWrap)) {
+        if (this.previewAnimId) cancelAnimationFrame(this.previewAnimId);
+        this.previewAnimId = null;
+        return;
+      }
       this.previewAnimId = requestAnimationFrame(animate);
       if (!this.isPointerDown) {
         idleTimer += 0.008;

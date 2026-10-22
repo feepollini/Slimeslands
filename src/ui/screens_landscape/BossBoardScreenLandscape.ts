@@ -70,7 +70,7 @@ export class BossBoardScreenLandscape extends BossBoardScreen {
     deckCount: number,
     mobby?: Mobby
   ): string {
-    const m = mobby || { name: 'Mobby', maxHp: 280, image: '/mobby.png' };
+    const m = mobby || ({ name: 'Mobby', maxHp: 280, image: '/mobby.png', scale: 100, offsetY: 0, offsetX: 0, rotation: 0 } as Mobby);
     const topGraveCard = grave.length > 0 ? grave[grave.length - 1] : null;
     const pPercent = Math.max(0, Math.min(100, (hp.p / 1500) * 100));
     const bossPct = Math.max(0, Math.min(100, (hp.e / (m.maxHp || 280)) * 100));

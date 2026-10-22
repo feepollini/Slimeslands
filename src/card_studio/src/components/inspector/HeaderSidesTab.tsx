@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CardData } from '../../types/card';
+import { MobbyManager, Mobby } from '../../../../core/MobbyManager';
 
 interface HeaderSidesTabProps {
   activeCard: CardData;
@@ -10,6 +11,18 @@ export const HeaderSidesTab: React.FC<HeaderSidesTabProps> = ({
   activeCard,
   updateActiveCard,
 }) => {
+  const [mobbys, setMobbys] = useState<Mobby[]>(() => MobbyManager.getMobbys());
+
+  useEffect(() => {
+    const refresh = () => setMobbys([...MobbyManager.getMobbys()]);
+    window.addEventListener('slimelands:mobby-card-link-updated', refresh);
+    return () => window.removeEventListener('slimelands:mobby-card-link-updated', refresh);
+  }, []);
+
+  const currentLinkedMobby =
+    mobbys.find((m) => m.id === activeCard.linkedMobbyId) ||
+    MobbyManager.getLinkedMobbyForCard(activeCard.id, activeCard.title);
+
   return (
     <div className="space-y-5">
       <div>
@@ -28,6 +41,93 @@ export const HeaderSidesTab: React.FC<HeaderSidesTabProps> = ({
           placeholder="Ex: Hestridia God"
           className="w-full px-3.5 py-2.5 rounded-lg bg-[#121521] border border-slate-800 text-sm text-white focus:outline-none focus:border-red-500"
         />
+      </div>
+
+      {/* PARÂMETRO DE VÍNCULO BIDIRECIONAL: CARTA ⇄ MOBBY (MOBBYS DUELOS) */}
+      <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/40 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+            <span>👾</span>
+            <span>Vínculo Mobby (Mobbys Duelos)</span>
+          </span>
+          {currentLinkedMobby && (
+            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              🔗 {currentLinkedMobby.name}
+            </span>
+          )}
+        </div>
+
+        <select
+          value={currentLinkedMobby?.id || ''}
+          onChange={(e) => {
+            const nextMobbyId = e.target.value;
+            const foundMobby = mobbys.find((m) => m.id === nextMobbyId);
+            MobbyManager.setBidirectionalLink(
+              nextMobbyId || null,
+              activeCard.id,
+              activeCard.title
+            );
+            updateActiveCard((prev) => ({
+              ...prev,
+              linkedMobbyId: foundMobby ? foundMobby.id : undefined,
+              linkedMobbyName: foundMobby ? foundMobby.name : undefined,
+            }));
+            setMobbys([...MobbyManager.getMobbys()]);
+          }}
+          className="w-full px-3 py-2 rounded-lg bg-[#121521] border border-amber-500/40 text-xs font-bold text-amber-200 focus:outline-none focus:border-amber-400"
+        >
+          <option value="">— Nenhum Mobby Vinculado —</option>
+          {mobbys.map((m) => (
+            <option key={m.id} value={m.id}>
+              👾 {m.name} (HP {m.hp} · ATK {m.atk})
+            </option>
+          ))}
+        </select>
+
+        {currentLinkedMobby && (
+          <div className="flex items-center gap-2 pt-1">
+            <img
+              src={currentLinkedMobby.image}
+              alt={currentLinkedMobby.name}
+              className="w-9 h-9 rounded-lg object-contain bg-black/60 border border-amber-500/30 shrink-0"
+            />
+            <div className="flex-1 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!currentLinkedMobby.image) return;
+                  updateActiveCard((prev) => ({
+                    ...prev,
+                    imageUrl: currentLinkedMobby.image,
+                    mediaType: 'image',
+                  }));
+                }}
+                className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-bold text-amber-200 cursor-pointer"
+                title="Usar a PNG deste Mobby como ilustração desta Carta"
+              >
+                🖼️ Puxar PNG do Mobby
+              </button>
+              {activeCard.imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    MobbyManager.setBidirectionalLink(
+                      currentLinkedMobby.id,
+                      activeCard.id,
+                      activeCard.title,
+                      activeCard.imageUrl || undefined
+                    );
+                    setMobbys([...MobbyManager.getMobbys()]);
+                  }}
+                  className="px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-200 cursor-pointer"
+                  title="Enviar a arte desta Carta para o Mobby vinculado"
+                >
+                  🖼️ Enviar Arte p/ Mobby
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="pt-3 border-t border-slate-800/80 space-y-3">

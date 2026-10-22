@@ -308,7 +308,7 @@ export class BoardScreenLandscape extends BoardScreen {
   }
 
   public override updateAttributeBars(engine: { hp: any; mana: any; stamina: any; maxMana?: number; maxStamina?: number }): void {
-    super.updateAttributeBars(engine);
+    super.updateAttributeBars(engine as any);
     const hp = engine.hp;
     const barP = document.getElementById('hp-bar-p') as HTMLElement | null;
     const barE = document.getElementById('hp-bar-e') as HTMLElement | null;

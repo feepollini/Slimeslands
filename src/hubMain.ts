@@ -63,9 +63,6 @@ class HubApp {
         this.navigate('forge.html');
       },
       () => {
-        this.navigate('forge.html');
-      },
-      () => {
         this.switchTab('profile');
       }
     );

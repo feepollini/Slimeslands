@@ -24,114 +24,137 @@ export class TabArtefatos {
 
   public render(): string {
     const s = this.skills[this.selectedIndex];
-    
+
     return `
-      <div class="editor-list-panel" style="flex:0.8; max-width:320px;">
-        <div class="editor-section-title">ARTEFATOS / MAGIAS (${this.skills.length})</div>
-        <div class="editor-card-list">
-          <div class="ars-artifact-grid" style="padding:10px; overflow-y:auto; display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-            ${this.skills.map((skill, i) => `
-              <div class="editor-list-item ars-artifact-item ${i === this.selectedIndex ? 'active' : ''}" data-type="skill" data-idx="${i}" style="border-radius:12px; height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:10px;">
-                 <div class="ars-artifact-image" style="width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.05); border:1px solid ${i === this.selectedIndex ? '#51c5ff' : 'rgba(255,255,255,0.1)'}; ${skill.image ? `background-image:url('${skill.image}'); background-size:contain; background-repeat:no-repeat; background-position:center;` : ''}">${skill.image ? '' : skill.icon}</div>
-                 <div class="ars-artifact-content" style="display:flex; flex-direction:column; align-items:center;">
-                   <div class="ars-artifact-name" style="font-size:0.75rem; font-weight:900;">${skill.name}</div>
-                   ${skill.availability?.type === 'store' ? '<span class="shop-badge" style="font-size:0.5rem; background:rgba(255,215,0,0.2); color:#ffd700; padding:2px 4px; border-radius:4px; margin-top:4px;">🛒 LOJA</span>' : ''}
-                 </div>
+      <div class="editor-list-panel" style="width:280px; flex-shrink:0; height:100%; display:flex; flex-direction:column; overflow:hidden; background:#11131c; border-right:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
+          <span style="font-size:0.68rem; font-weight:900; color:#a855f7; letter-spacing:0.8px;">🔮 ATIVAS / ARTEFATOS (${this.skills.length})</span>
+          <button type="button" id="btn-add-skill" style="background:linear-gradient(135deg, #8b5cf6, #6d28d9); color:#fff; border:none; border-radius:6px; padding:4px 10px; font-size:0.64rem; font-weight:900; cursor:pointer;">+ NOVO</button>
+        </div>
+
+        <div class="ars-artifact-grid" style="flex:1; padding:10px; overflow-y:auto; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start; margin:0;">
+          ${this.skills.map((skill, i) => `
+            <div class="editor-list-item ars-artifact-item ${i === this.selectedIndex ? 'active' : ''}" data-type="skill" data-idx="${i}" style="border-radius:10px; min-height:88px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center; padding:8px; background:${i === this.selectedIndex ? 'rgba(139,92,246,0.16)' : '#181b26'}; border:1.5px solid ${i === this.selectedIndex ? '#8b5cf6' : 'rgba(255,255,255,0.07)'};">
+              <div class="ars-artifact-image" style="width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.05); border:1px solid ${i === this.selectedIndex ? '#a855f7' : 'rgba(255,255,255,0.12)'}; font-size:1rem; flex-shrink:0; ${skill.image ? `background-image:url('${skill.image}'); background-size:contain; background-repeat:no-repeat; background-position:center;` : ''}">${skill.image ? '' : skill.icon}</div>
+              <div class="ars-artifact-content" style="display:flex; flex-direction:column; align-items:center;">
+                <div class="ars-artifact-name" style="font-size:0.66rem; font-weight:800; line-height:1.15; word-break:break-word;">${skill.name}</div>
+                ${skill.availability?.type === 'store' ? '<span class="shop-badge" style="font-size:0.48rem; background:rgba(255,215,0,0.2); color:#ffd700; padding:1px 4px; border-radius:4px; margin-top:2px;">🛒 LOJA</span>' : ''}
               </div>
-            `).join('')}
-             <div id="btn-add-skill" class="editor-list-item" style="border:2px dashed rgba(255,255,255,0.1); background:none; height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;">
-                <span style="font-size:1.5rem; opacity:0.3;">+</span>
-                <span style="font-size:0.6rem; opacity:0.3; font-weight:900;">NOVO ARTEFATO</span>
-             </div>
-          </div>
+            </div>
+          `).join('')}
         </div>
       </div>
 
-      <div class="editor-form-panel" style="flex:1.2; position:relative;">
-         <div class="editor-section-title">DETALHES DO ARTEFATO: ${s?.name || 'NADA'}</div>
-         
-         <div style="background:rgba(255,215,0,0.05); padding:15px; border-radius:12px; border:1px solid rgba(255,215,0,0.2); margin-bottom:15px;">
-            <button id="btn-skill-make-shop" class="editor-btn-secondary" style="width:100%; margin-bottom:10px; background:#ffa500; color:#000; font-weight:900; border:none; padding:12px; border-radius:8px;">💎 TORNAR ARTEFATO ITEM DE LOJA</button>
-            <div id="availability-skill-placeholder">
-               ${s ? this.renderAvailabilityForm(s.availability || { type: 'always' }) : ''}
+      <div class="editor-form-panel" style="flex:1; height:100%; overflow-y:auto; padding:14px 20px; display:flex; flex-direction:column; gap:12px; box-sizing:border-box;">
+        <!-- TOP HEADER BAR -->
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:36px; height:36px; border-radius:8px; background:rgba(139,92,246,0.16); border:1px solid rgba(139,92,246,0.4); display:flex; align-items:center; justify-content:center; overflow:hidden;">
+              ${s?.image ? `<div style="width:100%; height:100%; background:url('${s.image}') center/contain no-repeat;"></div>` : `<span style="font-size:1.1rem;">${s?.icon || '🔮'}</span>`}
             </div>
-         </div>
+            <div>
+              <div style="font-size:0.92rem; font-weight:900; color:#fff; letter-spacing:0.5px;">${(s?.name || 'NENHUM ARTEFATO').toUpperCase()}</div>
+              <div style="font-size:0.62rem; color:#94a3b8;">ID: ${s?.id || '-'}</div>
+            </div>
+          </div>
 
-         ${s ? `
-         <div id="logic-editor-content">
-            <div style="background:rgba(255,255,255,0.03); padding:15px; border-radius:12px; border:1px solid rgba(255,255,255,0.1)">
-              <div class="form-group">
-                <label>Nome da Arte / Magia</label>
-                <input type="text" id="sk-name" class="editor-input" value="${s.name}">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" id="btn-skill-make-shop" style="background:rgba(245,158,11,0.16); border:1px solid #f59e0b; color:#fbbf24; border-radius:7px; padding:6px 12px; font-size:0.68rem; font-weight:900; cursor:pointer;">
+              💎 Sincronizar c/ Loja
+            </button>
+            ${this.skills.length > 1 && s ? `<button type="button" id="btn-delete-skill" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; border-radius:7px; padding:6px 12px; font-size:0.68rem; font-weight:900; cursor:pointer;">🗑️ Excluir</button>` : ''}
+            <button type="button" id="btn-save-skills" class="editor-btn-primary" style="padding:7px 16px; font-size:0.72rem; border-radius:7px;">💾 SALVAR ARTEFATOS</button>
+          </div>
+        </div>
+
+        ${s ? `
+        <div id="logic-editor-content" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:14px; align-items:start;">
+          
+          <!-- COLUNA 1: IDENTIDADE, MÍDIA & DESCRIÇÕES -->
+          <div style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:12px;">
+            <div style="font-size:0.68rem; font-weight:900; color:#a855f7; letter-spacing:0.8px; text-transform:uppercase;">🎨 Identidade & Mídia</div>
+
+            <div style="display:grid; grid-template-columns:1fr 125px; gap:10px; align-items:end;">
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Nome do Artefato / Ativa</label>
+                <input type="text" id="sk-name" class="editor-input" style="padding:8px 10px; font-size:0.82rem;" value="${s.name}">
               </div>
-              <div class="form-row">
-                <div class="form-group" style="flex:1">
-                  <label>Ícone / Mídia (Importar)</label>
-                  <div style="display:flex; gap:10px; align-items:center;">
-                     <div id="sk-media-preview" style="width:60px; height:60px; background:rgba(255,255,255,0.05); border-radius:10px; border:1px solid #444; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.5rem;">
-                        ${s.image ? `<div style="width:100%; height:100%; background:url('${s.image}') center/cover no-repeat"></div>` : s.icon}
-                     </div>
-                     <button id="btn-pick-skill-media" class="editor-btn-secondary" style="height:60px; flex:1">MUDAR ÍCONE</button>
-                  </div>
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">ID (Sistema)</label>
+                <input type="text" id="sk-id" class="editor-input" style="padding:8px 10px; font-size:0.74rem; color:#94a3b8;" value="${s.id}" readonly>
+              </div>
+            </div>
+
+            <div class="form-group" style="gap:4px;">
+              <label style="font-size:0.64rem;">Ícone / Arte na Galeria</label>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <div id="sk-media-preview" style="width:44px; height:44px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid rgba(255,255,255,0.14); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.3rem; flex-shrink:0;">
+                  ${s.image ? `<div style="width:100%; height:100%; background:url('${s.image}') center/cover no-repeat"></div>` : s.icon}
+                </div>
+                <button type="button" id="btn-pick-skill-media" class="editor-btn-secondary" style="height:40px; flex:1; font-size:0.7rem; color:#e2e8f0; border-color:rgba(255,255,255,0.2);">🖼️ Escolher Arte na Galeria</button>
+              </div>
+            </div>
+
+            <div class="form-group" style="gap:4px;">
+              <label style="font-size:0.64rem;">Descrição (In-Game)</label>
+              <textarea id="sk-desc" class="editor-input" rows="2" style="font-size:0.78rem; padding:8px 10px;">${s.description}</textarea>
+            </div>
+
+            <div class="form-group" style="gap:4px;">
+              <label style="font-size:0.64rem;">Lore / Flavor Text</label>
+              <textarea id="sk-flavor" class="editor-input" rows="2" style="font-size:0.76rem; color:#94a3b8; padding:8px 10px;">${s.flavorText}</textarea>
+            </div>
+          </div>
+
+          <!-- COLUNA 2: COMPORTAMENTO DE COMBATE & LOJA -->
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px;">
+              <div style="font-size:0.68rem; font-weight:900; color:#51c5ff; letter-spacing:0.8px; text-transform:uppercase;">⚙️ Comportamento (Buff / Nerf)</div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Tipo de Lógica</label>
+                  <select id="sk-logic" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
+                    <option value="buff" ${s.logicType === 'buff' ? 'selected' : ''}>📈 BUFF (Positivo)</option>
+                    <option value="nerf" ${s.logicType === 'nerf' ? 'selected' : ''}>📉 NERF (Negativo)</option>
+                  </select>
+                </div>
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Alvo</label>
+                  <select id="sk-target" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
+                    <option value="user" ${s.target === 'user' ? 'selected' : ''}>👤 Você (Aliado)</option>
+                    <option value="opponent" ${s.target === 'opponent' ? 'selected' : ''}>👹 Oponente (Inimigo)</option>
+                  </select>
                 </div>
               </div>
-              <div class="form-group" style="margin-top:10px;">
-                  <label>ID (Sistema)</label>
-                  <input type="text" id="sk-id" class="editor-input" value="${s.id}" readonly>
-              </div>
 
-              <div style="margin:20px 0; padding:15px; background:rgba(0,0,0,0.2); border-radius:10px; border-left:4px solid #51c5ff;">
-                 <label style="color:#51c5ff; font-weight:bold; margin-bottom:10px; display:block;">⚙️ COMPORTAMENTO (BUFF/NERF)</label>
-                 
-                 <div class="form-row">
-                    <div class="form-group" style="flex:1">
-                      <label>Tipo de Lógica</label>
-                      <select id="sk-logic" class="editor-input">
-                         <option value="buff" ${s.logicType === 'buff' ? 'selected' : ''}>📈 BUFF (Aumento/Positivo)</option>
-                         <option value="nerf" ${s.logicType === 'nerf' ? 'selected' : ''}>📉 NERF (Redução/Negativo)</option>
-                      </select>
-                    </div>
-                    <div class="form-group" style="flex:1">
-                      <label>Alvo</label>
-                      <select id="sk-target" class="editor-input">
-                         <option value="user" ${s.target === 'user' ? 'selected' : ''}>👤 VOCÊ (Aliado)</option>
-                         <option value="opponent" ${s.target === 'opponent' ? 'selected' : ''}>👹 OPONENTE (Inimigo)</option>
-                      </select>
-                    </div>
-                 </div>
-
-                 <div class="form-row" style="margin-top:10px;">
-                    <div class="form-group" style="flex:1">
-                      <label>Atributo Afetado</label>
-                      <select id="sk-stat" class="editor-input">
-                         <option value="pv" ${s.statType === 'pv' ? 'selected' : ''}>❤️ Vida (PV)</option>
-                         <option value="atk" ${s.statType === 'atk' ? 'selected' : ''}>⚔️ Ataque (ATK)</option>
-                         <option value="turns" ${s.statType === 'turns' ? 'selected' : ''}>⏳ Turnos / Ações</option>
-                         <option value="hand" ${s.statType === 'hand' ? 'selected' : ''}>🎴 Mão / Compra</option>
-                      </select>
-                    </div>
-                    <div class="form-group" style="flex:1">
-                      <label>Valor / Poder</label>
-                      <input type="number" id="sk-power" class="editor-input" value="${s.power || 0}">
-                    </div>
-                 </div>
-              </div>
-
-              <div class="form-group">
-                <label>Descrição (In-Game)</label>
-                <textarea id="sk-desc" class="editor-input" rows="2" style="font-size:0.8rem">${s.description}</textarea>
-              </div>
-              <div class="form-group">
-                <label>Lore / Flavor Text</label>
-                <textarea id="sk-flavor" class="editor-input" rows="2" style="font-size:0.8rem; color:#888;">${s.flavorText}</textarea>
+              <div style="display:grid; grid-template-columns:1fr 120px; gap:10px;">
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Atributo Afetado</label>
+                  <select id="sk-stat" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
+                    <option value="pv" ${s.statType === 'pv' ? 'selected' : ''}>❤️ Vida (PV)</option>
+                    <option value="atk" ${s.statType === 'atk' ? 'selected' : ''}>⚔️ Ataque (ATK)</option>
+                    <option value="turns" ${s.statType === 'turns' ? 'selected' : ''}>⏳ Turnos / Ações</option>
+                    <option value="hand" ${s.statType === 'hand' ? 'selected' : ''}>🎴 Mão / Compra</option>
+                  </select>
+                </div>
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Valor / Poder</label>
+                  <input type="number" id="sk-power" class="editor-input" style="padding:8px 10px; font-size:0.8rem;" value="${s.power || 0}">
+                </div>
               </div>
             </div>
-         </div>
-         ` : ''}
 
-         <div style="margin-top:auto; padding-top:20px;">
-            <button id="btn-save-skills" class="editor-btn-primary" style="width:100%">💾 SALVAR ARTEFATOS</button>
-         </div>
+            <div style="background:rgba(255,215,0,0.04); padding:12px; border-radius:12px; border:1px solid rgba(255,215,0,0.18);">
+              <div style="font-size:0.66rem; font-weight:900; color:#ffd700; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:6px;">🛒 Disponibilidade & Loja</div>
+              <div id="availability-skill-placeholder">
+                ${this.renderAvailabilityForm(s.availability || { type: 'always' })}
+              </div>
+            </div>
+          </div>
+
+        </div>
+        ` : ''}
       </div>
     `;
   }
@@ -156,9 +179,26 @@ export class TabArtefatos {
       });
     });
 
-    container.querySelector('#btn-add-skill')?.addEventListener('click', () => {
+    container.querySelector('#btn-add-skill')?.addEventListener('click', async () => {
       this.skills.push({ id: `skill_${Date.now()}`, name: 'Nova Magia', icon: '🪄', effect: 'burn', category: 'arcane', group: 'offensive', description: '', flavorText: '', power: 100 });
+      await fetch('/api/save-skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.skills)
+      });
       this.setArtefatosSelectedIndex(this.skills.length - 1);
+    });
+
+    container.querySelector('#btn-delete-skill')?.addEventListener('click', async () => {
+      if (this.skills.length <= 1) return;
+      this.skills.splice(this.selectedIndex, 1);
+      await fetch('/api/save-skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.skills)
+      });
+      this.showToast('Artefato removido!', '#ef4444');
+      this.setArtefatosSelectedIndex(Math.max(0, this.selectedIndex - 1));
     });
 
     if (s) {

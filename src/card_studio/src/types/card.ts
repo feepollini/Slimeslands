@@ -128,6 +128,8 @@ export interface CardData {
   magicAbilityKind?: 'passive' | 'active'; // Linked board effect type for Magic Cards
   linkedPassiveId?: string;      // Linked Passive ID from Forja (abilities.json)
   linkedActiveSkillId?: string;  // Linked Active Skill ID from Forja (skills.json)
+  linkedMobbyId?: string;        // Linked Mobby ID from Mobbys Duelos (mobbys.json)
+  linkedMobbyName?: string;      // Linked Mobby display name
   origin?: CardOrigin;
   deckId?: string;
   createdAt?: string;

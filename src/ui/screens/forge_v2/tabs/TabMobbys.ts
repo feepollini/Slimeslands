@@ -478,14 +478,16 @@ export class TabMobbys {
               </div>
 
               <div style="grid-column: span 2; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,215,0,0.35); border-radius: 10px; padding:12px; display:flex; flex-direction:column; gap:10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
                   <div style="display:flex; align-items:center; gap:6px;">
-                    <span style="font-size:0.9rem;">🎴</span>
-                    <label style="font-size:0.75rem; color:#ffd700; font-weight:900; letter-spacing:0.5px;">CARTA RECOMPENSA DE VITÓRIA (DROP DO CHEFE)</label>
+                    <span style="font-size:0.95rem;">🔗</span>
+                    <label style="font-size:0.75rem; color:#ffd700; font-weight:900; letter-spacing:0.5px;">PARÂMETRO DE VÍNCULO BIDIRECIONAL: MOBBY ⇄ CARTA</label>
                   </div>
-                  <div style="display:flex; align-items:center; gap:6px;">
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <button type="button" id="btn-sync-mobby-png-to-card" style="background:rgba(16,185,129,0.16); border:1px solid rgba(16,185,129,0.45); color:#34d399; border-radius:4px; padding:2px 7px; font-size:0.6rem; font-weight:800; cursor:pointer;" title="Aplica a PNG deste Mobby também na Carta vinculada">🖼️ Enviar PNG p/ Carta</button>
+                    <button type="button" id="btn-sync-card-art-to-mobby" style="background:rgba(56,189,248,0.16); border:1px solid rgba(56,189,248,0.45); color:#38bdf8; border-radius:4px; padding:2px 7px; font-size:0.6rem; font-weight:800; cursor:pointer;" title="Puxa a arte da Carta vinculada para ser a PNG deste Mobby">🖼️ Usar Arte da Carta</button>
                     <button id="btn-refresh-reward-cards" style="background:rgba(255,215,0,0.15); border:1px solid rgba(255,215,0,0.4); color:#ffd700; border-radius:4px; padding:2px 7px; font-size:0.62rem; font-weight:800; cursor:pointer;" title="Recarregar cartas atualizadas da Forja">🔄 Sincronizar</button>
-                    <span id="lbl-reward-card-name" style="font-size:0.7rem; color:#ffd700; font-weight:800; background:rgba(255,215,0,0.15); padding:2px 8px; border-radius:4px; border:1px solid rgba(255,215,0,0.3);">${rewardCardTmpl.name}</span>
+                    <span id="lbl-reward-card-name" style="font-size:0.7rem; color:#ffd700; font-weight:800; background:rgba(255,215,0,0.15); padding:2px 8px; border-radius:4px; border:1px solid rgba(255,215,0,0.3);">🔗 ${rewardCardTmpl.name}</span>
                   </div>
                 </div>
 
@@ -697,15 +699,14 @@ export class TabMobbys {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = (btn as HTMLElement).dataset.id!;
-        if (confirm('Deseja excluir este Mobby?')) {
-          MobbyManager.deleteMobby(id);
-          const list = MobbyManager.getMobbys();
-          this.selectedMobbyId = list[0]?.id || '';
-          TabMobbys.activeSelectedMobbyId = this.selectedMobbyId;
-          this.currentMobby = MobbyManager.getMobbyById(this.selectedMobbyId) || this.createBlankMobby();
-          this.previewCurrentHp = this.currentMobby.hp;
-          this.callbacks.reRender();
-        }
+        MobbyManager.deleteMobby(id);
+        const list = MobbyManager.getMobbys();
+        this.selectedMobbyId = list[0]?.id || '';
+        TabMobbys.activeSelectedMobbyId = this.selectedMobbyId;
+        this.currentMobby = MobbyManager.getMobbyById(this.selectedMobbyId) || this.createBlankMobby();
+        this.previewCurrentHp = this.currentMobby.hp;
+        this.callbacks.showToast?.('🗑️ Mobby removido!', '#ff6b6b');
+        this.callbacks.reRender();
       });
     });
 
@@ -747,13 +748,19 @@ export class TabMobbys {
       this.autoSave();
     });
 
-    // ─── SELETOR VISUAL DA CARTA RECOMPENSA (CARROSSEL + PREVIEW + SELECT) ───
+    // ─── SELETOR VISUAL DA CARTA VINCULADA / RECOMPENSA (CARROSSEL + PREVIEW + SELECT + VÍNCULO BIDIRECIONAL) ───
     const updateRewardCardVisual = (cardName: string) => {
       this.currentMobby.rewardCardId = cardName;
+      this.currentMobby.linkedCardId = cardName;
       this.autoSave();
 
       const templates = this.getTemplates();
       const card = templates.find((c: any) => c.name === cardName) || templates[0];
+      MobbyManager.setBidirectionalLink(
+        this.currentMobby.id,
+        card?.id || cardName,
+        card?.name || cardName
+      );
       if (card) {
         const rewardRarityKey = (card.preferredRarity || 'common').toLowerCase();
         const rDef = (RARITIES as any)[rewardRarityKey] || { label: 'Comum', color: '#aaaaaa', icon: '⬜' };
@@ -898,6 +905,43 @@ export class TabMobbys {
     container.querySelector('#sel-mobby-reward')?.addEventListener('change', (e) => {
       const cardName = (e.target as HTMLSelectElement).value;
       updateRewardCardVisual(cardName);
+      this.callbacks.showToast?.(`🔗 Mobby vinculado bidirecionalmente à carta "${cardName}"!`, '#ffd700');
+    });
+
+    // Sincronizar PNG do Mobby -> Carta vinculada
+    container.querySelector('#btn-sync-mobby-png-to-card')?.addEventListener('click', () => {
+      const templates = this.getTemplates();
+      const card = templates.find((c: any) => c.name === this.currentMobby.rewardCardId) || templates[0];
+      if (!card) return;
+      card.image = this.currentMobby.image;
+      MobbyManager.setBidirectionalLink(
+        this.currentMobby.id,
+        card.id || card.name,
+        card.name,
+        this.currentMobby.image
+      );
+      this.callbacks.saveTemplates?.();
+      updateRewardCardVisual(card.name);
+      this.callbacks.showToast?.(`🖼️ PNG do Mobby aplicada na carta "${card.name}"!`, '#2ecc71');
+    });
+
+    // Puxar arte da Carta vinculada -> PNG do Mobby
+    container.querySelector('#btn-sync-card-art-to-mobby')?.addEventListener('click', () => {
+      const templates = this.getTemplates();
+      const card = templates.find((c: any) => c.name === this.currentMobby.rewardCardId) || templates[0];
+      if (!card || !card.image) return;
+      this.currentMobby.image = card.image;
+      const imgDisplay = container.querySelector('#mobby-img-display') as HTMLImageElement | null;
+      if (imgDisplay) imgDisplay.src = card.image;
+      this.autoSave();
+      MobbyManager.setBidirectionalLink(
+        this.currentMobby.id,
+        card.id || card.name,
+        card.name,
+        card.image
+      );
+      this.callbacks.reRender();
+      this.callbacks.showToast?.(`🖼️ Arte da carta "${card.name}" definida como PNG deste Mobby!`, '#51c5ff');
     });
 
     container.querySelectorAll('.sel-slot-artifact').forEach(sel => {

@@ -222,15 +222,26 @@ function cardEditorPlugin(): Plugin {
                     req.on('data', (chunk: any) => { body += chunk.toString(); });
                     req.on('end', () => {
                         try {
-                            const { url } = JSON.parse(body);
-                            const filePath = path.resolve(process.cwd(), 'public', url.startsWith('/') ? url.slice(1) : url);
-                            if (fs.existsSync(filePath)) {
-                                fs.unlinkSync(filePath);
-                                res.setHeader('Content-Type', 'application/json');
-                                res.end(JSON.stringify({ success: true }));
-                            } else {
-                                throw new Error('File not found');
+                            const { url, urls } = JSON.parse(body);
+                            const targetUrls: string[] = Array.isArray(urls) ? urls : (url ? [url] : []);
+                            const deleted: string[] = [];
+
+                            for (const rawUrl of targetUrls) {
+                                if (!rawUrl || typeof rawUrl !== 'string') continue;
+                                const cleanRel = decodeURIComponent(rawUrl.split('?')[0]).replace(/^\/+/, '');
+                                const filePath = path.resolve(process.cwd(), 'public', cleanRel);
+                                // Prevent directory traversal outside public
+                                const publicRoot = path.resolve(process.cwd(), 'public');
+                                if (filePath.startsWith(publicRoot)) {
+                                    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                                        fs.unlinkSync(filePath);
+                                    }
+                                    deleted.push(rawUrl);
+                                }
                             }
+
+                            res.setHeader('Content-Type', 'application/json');
+                            res.end(JSON.stringify({ success: true, deleted }));
                         } catch (err: unknown) {
                             res.statusCode = 500;
                             res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }));
@@ -567,7 +578,6 @@ export default defineConfig({
             input: {
                 main: path.resolve(__dirname, 'index.html'),
                 hub: path.resolve(__dirname, 'hub.html'),
-                editor: path.resolve(__dirname, 'editor.html'),
                 battle: path.resolve(__dirname, 'battle.html'),
                 boss_battle: path.resolve(__dirname, 'boss_battle.html'),
                 arsenal: path.resolve(__dirname, 'arsenal.html'),

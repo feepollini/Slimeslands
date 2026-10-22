@@ -11,6 +11,7 @@ export class QuickActionsToolbar {
   private dragStartY = 0;
   private posX = 10;
   private posY = 100;
+  private _container: HTMLElement | null = null;
 
   private actions = [
     { id: 'undo', label: '↩', title: 'Desfazer (Ctrl+Z)', color: '#51c5ff', shortcut: 'Ctrl+Z' },

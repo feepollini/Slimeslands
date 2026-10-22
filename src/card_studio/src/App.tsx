@@ -125,6 +125,31 @@ export default function App() {
     return () => window.removeEventListener('slimelands:decks-updated', updateActiveDeckName);
   }, []);
 
+  useEffect(() => {
+    const onMobbyLinkUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      const targetId = (detail.cardId || '').trim();
+      const targetTitle = (detail.cardTitle || '').trim().toLowerCase();
+      setCards((prev) =>
+        prev.map((c) => {
+          const match =
+            (targetId && c.id === targetId) ||
+            (targetTitle && (c.title || '').trim().toLowerCase() === targetTitle);
+          if (!match) return c;
+          return {
+            ...c,
+            linkedMobbyId: detail.mobbyId || undefined,
+            linkedMobbyName: detail.mobbyName || undefined,
+            ...(detail.syncImageUrl ? { imageUrl: detail.syncImageUrl } : {}),
+          };
+        })
+      );
+    };
+    window.addEventListener('slimelands:mobby-card-link-updated', onMobbyLinkUpdated);
+    return () => window.removeEventListener('slimelands:mobby-card-link-updated', onMobbyLinkUpdated);
+  }, []);
+
   // Hydrate persistent Game Matrix on startup so nothing is lost on reload
   useEffect(() => {
     let cancelled = false;

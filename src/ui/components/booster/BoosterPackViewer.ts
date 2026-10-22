@@ -3,8 +3,6 @@ import {
   createBoosterFoilFrontTexture,
   createBoosterFoilBackTexture,
   createPokemonCardBackTexture,
-  createSparkleSpriteTexture,
-  createHoloLightBeamTexture,
   createBoosterNineCards,
   createPremiumCardTexture,
   PackCardData,
@@ -16,8 +14,14 @@ import {
   playHoloShimmerSound,
   playSparkleBurstSound,
 } from './pokemonAudio';
-import { getGlobalCardBack } from '../../../core/constants';
 import { openCardViewer } from '../CardViewer';
+import { renderMatrixCardSVG } from '../../screens/forge_v2/utils/HestridiaMatrixRenderer';
+
+// ============================================================================
+// FLAGS MODULARES (Prontas para desfazer/desativar facilmente se necessário)
+// ============================================================================
+export const ENABLE_BOOSTER_TEAR_GLOW = false; // Removido conforme solicitado ("remover o brilho ao abrir o booster")
+export const ENABLE_BOOSTER_CAROUSEL = true;   // Ciranda / Roda 3D de 12 boosters antes de abrir
 
 export interface BoosterPackViewerOptions {
   theme?: 'charizard' | 'pikachu' | 'rayquaza' | 'mewtwo' | string;
@@ -34,6 +38,52 @@ export interface BoosterPackViewerOptions {
   onClose?: () => void;
 }
 
+function getBoosterCardSortWeight(c: any): number {
+  if (!c) return 0;
+  if (typeof c.rarityWeight === 'number') return c.rarityWeight;
+  const tpl = c.tpl || c.cardData || c;
+  const cls = String(c.cardClass || c.matrixRarity || tpl.cardClass || tpl.matrixRarity || '').toLowerCase();
+  const raw = String(c.rarity || c.preferredRarity || tpl.preferredRarity || tpl.rarity || '').toLowerCase();
+  const label = String(c.rarityLabel || '').toLowerCase();
+  const rank = String(c.cardRank || tpl.cardRank || '').toLowerCase();
+
+  if (
+    cls.includes('mítica') || cls.includes('mitica') || cls.includes('limitada') ||
+    raw.includes('mítica') || raw.includes('mitica') || raw.includes('mythic') ||
+    label.includes('mítica') || label.includes('mitica')
+  ) {
+    return 5;
+  }
+  if (
+    cls.includes('lendária') || cls.includes('lendaria') ||
+    raw.includes('lendária') || raw.includes('lendaria') || raw.includes('legendary') ||
+    label.includes('lendária') || label.includes('lendaria') ||
+    rank === 's'
+  ) {
+    return 4;
+  }
+  if (
+    cls.includes('épica') || cls.includes('epica') ||
+    raw.includes('épica') || raw.includes('epica') || raw.includes('epic') ||
+    label.includes('épica') || rank === 'a'
+  ) {
+    return 3;
+  }
+  if (cls.includes('rara') || raw.includes('rara') || raw.includes('rare') || label.includes('rara') || rank === 'b') {
+    return 2;
+  }
+  if (cls.includes('incomum') || raw.includes('incomum') || raw.includes('uncommon') || label.includes('incomum') || rank === 'c') {
+    return 1;
+  }
+  return 0;
+}
+
+function normalizeAngleRad(angle: number): number {
+  let a = ((angle + Math.PI) % (Math.PI * 2));
+  if (a < 0) a += Math.PI * 2;
+  return a - Math.PI;
+}
+
 export class BoosterPackViewer {
   private overlay: HTMLElement;
   private container: HTMLElement;
@@ -45,29 +95,30 @@ export class BoosterPackViewer {
   constructor(options: BoosterPackViewerOptions = {}) {
     this.options = options;
 
-    // Overlay em tela cheia TRANSPARENTE: o cenário da página aparece atrás
+    // Overlay em tela cheia com fundo BRANCO de estúdio (estilo Pokémon TCG Pocket)
     this.overlay = document.createElement('div');
     this.overlay.className = 'booster-modal-overlay';
     this.overlay.style.cssText = `
       position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9999999;
-      background: transparent;
+      background: #ffffff;
       overflow: hidden; touch-action: none; user-select: none; font-family: 'Outfit', sans-serif;
     `;
 
-    // Botão de fechar elegante no canto superior direito (claro p/ fundo escuro)
+    // Botão de fechar elegante no canto superior direito (adaptado para fundo branco)
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '✕';
     closeBtn.title = 'Fechar';
     closeBtn.style.cssText = `
       position: absolute; top: 18px; right: 20px; z-index: 1000;
       width: 38px; height: 38px; border-radius: 50%;
-      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25);
-      color: #fff; font-size: 1.1rem; font-weight: 700;
+      background: rgba(15, 23, 42, 0.06); border: 1px solid rgba(15, 23, 42, 0.15);
+      color: #1e293b; font-size: 1.1rem; font-weight: 800;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       transition: background 0.2s, transform 0.15s;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
     `;
-    closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255, 255, 255, 0.18)'; };
-    closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(255, 255, 255, 0.08)'; };
+    closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(15, 23, 42, 0.12)'; };
+    closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(15, 23, 42, 0.06)'; };
     closeBtn.onclick = () => this.destroy();
     this.overlay.appendChild(closeBtn);
 
@@ -78,30 +129,27 @@ export class BoosterPackViewer {
     `;
     this.overlay.appendChild(this.container);
 
-    // Desfoque de lente sobre o cenário (frosted cinematográfico atrás das cartas)
-    const lensBlur = document.createElement('div');
-    lensBlur.style.cssText = `
+    // Fundo branco puro de estúdio (substituindo o antigo desfoque de lente escuro)
+    const studioWhiteBg = document.createElement('div');
+    studioWhiteBg.style.cssText = `
       position: absolute; inset: 0; pointer-events: none;
-      backdrop-filter: blur(10px) brightness(0.8);
-      -webkit-backdrop-filter: blur(10px) brightness(0.8);
-      background: rgba(0, 0, 0, 0.28);
+      background: radial-gradient(circle at 50% 42%, #ffffff 0%, #f8fafc 58%, #eef2f7 100%);
     `;
-    this.overlay.insertBefore(lensBlur, this.container);
+    this.overlay.insertBefore(studioWhiteBg, this.container);
     const themeKey = (this.options.theme || '').toLowerCase();
     const themeTint: Record<string, string> = {
-      charizard: 'rgba(255,90,0,0.30)',
-      pikachu: 'rgba(255,215,0,0.26)',
-      rayquaza: 'rgba(0,200,120,0.26)',
-      mewtwo: 'rgba(150,80,255,0.30)',
+      charizard: 'rgba(255,140,60,0.14)',
+      pikachu: 'rgba(255,215,0,0.16)',
+      rayquaza: 'rgba(16,185,129,0.14)',
+      mewtwo: 'rgba(168,85,247,0.14)',
     };
-    const tint = themeTint[themeKey] || 'rgba(120,120,180,0.22)';
+    const tint = themeTint[themeKey] || 'rgba(148,163,184,0.12)';
     const themeGlow = document.createElement('div');
     themeGlow.style.cssText = `
       position: absolute; inset: 0; pointer-events: none; z-index: 0;
       transition: opacity 0.6s ease;
       background:
-        radial-gradient(circle at 50% 42%, ${tint} 0%, transparent 62%),
-        radial-gradient(circle at 50% 50%, rgba(0,0,0,0.55) 0%, transparent 75%);
+        radial-gradient(circle at 50% 42%, ${tint} 0%, transparent 64%);
     `;
     this.overlay.insertBefore(themeGlow, this.container);
     this.themeGlow = themeGlow;
@@ -117,19 +165,18 @@ export class BoosterPackViewer {
       const qtyCapsule = document.createElement('div');
       qtyCapsule.className = 'booster-quantity-capsule';
       qtyCapsule.innerHTML = `
-        <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#ffd700; box-shadow:0 0 8px #ffd700;"></span>
-        <span>PACOTES: <b style="color:#fff; font-size:0.95rem;">${qty}x</b></span>
+        <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#f59e0b; box-shadow:0 0 8px #f59e0b;"></span>
+        <span>PACOTES: <b style="color:#0f172a; font-size:0.95rem;">${qty}x</b></span>
       `;
       qtyCapsule.style.cssText = `
-        position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
         z-index: 1000; pointer-events: none;
         display: flex; align-items: center; gap: 8px;
         padding: 7px 20px; border-radius: 999px;
-        background: rgba(14, 18, 26, 0.76);
-        border: 1px solid rgba(255, 215, 0, 0.4);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), 0 0 12px rgba(255, 215, 0, 0.18);
-        backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-        color: #ffd76a; font-family: 'Outfit', sans-serif;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+        color: #b45309; font-family: 'Outfit', sans-serif;
         font-size: 0.8rem; font-weight: 800; letter-spacing: 1.2px;
         transition: opacity 0.35s ease, transform 0.35s ease;
         white-space: nowrap;
@@ -140,7 +187,7 @@ export class BoosterPackViewer {
 
     document.body.appendChild(this.overlay);
 
-    // Inicia a cena 3D idêntica ao original
+    // Inicia a cena 3D
     this.initThreeScene();
   }
 
@@ -154,7 +201,6 @@ export class BoosterPackViewer {
     scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
-    // Diminui um pouco o tamanho do booster (distância 12.4 ao invés de 10.8)
     camera.position.set(0, 0, 12.4);
     camera.lookAt(0, 0, 0);
 
@@ -164,34 +210,34 @@ export class BoosterPackViewer {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.15;
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     container.appendChild(renderer.domElement);
 
-    // --- Studio Lighting calibrated for Crisp White Setting ---
-    const ambientLight = new THREE.AmbientLight('#ffffff', 0.85);
+    // --- Studio Lighting reforçada para que a frente do envelope fique clara, viva e bem iluminada ---
+    const ambientLight = new THREE.AmbientLight('#ffffff', 1.75);
     scene.add(ambientLight);
 
-    const hemiLight = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 0.85);
+    const hemiLight = new THREE.HemisphereLight('#ffffff', '#e2e8f0', 1.40);
     hemiLight.position.set(0, 10, 0);
     scene.add(hemiLight);
 
-    const frontStudioLight = new THREE.DirectionalLight('#ffffff', 0.70);
-    frontStudioLight.position.set(0, 1.2, 8.5);
+    const frontStudioLight = new THREE.DirectionalLight('#ffffff', 1.35);
+    frontStudioLight.position.set(0, 1.2, 9.5);
     scene.add(frontStudioLight);
 
-    const keyLight = new THREE.DirectionalLight('#fffcf8', 1.15);
+    const keyLight = new THREE.DirectionalLight('#fffcf8', 1.25);
     keyLight.position.set(4.5, 8.5, 6.5);
     scene.add(keyLight);
 
-    const softFillLight = new THREE.DirectionalLight('#f0f4f8', 0.50);
-    softFillLight.position.set(-6, 3, 5);
+    const softFillLight = new THREE.DirectionalLight('#f8fafc', 0.85);
+    softFillLight.position.set(-6, 3, 6);
     scene.add(softFillLight);
 
-    const rimLight = new THREE.DirectionalLight('#e2e8f0', 0.35);
-    rimLight.position.set(0, -6, 4);
+    const rimLight = new THREE.DirectionalLight('#e2e8f0', 0.55);
+    rimLight.position.set(0, -6, 5);
     scene.add(rimLight);
 
     // --- Textures & Materials ---
@@ -204,9 +250,8 @@ export class BoosterPackViewer {
     const cardBackTex = createPokemonCardBackTexture();
 
     const defaultNine = createBoosterNineCards();
-    let initialCards = defaultNine;
-    if (this.options.cards && this.options.cards.length > 0) {
-      initialCards = this.options.cards.map((c, i) => {
+    const mapRawCardsList = (rawList: PackCardData[]): PackCardData[] => {
+      const mappedList = rawList.map((c, i) => {
         const fallback = defaultNine[i % defaultNine.length];
         const mapped: any = {
           ...fallback,
@@ -220,24 +265,32 @@ export class BoosterPackViewer {
           tpl: (c as any).tpl || c,
           image: (c as any).image || (fallback as any).image || '',
         };
+        mapped.rarityWeight = getBoosterCardSortWeight(mapped);
+        if (mapped.rarityWeight >= 4) {
+          mapped.rarity = 'legendary';
+        }
         mapped.texture = c.texture || createPremiumCardTexture(mapped);
         return mapped;
       });
-    }
+      // Garante que a carta Mítica ou Lendária SEMPRE seja a última carta do booster
+      return mappedList.sort((a, b) => getBoosterCardSortWeight(a) - getBoosterCardSortWeight(b));
+    };
 
-    const cardsData = [...initialCards];
+    const sourceCardsInput: any = this.options.cards && this.options.cards.length > 0 ? this.options.cards : defaultNine;
+    let cardsData: PackCardData[] = mapRawCardsList(sourceCardsInput);
 
+    // Reduzimos metalness na frente para não escurecer o albedo sem HDRI, mantendo brilho acetinado vivo
     const foilFrontMat = new THREE.MeshStandardMaterial({
       map: foilFrontTex,
-      metalness: 0.88,
-      roughness: 0.26,
+      metalness: 0.14,
+      roughness: 0.30,
       side: THREE.DoubleSide,
     });
 
     const foilBackMat = new THREE.MeshStandardMaterial({
       map: foilBackTex,
-      metalness: 0.92,
-      roughness: 0.30,
+      metalness: 0.30,
+      roughness: 0.28,
       side: THREE.DoubleSide,
     });
 
@@ -271,9 +324,6 @@ export class BoosterPackViewer {
         foilBackMat.needsUpdate = true;
       });
     }
-
-    // O verso 3D já utiliza o CardBackSVG oficial da Matriz (que respeita backImageUrl ou verso Hestridia)
-
 
     const tearSilverMat = new THREE.MeshStandardMaterial({
       color: '#f8fafc',
@@ -487,7 +537,6 @@ export class BoosterPackViewer {
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, 512, 64);
 
-      // Linha central com brilho vertical suave
       const vGrad = ctx.createLinearGradient(0, 0, 0, 64);
       vGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
       vGrad.addColorStop(0.35, 'rgba(0, 235, 255, 0.45)');
@@ -497,7 +546,6 @@ export class BoosterPackViewer {
       ctx.fillStyle = vGrad;
       ctx.fillRect(0, 0, 512, 64);
 
-      // Feixe de luz horizontal pulsante indicando o traço
       const hGrad = ctx.createLinearGradient(0, 0, 512, 0);
       hGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.2)');
       hGrad.addColorStop(0.32, 'rgba(255, 255, 255, 0.3)');
@@ -564,6 +612,46 @@ export class BoosterPackViewer {
     const tearGuideMesh = new THREE.Mesh(guideGeo, tearGuideMat);
     worldGroup.add(tearGuideMesh);
 
+    // --- 3.9 Ciranda / Carrossel 3D de 12 Boosters com Faces Viradas Para Fora ---
+    const CAROUSEL_SLOTS = 12;
+    const CAROUSEL_RADIUS = 7.4;
+    const carouselRootGroup = new THREE.Group();
+    carouselRootGroup.position.set(0, 0, -CAROUSEL_RADIUS);
+    carouselRootGroup.visible = ENABLE_BOOSTER_CAROUSEL;
+    scene.add(carouselRootGroup);
+
+    const carouselWheelGroup = new THREE.Group();
+    carouselRootGroup.add(carouselWheelGroup);
+
+    const carouselPackFrontGeo = createPouchSectionGeo(-PH / 2, PH / 2, true, 32, 18);
+    const carouselPackBackGeo = createPouchSectionGeo(-PH / 2, PH / 2, false, 32, 18);
+    const carouselLeftSeamGeo = createSideSeamGeo(-PH / 2, PH / 2, false, 18);
+    const carouselRightSeamGeo = createSideSeamGeo(-PH / 2, PH / 2, true, 18);
+
+    const carouselSlotGroups: THREE.Group[] = [];
+    for (let k = 0; k < CAROUSEL_SLOTS; k++) {
+      const theta = (k / CAROUSEL_SLOTS) * Math.PI * 2;
+      const slotGroup = new THREE.Group();
+      slotGroup.position.set(
+        Math.sin(theta) * CAROUSEL_RADIUS,
+        0,
+        Math.cos(theta) * CAROUSEL_RADIUS
+      );
+      // Todas as 12 faces frontais (+Z local) viradas radialmente para fora da roda!
+      slotGroup.rotation.y = theta;
+
+      const packHolder = new THREE.Group();
+      packHolder.add(new THREE.Mesh(carouselPackFrontGeo, foilFrontMat));
+      packHolder.add(new THREE.Mesh(carouselPackBackGeo, foilBackMat));
+      packHolder.add(new THREE.Mesh(carouselLeftSeamGeo, foilBackMat));
+      packHolder.add(new THREE.Mesh(carouselRightSeamGeo, foilFrontMat));
+
+      (slotGroup as any).userData = { slotIndex: k, theta, packHolder };
+      slotGroup.add(packHolder);
+      carouselWheelGroup.add(slotGroup);
+      carouselSlotGroups.push(slotGroup);
+    }
+
     // --- 4. Cards Rig ---
     const cardsMasterGroup = new THREE.Group();
     worldGroup.add(cardsMasterGroup);
@@ -595,6 +683,78 @@ export class BoosterPackViewer {
     const cardsStackGroup = new THREE.Group();
     cardsMasterGroup.add(cardsStackGroup);
 
+    // --- 4.5 Animação Existente na Matriz para Carta Mítica/Lendária (Última Carta) ---
+    // Em vez de criar partículas Three.js avulsas, montamos o SVG oficial da Matriz com animateChroma=true
+    // sincronizado 1:1 sobre a última carta revelada antes de ir para o grid de 9 cartas!
+    const matrixRarityOverlay = document.createElement('div');
+    matrixRarityOverlay.className = 'booster-matrix-rarity-live-overlay';
+    matrixRarityOverlay.style.cssText = `
+      position: absolute; left: 0; top: 0; width: 0; height: 0;
+      pointer-events: none; z-index: 950; display: none;
+      transform-origin: center center; will-change: transform, left, top, width, height, opacity;
+    `;
+    this.overlay.appendChild(matrixRarityOverlay);
+
+    let activeMatrixOverlayMeshIdx = -1;
+    let matrixRarityTimer = 0;
+    const MATRIX_RARITY_DURATION = 2.25;
+    let pendingGridTimer = 0;
+
+    const hideMatrixRarityAnimation = () => {
+      if (activeMatrixOverlayMeshIdx >= 0 && cardMeshes[activeMatrixOverlayMeshIdx]) {
+        const frontMesh = (cardMeshes[activeMatrixOverlayMeshIdx] as any).userData?.frontMesh;
+        if (frontMesh) frontMesh.visible = true;
+      }
+      activeMatrixOverlayMeshIdx = -1;
+      matrixRarityTimer = 0;
+      matrixRarityOverlay.style.display = 'none';
+      matrixRarityOverlay.innerHTML = '';
+    };
+
+    const triggerMatrixRarityAnimation = (meshIdx: number) => {
+      const targetMesh = cardMeshes[meshIdx];
+      if (!targetMesh) return;
+      const cd = (targetMesh as any).userData?.cardData || cardsData[meshIdx];
+      if (!cd) return;
+
+      hideMatrixRarityAnimation();
+
+      const rawCardSource = cd.tpl || cd.cardData || cd;
+      const svgMarkup = renderMatrixCardSVG(
+        {
+          ...rawCardSource,
+          ...cd,
+          rarityWeight: getBoosterCardSortWeight(cd),
+        },
+        { mode: 'full', animateChroma: true }
+      );
+
+      matrixRarityOverlay.innerHTML = `
+        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+          ${svgMarkup}
+        </div>
+      `;
+      const svgEl = matrixRarityOverlay.querySelector('svg');
+      if (svgEl) {
+        svgEl.style.width = '100%';
+        svgEl.style.height = '100%';
+        svgEl.style.display = 'block';
+        svgEl.style.overflow = 'visible';
+      }
+
+      activeMatrixOverlayMeshIdx = meshIdx;
+      matrixRarityTimer = MATRIX_RARITY_DURATION;
+      matrixRarityOverlay.style.display = 'block';
+      matrixRarityOverlay.style.opacity = '1';
+
+      // Oculta a face estática WebGL enquanto o SVG vivo da Matriz está sobreposto 1:1
+      const frontMesh = (targetMesh as any).userData?.frontMesh;
+      if (frontMesh) frontMesh.visible = false;
+
+      playSparkleBurstSound();
+      playHoloShimmerSound();
+    };
+
     let currentCardThickness = 0.0075;
     const getSlotZ = (slotIdx: number, total: number) => {
       const stepZ = total > 1 ? (MAX_STACK_DEPTH - currentCardThickness) / (total - 1) : 0;
@@ -625,7 +785,6 @@ export class BoosterPackViewer {
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, 512, 512);
 
-      // Gradiente diagonal holográfico arco-íris
       const grad = ctx.createLinearGradient(0, 0, 512, 512);
       grad.addColorStop(0.0, 'rgba(255, 255, 255, 0)');
       grad.addColorStop(0.32, 'rgba(0, 230, 255, 0)');
@@ -640,7 +799,6 @@ export class BoosterPackViewer {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 512, 512);
 
-      // Glints e estrelas cintilantes contidos na textura
       const drawGlint = (cx: number, cy: number, r: number) => {
         const radGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
         radGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
@@ -677,7 +835,7 @@ export class BoosterPackViewer {
     let shimmerMeshIdx = -1;
 
     const triggerCardShimmer = (targetIdx?: number) => {
-      shimmerTimer = 1.2;
+      shimmerTimer = 1.35;
       shimmerMeshIdx = targetIdx !== undefined ? targetIdx : (cardOrder[0] ?? 0);
       playHoloShimmerSound();
     };
@@ -705,21 +863,14 @@ export class BoosterPackViewer {
       videoCinematic.timer = 0;
     };
 
-    const triggerVideoCinematic = (meshIdx: number) => {
-      const mesh = cardMeshes[meshIdx];
-      if (!mesh) return;
-      if (videoCinematic.active && videoCinematic.meshIdx !== meshIdx) {
-        stopVideoCinematic();
-      }
-      videoCinematic.active = true;
-      videoCinematic.meshIdx = meshIdx;
-      videoCinematic.timer = 0;
-      videoCinematic.startPos.copy(mesh.position);
-      videoCinematic.startRot.copy(mesh.rotation);
-      videoCinematic.startScale = 1.0;
-      mesh.scale.set(1, 1, 1);
-      triggerCardShimmer(meshIdx);
-      triggerSparkleFx();
+    const enterGridMode = () => {
+      if (isGridMode) return;
+      stopVideoCinematic();
+      hideMatrixRarityAnimation();
+      pendingGridTimer = 0;
+      isGridMode = true;
+      bottomGridBar.style.display = 'flex';
+      playHoloShimmerSound();
     };
 
     const finishCycle = () => {
@@ -744,8 +895,19 @@ export class BoosterPackViewer {
         const newTopMesh = cardMeshes[newTopIdx];
         if (newTopMesh && !isGridMode) {
           const rarity = (newTopMesh as any).userData?.rarity;
-          const isPremium = rarity === 'legendary' || rarity === 'epic' || (newTopMesh as any).userData?.isVideo;
-          if (isPremium) {
+          const weight = (newTopMesh as any).userData?.rarityWeight ?? 0;
+          const isLastCard = revealedCount >= count || newTopIdx === count - 1;
+          const isMythicOrLegendary = rarity === 'legendary' || weight >= 4;
+          const isPremium = isMythicOrLegendary || rarity === 'epic' || (newTopMesh as any).userData?.isVideo;
+
+          if (isLastCard || isMythicOrLegendary) {
+            // Dispara a animação oficial da Matriz (CardFrameSVG animateChroma=true) na última carta!
+            triggerCardShimmer(newTopIdx);
+            triggerMatrixRarityAnimation(newTopIdx);
+            if (isLastCard) {
+              pendingGridTimer = 2.15;
+            }
+          } else if (isPremium) {
             triggerCardShimmer(newTopIdx);
             triggerSparkleFx();
           }
@@ -757,6 +919,7 @@ export class BoosterPackViewer {
       if (videoCinematic.active) {
         stopVideoCinematic();
       }
+      hideMatrixRarityAnimation();
       const count = cardMeshes.length;
       if (count <= 1) {
         playCardSlideSound();
@@ -773,6 +936,7 @@ export class BoosterPackViewer {
     };
 
     const rebuildCardMeshes = (cardsList: PackCardData[]) => {
+      hideMatrixRarityAnimation();
       while (cardsStackGroup.children.length > 0) {
         cardsStackGroup.remove(cardsStackGroup.children[0]);
       }
@@ -872,8 +1036,10 @@ export class BoosterPackViewer {
           cardData: cardItem,
           isVideo: isVideoCard,
           rarity: cardItem.rarity,
+          rarityWeight: getBoosterCardSortWeight(cardItem),
           meshIndex: idx,
           sheenMesh: sheenMesh,
+          frontMesh: frontMesh,
         };
 
         cardGroup.position.set(0, 0, getSlotZ(idx, count));
@@ -886,7 +1052,22 @@ export class BoosterPackViewer {
     rebuildCardMeshes(cardsData);
 
     // State Variables
-    let packState: 'sealed' | 'cutting' | 'opened' = 'sealed';
+    let packState: 'carousel' | 'sealed' | 'cutting' | 'opened' = ENABLE_BOOSTER_CAROUSEL ? 'carousel' : 'sealed';
+    let carouselAngle = 0;
+    let targetCarouselAngle = 0;
+    let carouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+    let targetCarouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+    let lastCarouselTickSlot = 0;
+    let chosenCarouselSlotIdx = -1;
+
+    // Rotação 3D livre do pacote enquadrado na frente da ciranda antes de escolhê-lo
+    let inspectRotX = 0.06;
+    let inspectRotY = 0.0;
+    let targetInspectRotX = 0.06;
+    let targetInspectRotY = 0.0;
+    let carouselDragMode: 'none' | 'wheel' | 'inspect' = 'none';
+    let clickedSideSlotIndex = -1;
+
     let cutProgress = 0;
     let targetCutProgress = 0;
     let flopProgress = 0;
@@ -911,14 +1092,177 @@ export class BoosterPackViewer {
     let lastTraceX = 0;
     let hasMoved = false;
 
-    let rotX = 0.12;
+    let rotX = 0.08;
     let rotY = 0.0;
     let targetRotX = rotX;
     let targetRotY = rotY;
 
-    // Zoom inicial ajustado para que o booster fique ligeiramente menor
     let targetZoom = 12.4;
     let currentZoom = 12.4;
+
+    if (ENABLE_BOOSTER_CAROUSEL) {
+      worldGroup.visible = false;
+    }
+
+    const stepAngle = (Math.PI * 2) / CAROUSEL_SLOTS;
+
+    const getActiveFrontSlotIndex = () => {
+      const idx = Math.round(-targetCarouselAngle / stepAngle);
+      return ((idx % CAROUSEL_SLOTS) + CAROUSEL_SLOTS) % CAROUSEL_SLOTS;
+    };
+
+    // --- UI da Ciranda / Carrossel de 12 Boosters ---
+    const carouselBar = document.createElement('div');
+    carouselBar.className = 'booster-carousel-bar';
+    carouselBar.style.cssText = `
+      position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+      display: ${ENABLE_BOOSTER_CAROUSEL ? 'flex' : 'none'};
+      flex-direction: column; align-items: center; gap: 10px;
+      z-index: 1000; pointer-events: auto;
+    `;
+
+    const carouselHint = document.createElement('div');
+    carouselHint.style.cssText = `
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 1.3px;
+      color: #334155; text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 6px 18px; border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+      pointer-events: none; white-space: nowrap;
+    `;
+
+    const updateCarouselHintText = () => {
+      const slotNum = getActiveFrontSlotIndex() + 1;
+      carouselHint.innerHTML = `<span style="color:#d97706;">PACOTE #${slotNum} DE ${CAROUSEL_SLOTS}</span> · ARRASTE NO PACOTE PARA ROTACIONAR 3D · LATERAIS GIRA A RODA`;
+    };
+    updateCarouselHintText();
+
+    const carouselControlsRow = document.createElement('div');
+    carouselControlsRow.style.cssText = `
+      display: flex; align-items: center; gap: 12px;
+    `;
+
+    const resetInspectRotation = () => {
+      targetInspectRotX = 0.06;
+      targetInspectRotY = 0;
+    };
+
+    const btnSpinLeft = document.createElement('button');
+    btnSpinLeft.innerHTML = '‹';
+    btnSpinLeft.title = 'Pacote Anterior';
+    btnSpinLeft.style.cssText = `
+      width: 42px; height: 42px; border-radius: 50%;
+      background: #ffffff; border: 1.5px solid rgba(15, 23, 42, 0.14);
+      color: #0f172a; font-size: 1.35rem; font-weight: 800;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    `;
+    btnSpinLeft.onclick = (e) => {
+      e.stopPropagation();
+      resetInspectRotation();
+      targetCarouselAngle = Math.round(targetCarouselAngle / stepAngle + 1) * stepAngle;
+      updateCarouselHintText();
+      playCardSlideSound();
+    };
+
+    // Carrega o lote REAL de cartas associado ao pacote escolhido na roda (0..11)
+    const materializeSlotPackCards = (slotIdx: number) => {
+      if (typeof sourceCardsInput?.materializeCarouselSlot === 'function') {
+        const slotCards = sourceCardsInput.materializeCarouselSlot(slotIdx, true);
+        if (Array.isArray(slotCards) && slotCards.length > 0) {
+          cardsData = mapRawCardsList(slotCards);
+          rebuildCardMeshes(cardsData);
+          return;
+        }
+      }
+      // Fallback caso venha de uma lista customizada sem materializeCarouselSlot:
+      // embaralha de forma determinística por slot mantendo a Mítica/Lendária por último
+      if (Array.isArray(sourceCardsInput) && sourceCardsInput.length > 1) {
+        const cloned = [...sourceCardsInput];
+        for (let i = 0; i < cloned.length - 1; i++) {
+          const swapIdx = (i + slotIdx * 3 + 1) % (cloned.length - 1);
+          const tmp = cloned[i];
+          cloned[i] = cloned[swapIdx];
+          cloned[swapIdx] = tmp;
+        }
+        cardsData = mapRawCardsList(cloned);
+        rebuildCardMeshes(cardsData);
+      }
+    };
+
+    const selectCarouselBooster = () => {
+      if (packState !== 'carousel') return;
+
+      const frontIdx = getActiveFrontSlotIndex();
+      chosenCarouselSlotIdx = frontIdx;
+      targetCarouselAngle = -frontIdx * stepAngle;
+
+      // Materializa o pacote REAL correspondente ao slot escolhido (sem ser apenas animação estética)
+      materializeSlotPackCards(frontIdx);
+
+      // Transfere IMEDIATAMENTE a pose exata (posição, escala e rotação 3D) do envelope enquadrado
+      // para o worldGroup e oculta apenas esse slot na roda -> ZERO CORTE SECO!
+      const chosenSlot = carouselSlotGroups[frontIdx];
+      if (chosenSlot) {
+        const { theta, packHolder } = (chosenSlot as any).userData;
+        const worldPos = new THREE.Vector3();
+        packHolder.getWorldPosition(worldPos);
+        worldGroup.position.copy(worldPos);
+        worldGroup.scale.copy(chosenSlot.scale);
+
+        const relAngle = normalizeAngleRad(theta + carouselAngle);
+        rotX = packHolder.rotation.x;
+        rotY = normalizeAngleRad(relAngle + packHolder.rotation.y);
+        targetRotX = 0.08;
+        targetRotY = 0.0;
+        worldGroup.rotation.set(rotX, rotY, 0);
+
+        chosenSlot.visible = false;
+      }
+
+      packState = 'sealed';
+      targetCarouselTransition = 1.0;
+      carouselBar.style.display = 'none';
+      worldGroup.visible = true;
+      playHoloShimmerSound();
+    };
+
+    const btnPickPack = document.createElement('button');
+    btnPickPack.innerHTML = '✨ ESCOLHER ESTE BOOSTER';
+    btnPickPack.style.cssText = `
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 28px; white-space: nowrap; border-radius: 999px;
+      background: linear-gradient(135deg, #ffd700 0%, #f59e0b 55%, #d97706 100%);
+      color: #0f172a; border: 1.5px solid rgba(255, 255, 255, 0.9);
+      font-family: 'Outfit', sans-serif; font-size: 0.86rem; font-weight: 900;
+      letter-spacing: 0.8px; cursor: pointer; transition: all 0.2s ease;
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35), 0 2px 6px rgba(15, 23, 42, 0.08);
+    `;
+    btnPickPack.onclick = (e) => {
+      e.stopPropagation();
+      selectCarouselBooster();
+    };
+
+    const btnSpinRight = document.createElement('button');
+    btnSpinRight.innerHTML = '›';
+    btnSpinRight.title = 'Próximo Pacote';
+    btnSpinRight.style.cssText = btnSpinLeft.style.cssText;
+    btnSpinRight.onclick = (e) => {
+      e.stopPropagation();
+      resetInspectRotation();
+      targetCarouselAngle = Math.round(targetCarouselAngle / stepAngle - 1) * stepAngle;
+      updateCarouselHintText();
+      playCardSlideSound();
+    };
+
+    carouselControlsRow.appendChild(btnSpinLeft);
+    carouselControlsRow.appendChild(btnPickPack);
+    carouselControlsRow.appendChild(btnSpinRight);
+    carouselBar.appendChild(carouselHint);
+    carouselBar.appendChild(carouselControlsRow);
+    this.overlay.appendChild(carouselBar);
 
     const getLocalPointerCoords = (clientX: number, clientY: number) => {
       const rect = container.getBoundingClientRect();
@@ -943,7 +1287,31 @@ export class BoosterPackViewer {
 
     const resetToSealed = () => {
       stopVideoCinematic();
-      packState = 'sealed';
+      hideMatrixRarityAnimation();
+      pendingGridTimer = 0;
+
+      // Re-sorteia o slot que acabou de ser aberto caso o jogador clique em "Abrir Outro Pack"
+      if (chosenCarouselSlotIdx >= 0 && typeof sourceCardsInput?.rerollCarouselSlot === 'function') {
+        sourceCardsInput.rerollCarouselSlot(chosenCarouselSlotIdx);
+      }
+      chosenCarouselSlotIdx = -1;
+      carouselSlotGroups.forEach((slotGrp) => {
+        slotGrp.visible = true;
+      });
+      resetInspectRotation();
+      inspectRotX = 0.06;
+      inspectRotY = 0;
+
+      packState = ENABLE_BOOSTER_CAROUSEL ? 'carousel' : 'sealed';
+      carouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+      targetCarouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+      carouselRootGroup.visible = ENABLE_BOOSTER_CAROUSEL;
+      carouselBar.style.display = ENABLE_BOOSTER_CAROUSEL ? 'flex' : 'none';
+      worldGroup.visible = !ENABLE_BOOSTER_CAROUSEL;
+      worldGroup.position.set(0, 0, 0);
+      worldGroup.scale.setScalar(1);
+      updateCarouselHintText();
+
       targetCutProgress = 0;
       cutProgress = 0;
       flopProgress = 0;
@@ -987,21 +1355,18 @@ export class BoosterPackViewer {
     btnOpenAnother.style.cssText = `
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       padding: 10px 22px; white-space: nowrap; border-radius: 999px;
-      background: rgba(18, 22, 32, 0.88);
-      color: #ffe89e; border: 1px solid rgba(212, 175, 55, 0.45);
-      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 700;
+      background: #ffffff;
+      color: #0f172a; border: 1.5px solid rgba(15, 23, 42, 0.16);
+      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 800;
       letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55); backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
     `;
     btnOpenAnother.onmouseenter = () => {
-      btnOpenAnother.style.filter = 'brightness(1.18)';
       btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.8)';
       btnOpenAnother.style.transform = 'translateY(-1px)';
     };
     btnOpenAnother.onmouseleave = () => {
-      btnOpenAnother.style.filter = 'none';
-      btnOpenAnother.style.borderColor = 'rgba(212, 175, 55, 0.45)';
+      btnOpenAnother.style.borderColor = 'rgba(15, 23, 42, 0.16)';
       btnOpenAnother.style.transform = 'none';
     };
     btnOpenAnother.onmousedown = () => {
@@ -1022,16 +1387,14 @@ export class BoosterPackViewer {
       color: #1a0f00; border: 1px solid rgba(255, 245, 180, 0.6);
       font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 800;
       letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.35);
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
     `;
     btnCollect.onmouseenter = () => {
-      btnCollect.style.filter = 'brightness(1.12)';
-      btnCollect.style.boxShadow = '0 6px 22px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 215, 0, 0.5)';
+      btnCollect.style.filter = 'brightness(1.08)';
       btnCollect.style.transform = 'translateY(-1px)';
     };
     btnCollect.onmouseleave = () => {
       btnCollect.style.filter = 'none';
-      btnCollect.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.35)';
       btnCollect.style.transform = 'none';
     };
     btnCollect.onmousedown = () => {
@@ -1085,11 +1448,53 @@ export class BoosterPackViewer {
       };
     };
 
+    // Detecta qual slot do carrossel foi clicado/tocado via Raycaster
+    const raycastCarouselSlot = (clientX: number, clientY: number): number => {
+      const rect = container.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(carouselSlotGroups, true);
+      if (intersects.length > 0) {
+        let obj: THREE.Object3D | null = intersects[0].object;
+        while (obj && !carouselSlotGroups.includes(obj as THREE.Group)) {
+          obj = obj.parent;
+        }
+        if (obj && typeof (obj as any).userData?.slotIndex === 'number') {
+          return (obj as any).userData.slotIndex;
+        }
+      }
+      return -1;
+    };
+
     const onPointerDown = (e: PointerEvent) => {
       isPointerDown = true;
       pointerStartX = e.clientX;
       pointerStartY = e.clientY;
       hasMoved = false;
+
+      if (packState === 'carousel') {
+        isCuttingStroke = false;
+        clickedSideSlotIndex = -1;
+        const hitSlotIdx = raycastCarouselSlot(e.clientX, e.clientY);
+        const frontSlotIdx = getActiveFrontSlotIndex();
+
+        if (hitSlotIdx === frontSlotIdx) {
+          // Arrastar diretamente sobre o booster enquadrado rotaciona-o em 3D antes de escolher!
+          carouselDragMode = 'inspect';
+        } else {
+          // Arrastar fora do booster central ou sobre os boosters laterais gira a ciranda de 12 pacotes!
+          carouselDragMode = 'wheel';
+          if (hitSlotIdx >= 0 && hitSlotIdx !== frontSlotIdx) {
+            clickedSideSlotIndex = hitSlotIdx;
+          }
+        }
+        container.style.cursor = 'grabbing';
+        return;
+      }
 
       const local = getLocalPointerCoords(e.clientX, e.clientY);
 
@@ -1119,6 +1524,32 @@ export class BoosterPackViewer {
 
       if (Math.hypot(dx, dy) > 5) {
         hasMoved = true;
+      }
+
+      if (packState === 'carousel') {
+        if (isPointerDown) {
+          if (carouselDragMode === 'inspect') {
+            // Rotaciona livremente o pacote enquadrado em 3D antes de escolher
+            targetInspectRotY += dx * 0.0085;
+            targetInspectRotX += dy * 0.0075;
+            targetInspectRotX = Math.max(-Math.PI * 0.42, Math.min(Math.PI * 0.42, targetInspectRotX));
+          } else {
+            // Gira a roda de 12 boosters
+            resetInspectRotation();
+            targetCarouselAngle += dx * 0.0065;
+            const currentSlotTick = Math.round(targetCarouselAngle / stepAngle);
+            if (currentSlotTick !== lastCarouselTickSlot) {
+              lastCarouselTickSlot = currentSlotTick;
+              updateCarouselHintText();
+              playCardSlideSound();
+            }
+          }
+          pointerStartX = e.clientX;
+          pointerStartY = e.clientY;
+        } else {
+          container.style.cursor = 'grab';
+        }
+        return;
       }
 
       if (isPointerDown && isCuttingStroke) {
@@ -1167,6 +1598,34 @@ export class BoosterPackViewer {
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      if (packState === 'carousel') {
+        isPointerDown = false;
+        container.style.cursor = 'grab';
+        if (!hasMoved) {
+          if (clickedSideSlotIndex >= 0) {
+            // Clicar num pacote lateral da roda gira suavemente até enquadrá-lo
+            resetInspectRotation();
+            const currentFront = getActiveFrontSlotIndex();
+            let diff = clickedSideSlotIndex - currentFront;
+            if (diff > CAROUSEL_SLOTS / 2) diff -= CAROUSEL_SLOTS;
+            if (diff < -CAROUSEL_SLOTS / 2) diff += CAROUSEL_SLOTS;
+            targetCarouselAngle = Math.round(targetCarouselAngle / stepAngle - diff) * stepAngle;
+            updateCarouselHintText();
+            playCardSlideSound();
+          } else if (carouselDragMode === 'inspect') {
+            // Clique simples sem arrastar no pacote frontal escolhe-o para abrir
+            selectCarouselBooster();
+          }
+        } else if (carouselDragMode === 'wheel') {
+          // Alinha magneticamente no slot mais próximo da roda de 12 pacotes
+          targetCarouselAngle = Math.round(targetCarouselAngle / stepAngle) * stepAngle;
+          updateCarouselHintText();
+        }
+        carouselDragMode = 'none';
+        clickedSideSlotIndex = -1;
+        return;
+      }
+
       if (isCuttingStroke) {
         if (targetCutProgress >= 0.72) {
           targetCutProgress = 1.0;
@@ -1179,7 +1638,7 @@ export class BoosterPackViewer {
               targetCardsLeapProgress = 1.0;
               playCardSlideSound();
             }
-          }, 320);
+          }, 360);
         } else {
           targetCutProgress = 0.0;
           packState = 'sealed';
@@ -1197,7 +1656,7 @@ export class BoosterPackViewer {
               targetCardsLeapProgress = 1.0;
               playCardSlideSound();
             }
-          }, 320);
+          }, 360);
         } else if (packState === 'opened') {
           const rect = container.getBoundingClientRect();
           const mouse = new THREE.Vector2(
@@ -1219,6 +1678,11 @@ export class BoosterPackViewer {
             const firstTopIdx = cardOrder[0];
             triggerCardShimmer(firstTopIdx);
             playSparkleBurstSound();
+            // Caso o booster tenha apenas 1 carta e ela já seja a última
+            if (cardMeshes.length === 1) {
+              triggerMatrixRarityAnimation(firstTopIdx);
+              pendingGridTimer = 2.15;
+            }
           } else if (videoCinematic.active) {
             stopVideoCinematic();
           } else if (isGridMode) {
@@ -1229,9 +1693,7 @@ export class BoosterPackViewer {
               }
               const clickedIdx = clickedMesh ? cardMeshes.indexOf(clickedMesh) : -1;
               if (clickedIdx >= 0) {
-                // Brilho contido estritamente na carta clicada no grid
                 triggerCardShimmer(clickedIdx);
-                // Abre o mesmo CardViewer do deck/batalha
                 const cd = (clickedMesh as any)?.userData?.cardData || cardsData[clickedIdx];
                 const cardForViewer = normalizeForViewer(cd);
                 if (cardForViewer) {
@@ -1249,37 +1711,32 @@ export class BoosterPackViewer {
             // Fase de abertura do booster (passando as cartas uma a uma no stack)
             const totalCards = cardMeshes.length;
             if (revealedCount >= totalCards) {
-              stopVideoCinematic();
-              isGridMode = true;
-              bottomGridBar.style.display = 'flex';
-              playHoloShimmerSound();
+              // Se já estamos na última carta, o clique avança imediatamente para o grid de 9 cards
+              enterGridMode();
             } else {
-              // Clicar na carta OU fora dela durante a abertura do booster passa suavemente para a próxima carta
+              // Passa suavemente para a próxima carta; quando chegar na última (Mítica/Lendária),
+              // o finishCycle dispara a animação oficial da Matriz antes de abrir o grid de 9 cards!
               stopVideoCinematic();
               revealedCount += 1;
               triggerCycleCard();
-
-              if (revealedCount >= totalCards) {
-                setTimeout(() => {
-                  if (!isGridMode) {
-                    stopVideoCinematic();
-                    isGridMode = true;
-                    bottomGridBar.style.display = 'flex';
-                    playHoloShimmerSound();
-                  }
-                }, 400);
-              }
             }
           }
         }
       }
 
       isPointerDown = false;
-      container.style.cursor = packState === 'sealed' ? 'grab' : 'pointer';
+      container.style.cursor = packState === 'sealed' || packState === 'carousel' ? 'grab' : 'pointer';
     };
 
     const onWheel = (e: WheelEvent) => {
-      if (packState === 'sealed') {
+      if (packState === 'carousel') {
+        e.preventDefault();
+        resetInspectRotation();
+        const dir = e.deltaY > 0 ? -1 : 1;
+        targetCarouselAngle = Math.round(targetCarouselAngle / stepAngle + dir) * stepAngle;
+        updateCarouselHintText();
+        playCardSlideSound();
+      } else if (packState === 'sealed') {
         e.preventDefault();
         targetZoom += e.deltaY * 0.006;
         targetZoom = Math.max(5.0, Math.min(15.0, targetZoom));
@@ -1405,6 +1862,9 @@ export class BoosterPackViewer {
       }
     };
 
+    const projVecTL = new THREE.Vector3();
+    const projVecBR = new THREE.Vector3();
+
     let reqId: number;
     let lastTime = performance.now();
 
@@ -1413,6 +1873,61 @@ export class BoosterPackViewer {
 
       const dt = Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
+      const timeSec = time * 0.001;
+
+      // --- Atualização da Ciranda / Carrossel 3D de 12 Boosters ---
+      if (ENABLE_BOOSTER_CAROUSEL) {
+        carouselAngle += (targetCarouselAngle - carouselAngle) * Math.min(dt * 9, 1);
+        carouselTransition += (targetCarouselTransition - carouselTransition) * Math.min(dt * 6.5, 1);
+        inspectRotX += (targetInspectRotX - inspectRotX) * Math.min(dt * 10, 1);
+        inspectRotY += (targetInspectRotY - inspectRotY) * Math.min(dt * 10, 1);
+
+        carouselWheelGroup.rotation.y = carouselAngle;
+        // Quando um pacote é escolhido, os outros 11 pacotes recuam suavemente para trás
+        carouselRootGroup.position.z = -CAROUSEL_RADIUS - carouselTransition * 4.5;
+
+        if (carouselTransition < 0.995) {
+          carouselRootGroup.visible = true;
+          const frontSlotIdx = getActiveFrontSlotIndex();
+
+          carouselSlotGroups.forEach((slotGrp, idx) => {
+            if (idx === chosenCarouselSlotIdx) {
+              slotGrp.visible = false;
+              return;
+            }
+            const { theta, packHolder } = (slotGrp as any).userData;
+            const relAngle = theta + carouselAngle;
+            const cosA = Math.cos(relAngle);
+            const frontFactor = THREE.MathUtils.clamp((cosA + 1) / 2, 0, 1);
+
+            if (idx === frontSlotIdx && packState === 'carousel') {
+              // O pacote enquadrado pode ser rotacionado em 3D pelo usuário antes de escolher!
+              packHolder.rotation.x = inspectRotX;
+              packHolder.rotation.y = inspectRotY;
+              packHolder.position.y = 0;
+            } else {
+              // Os demais 11 pacotes mantêm suas faces viradas radialmente para fora da roda
+              packHolder.rotation.x = 0.04 + Math.sin(timeSec * 2.0 + idx) * 0.018;
+              packHolder.rotation.y = 0;
+              packHolder.position.y = Math.sin(timeSec * 2.2 + idx * 0.7) * 0.05 * (1 - frontFactor);
+            }
+
+            // No centro frontal (frontFactor = 1), baseScale = 1.0 (idêntico ao worldGroup para transição sem corte seco!)
+            const baseScale = THREE.MathUtils.lerp(0.58, 1.0, Math.pow(frontFactor, 1.65));
+            const fadeOutScale = baseScale * (1 - carouselTransition * 0.95);
+            slotGrp.scale.setScalar(Math.max(0.001, fadeOutScale));
+          });
+        } else {
+          carouselRootGroup.visible = false;
+        }
+      }
+
+      // Converge suavemente a posição e escala do worldGroup para (0,0,0) e 1.0 após sair da ciranda
+      if (packState !== 'carousel') {
+        worldGroup.position.lerp(new THREE.Vector3(0, 0, 0), Math.min(dt * 8, 1));
+        const nextScale = THREE.MathUtils.lerp(worldGroup.scale.x, 1.0, Math.min(dt * 8, 1));
+        worldGroup.scale.setScalar(nextScale);
+      }
 
       const cutSpeed = isCuttingStroke ? 14 : 7;
       cutProgress += (targetCutProgress - cutProgress) * Math.min(dt * cutSpeed, 1);
@@ -1426,7 +1941,7 @@ export class BoosterPackViewer {
       cardsFlipProgress += (targetCardsFlipProgress - cardsFlipProgress) * Math.min(dt * flipSpeed, 1);
       const flipP = cardsFlipProgress;
 
-      updateFloppyTopStrip(cutP, time * 0.001);
+      updateFloppyTopStrip(cutP, timeSec);
 
       const openTipPeek = THREE.MathUtils.clamp((cutP - 0.3) / 0.7, 0, 1);
       const tuckedY = -0.45;
@@ -1445,8 +1960,16 @@ export class BoosterPackViewer {
       let cardFinalRotZ = 0;
 
       cardsData.forEach((c) => {
-        if (c.update) c.update(time * 0.001);
+        if (c.update) c.update(timeSec);
       });
+
+      // --- Contagem regressiva após a animação da Matriz na última carta para abrir o Grid de 9 Cartas ---
+      if (pendingGridTimer > 0 && !isGridMode) {
+        pendingGridTimer -= dt;
+        if (pendingGridTimer <= 0) {
+          enterGridMode();
+        }
+      }
 
       const gridSpeed = 4.2;
       gridProgress += ((isGridMode ? 1.0 : 0.0) - gridProgress) * Math.min(dt * gridSpeed, 1);
@@ -1660,13 +2183,13 @@ export class BoosterPackViewer {
       // ── Brilho Holográfico (Foil Sheen) 100% Confinado à geometria da carta ──
       if (shimmerTimer > 0) {
         shimmerTimer = Math.max(0, shimmerTimer - dt);
-        const sProg = 1.0 - shimmerTimer / 1.2;
+        const sProg = 1.0 - shimmerTimer / 1.35;
         const sAlpha = Math.sin(sProg * Math.PI);
 
         cardMeshes.forEach((g: any, idx) => {
           const sheen = g.userData?.sheenMesh;
           if (sheen) {
-            if (idx === shimmerMeshIdx) {
+            if (idx === shimmerMeshIdx && idx !== activeMatrixOverlayMeshIdx) {
               sheen.visible = true;
               sheen.material.opacity = sAlpha * 0.90;
               if (sheen.material.map) {
@@ -1694,13 +2217,13 @@ export class BoosterPackViewer {
       }
 
       if (gridP > 0.001) {
-        frontStudioLight.intensity = THREE.MathUtils.lerp(0.70, 0.15, gridP);
-        keyLight.intensity = THREE.MathUtils.lerp(1.15, 0.20, gridP);
-        ambientLight.intensity = THREE.MathUtils.lerp(0.85, 1.0, gridP);
+        frontStudioLight.intensity = THREE.MathUtils.lerp(1.35, 0.35, gridP);
+        keyLight.intensity = THREE.MathUtils.lerp(1.25, 0.35, gridP);
+        ambientLight.intensity = THREE.MathUtils.lerp(1.75, 1.25, gridP);
       } else {
-        frontStudioLight.intensity = 0.70;
-        keyLight.intensity = 1.15;
-        ambientLight.intensity = 0.85;
+        frontStudioLight.intensity = 1.35;
+        keyLight.intensity = 1.25;
+        ambientLight.intensity = 1.75;
       }
 
       const effectiveCardY = THREE.MathUtils.lerp(cardFinalY, targetGridCenterY, gridP);
@@ -1709,17 +2232,17 @@ export class BoosterPackViewer {
       cardsMasterGroup.rotation.set(cardFinalRotX, cardFinalRotY, cardFinalRotZ);
       cardsMasterGroup.visible = cutP > 0.05 || leapP > 0.001 || isCardsLeapt || isGridMode;
 
-      const shouldHidePouch = isCardsLeapt || leapP > 0.05 || isGridMode || gridP > 0.01;
+      const shouldHidePouch = packState === 'carousel' || isCardsLeapt || leapP > 0.05 || isGridMode || gridP > 0.01;
       if (shouldHidePouch) {
         lowerPouchGroup.visible = false;
         topStripGroup.visible = false;
         tearGuideMesh.visible = false;
       } else {
+        worldGroup.visible = true;
         lowerPouchGroup.position.set(0, 0, 0);
         lowerPouchGroup.scale.setScalar(1);
         lowerPouchGroup.visible = true;
 
-        // Animação contínua do feixe de brilho guia indicando onde passar o dedo
         if (packState === 'sealed' && cutP < 0.05) {
           tearGuideMesh.visible = true;
           tearGuideTex.offset.x -= dt * 0.85;
@@ -1730,22 +2253,22 @@ export class BoosterPackViewer {
         }
       }
 
-      // Transição suave da cápsula de quantidade abaixo do pacote
+      // Transição suave da cápsula de quantidade
       if (this.qtyCapsule) {
-        const isSealed = packState === 'sealed' && cutP < 0.05 && !isCardsLeapt && !isGridMode;
-        this.qtyCapsule.style.opacity = isSealed ? '1' : '0';
-        this.qtyCapsule.style.transform = isSealed
+        const showQty = (packState === 'carousel' || (packState === 'sealed' && cutP < 0.05)) && !isCardsLeapt && !isGridMode;
+        this.qtyCapsule.style.opacity = showQty ? '1' : '0';
+        this.qtyCapsule.style.transform = showQty
           ? 'translateX(-50%) translateY(0)'
-          : 'translateX(-50%) translateY(12px)';
+          : 'translateX(-50%) translateY(-10px)';
       }
 
       const effectiveTargetZoom = THREE.MathUtils.lerp(targetZoom, targetGridCameraZ, gridP);
       currentZoom += (effectiveTargetZoom - currentZoom) * Math.min(dt * 8, 1);
       camera.position.z = currentZoom;
 
-      if (gridP > 0.001) {
-        targetRotX *= (1 - gridP * Math.min(dt * 6, 1));
-        targetRotY *= (1 - gridP * Math.min(dt * 6, 1));
+      if (gridP > 0.001 || isCardsLeapt) {
+        targetRotX *= (1 - Math.max(gridP, leapP) * Math.min(dt * 6, 1));
+        targetRotY *= (1 - Math.max(gridP, leapP) * Math.min(dt * 6, 1));
       }
 
       rotX += (targetRotX - rotX) * Math.min(dt * 8, 1);
@@ -1754,12 +2277,46 @@ export class BoosterPackViewer {
       worldGroup.rotation.y = rotY;
 
       renderer.render(scene, camera);
+
+      // ── Sincronização 1:1 da Animação Oficial da Matriz (SVG animateChroma=true) na Última Carta ──
+      if (activeMatrixOverlayMeshIdx >= 0 && matrixRarityTimer > 0 && !isGridMode) {
+        matrixRarityTimer = Math.max(0, matrixRarityTimer - dt);
+        const targetMesh = cardMeshes[activeMatrixOverlayMeshIdx];
+        if (targetMesh) {
+          targetMesh.updateWorldMatrix(true, false);
+          projVecTL.set(-CW / 2, CH / 2, 0).applyMatrix4(targetMesh.matrixWorld).project(camera);
+          projVecBR.set(CW / 2, -CH / 2, 0).applyMatrix4(targetMesh.matrixWorld).project(camera);
+
+          const viewW = container.clientWidth || window.innerWidth;
+          const viewH = container.clientHeight || window.innerHeight;
+          const x1 = (projVecTL.x * 0.5 + 0.5) * viewW;
+          const y1 = (-projVecTL.y * 0.5 + 0.5) * viewH;
+          const x2 = (projVecBR.x * 0.5 + 0.5) * viewW;
+          const y2 = (-projVecBR.y * 0.5 + 0.5) * viewH;
+
+          const boxW = Math.abs(x2 - x1);
+          const boxH = Math.abs(y2 - y1);
+          const left = Math.min(x1, x2);
+          const top = Math.min(y1, y2);
+
+          matrixRarityOverlay.style.left = `${left}px`;
+          matrixRarityOverlay.style.top = `${top}px`;
+          matrixRarityOverlay.style.width = `${boxW}px`;
+          matrixRarityOverlay.style.height = `${boxH}px`;
+        }
+        if (matrixRarityTimer <= 0) {
+          hideMatrixRarityAnimation();
+        }
+      } else if (activeMatrixOverlayMeshIdx >= 0 && isGridMode) {
+        hideMatrixRarityAnimation();
+      }
     };
 
     reqId = requestAnimationFrame(animate);
 
     this.cleanupFn = () => {
       cancelAnimationFrame(reqId);
+      hideMatrixRarityAnimation();
       window.removeEventListener('resize', onResize);
       container.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
@@ -1774,6 +2331,10 @@ export class BoosterPackViewer {
       tearGuideTex.dispose();
       guideGeo.dispose();
       tearGuideMat.dispose();
+      carouselPackFrontGeo.dispose();
+      carouselPackBackGeo.dispose();
+      carouselLeftSeamGeo.dispose();
+      carouselRightSeamGeo.dispose();
 
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

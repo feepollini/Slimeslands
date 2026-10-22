@@ -8,6 +8,7 @@ export class TabAbilities {
   private bindAvailabilityHandlers: (av: any, container: HTMLElement, onUpdate: () => void, reRender: () => void) => void;
   private setHabilidadesSelectedIndex: (idx: number) => void;
   private syncItemWithStore: (type: string, id: string) => void;
+  private openMediaPicker: (onSelect: (url: string) => void) => void;
 
   constructor(state: any, callbacks: any, core: any) {
     this.abilities = state.abilities;
@@ -16,6 +17,7 @@ export class TabAbilities {
     this.showToast = callbacks.showToast;
     this.setHabilidadesSelectedIndex = callbacks.setHabilidadesSelectedIndex;
     this.syncItemWithStore = callbacks.syncItemWithStore;
+    this.openMediaPicker = callbacks.openMediaPicker;
     
     this.renderAvailabilityForm = core.renderAvailabilityForm;
     this.bindAvailabilityHandlers = core.bindAvailabilityHandlers;
@@ -23,124 +25,155 @@ export class TabAbilities {
 
   public render(): string {
     const ab = this.abilities[this.selectedIndex];
-    if (!ab) return 'Nenhuma habilidade selecionada.';
+    if (!ab) return '<div style="padding:24px; color:#94a3b8;">Nenhuma habilidade selecionada.</div>';
 
     return `
-      <div class="editor-list-panel" style="flex:0.8; max-width:320px;">
-        <div class="editor-section-title">HABILIDADES PASSIVAS (${this.abilities.length})</div>
-        <div class="ars-artifact-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; padding:10px; overflow-y:auto;">
-           ${this.abilities.map((a, i) => `
-              <div class="editor-list-item ${i === this.selectedIndex ? 'active' : ''}" data-idx="${i}" style="border-radius:12px; height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; padding:10px;">
-                 <div class="ab-icon-circle" style="width:40px; height:40px; background:rgba(255,255,255,0.05); border:1px solid ${i === this.selectedIndex ? a.color || '#51c5ff' : 'rgba(255,255,255,0.1)'}; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-                    ${a.image ? `<img src="${a.image}" style="width:24px; height:24px; object-fit:contain">` : `<span style="font-size:1rem; color:${a.color || '#fff'}">${a.icon || '✨'}</span>`}
-                 </div>
-                 <div style="font-size:0.75rem; font-weight:900; color:${a.color || '#fff'}">${a.name}</div>
-                 <div style="font-size:0.55rem; opacity:0.6; text-transform:uppercase; letter-spacing:1px;">${a.triggerText || 'Sem Trigger'}</div>
+      <div class="editor-list-panel" style="width:280px; flex-shrink:0; height:100%; display:flex; flex-direction:column; overflow:hidden; background:#11131c; border-right:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
+          <span style="font-size:0.68rem; font-weight:900; color:#f59e0b; letter-spacing:0.8px;">✨ PASSIVAS (${this.abilities.length})</span>
+          <button type="button" id="btn-add-ability" style="background:linear-gradient(135deg, #f59e0b, #d97706); color:#000; border:none; border-radius:6px; padding:4px 10px; font-size:0.64rem; font-weight:900; cursor:pointer;">+ NOVA</button>
+        </div>
+
+        <div class="ars-artifact-grid" style="flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px; overflow-y:auto; align-content:start; margin:0;">
+          ${this.abilities.map((a, i) => `
+            <div class="editor-list-item ${i === this.selectedIndex ? 'active' : ''}" data-idx="${i}" style="border-radius:10px; min-height:88px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center; padding:8px; background:${i === this.selectedIndex ? 'rgba(245,158,11,0.14)' : '#181b26'}; border:1.5px solid ${i === this.selectedIndex ? '#f59e0b' : 'rgba(255,255,255,0.07)'};">
+              <div class="ab-icon-circle" style="width:34px; height:34px; background:rgba(255,255,255,0.05); border:1px solid ${i === this.selectedIndex ? a.color || '#f59e0b' : 'rgba(255,255,255,0.12)'}; border-radius:50%; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+                ${a.image ? `<img src="${a.image}" style="width:24px; height:24px; object-fit:contain">` : `<span style="font-size:0.95rem; color:${a.color || '#fff'}">${a.icon || '✨'}</span>`}
               </div>
-           `).join('')}
-           <div id="btn-add-ability" class="editor-list-item" style="border:2px dashed rgba(255,255,255,0.1); background:none; height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;">
-              <span style="font-size:1.5rem; opacity:0.3;">+</span>
-              <span style="font-size:0.6rem; opacity:0.3; font-weight:900;">NOVA HABILIDADE</span>
-           </div>
+              <div class="ab-item-title" style="font-size:0.66rem; font-weight:800; color:${a.color || '#fff'}; line-height:1.15; word-break:break-word;">${a.name}</div>
+              <div style="font-size:0.52rem; color:#94a3b8; text-transform:uppercase;">${a.triggerText || 'Passiva'}</div>
+            </div>
+          `).join('')}
         </div>
       </div>
 
-      <div class="editor-form-panel" style="flex:1.2; position:relative;">
-        <div class="editor-section-title">DETALHES DA HABILIDADE: ${ab.name.toUpperCase()}</div>
-        
-        <div style="background:rgba(255,165,0,0.1); border:1px solid #ffa500; border-radius:12px; padding:15px; margin-bottom:20px;">
-           <button id="btn-sync-ab-store" class="editor-btn-secondary" style="width:100%; padding:12px; background:#ffa500; color:#000; font-weight:900; border:none; border-radius:8px; cursor:pointer;">💎 TORNAR HABILIDADE ITEM DE LOJA</button>
-           ${this.renderAvailabilityForm(ab.availability || { type: 'always' })}
+      <div class="editor-form-panel" style="flex:1; height:100%; overflow-y:auto; padding:14px 20px; display:flex; flex-direction:column; gap:12px; box-sizing:border-box;">
+        <!-- TOP HEADER BAR -->
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:36px; height:36px; border-radius:8px; background:rgba(245,158,11,0.14); border:1px solid rgba(245,158,11,0.4); display:flex; align-items:center; justify-content:center;">
+              ${ab.image ? `<img src="${ab.image}" style="width:24px; height:24px; object-fit:contain;">` : `<span style="font-size:1.1rem;">${ab.icon || '✨'}</span>`}
+            </div>
+            <div>
+              <div style="font-size:0.92rem; font-weight:900; color:#fff; letter-spacing:0.5px;">${ab.name.toUpperCase()}</div>
+              <div style="font-size:0.62rem; color:#94a3b8;">ID: ${ab.id}</div>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" id="btn-sync-ab-store" style="background:rgba(245,158,11,0.16); border:1px solid #f59e0b; color:#fbbf24; border-radius:7px; padding:6px 12px; font-size:0.68rem; font-weight:900; cursor:pointer;">
+              💎 Sincronizar c/ Loja
+            </button>
+            ${this.abilities.length > 1 ? `<button type="button" id="btn-delete-ability" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; border-radius:7px; padding:6px 12px; font-size:0.68rem; font-weight:900; cursor:pointer;">🗑️ Excluir</button>` : ''}
+            <button type="button" id="btn-save-abilities" class="editor-btn-primary" style="padding:7px 16px; font-size:0.72rem; border-radius:7px;">💾 SALVAR PASSIVAS</button>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>NOME DA HABILIDADE</label>
-          <input type="text" id="ab-name" class="editor-input" value="${ab.name}">
-        </div>
+        <!-- 2-COLUMN ORGANIZED GRID -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:14px; align-items:start;">
+          
+          <!-- COLUNA 1: IDENTIDADE, ÍCONE & TEXTOS -->
+          <div style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:12px;">
+            <div style="font-size:0.68rem; font-weight:900; color:#38bdf8; letter-spacing:0.8px; text-transform:uppercase;">🎨 Identidade & Aparência</div>
 
-        <div class="form-row">
-           <div class="form-group" style="flex:2">
-              <label>ÍCONE / MÍDIA (IMPORTAR)</label>
-              <div style="display:flex; gap:10px; align-items:center;">
-                 <div style="width:45px; height:45px; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center;">
-                    ${ab.image ? `<img src="${ab.image}" style="width:28px; height:28px;">` : `<span style="font-size:1.2rem;">${ab.icon || '✨'}</span>`}
-                 </div>
-                 <button id="btn-pick-ab-icon" class="editor-btn-secondary" style="flex:1; padding:12px;">MUDAR ÍCONE</button>
+            <div style="display:grid; grid-template-columns:1fr 90px; gap:10px; align-items:end;">
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Nome da Habilidade</label>
+                <input type="text" id="ab-name" class="editor-input" style="padding:8px 10px; font-size:0.82rem;" value="${ab.name}">
               </div>
-           </div>
-           <div class="form-group" style="flex:1">
-              <label>COR TEMÁTICA (PREVIEW)</label>
-              <input type="color" id="ab-color" class="editor-input" style="height:45px; padding:2px;" value="${ab.color || '#51c5ff'}">
-           </div>
-        </div>
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Cor</label>
+                <input type="color" id="ab-color" class="editor-input" style="height:36px; padding:2px; width:100%;" value="${ab.color || '#51c5ff'}">
+              </div>
+            </div>
 
-        <div style="background:rgba(0,0,0,0.3); border-radius:12px; padding:20px; border:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; gap:20px;">
-           
-           <div class="form-group">
-              <label style="color:#ffa500; font-weight:900; font-size:0.65rem; letter-spacing:1px; margin-bottom:10px; display:block;">⚡ GATILHO (TRIGGER)</label>
-              <select id="ab-trigger" class="editor-input">
-                 <option value="on_play" ${ab.trigger === 'on_play' ? 'selected' : ''}>AO ENTRAR EM CAMPO (On Play)</option>
-                 <option value="on_attack" ${ab.trigger === 'on_attack' ? 'selected' : ''}>AO ATACAR (On Attack)</option>
-                 <option value="on_defend" ${ab.trigger === 'on_defend' ? 'selected' : ''}>AO DEFENDER (On Defend)</option>
-                 <option value="on_death" ${ab.trigger === 'on_death' ? 'selected' : ''}>AO MORRER (On Death)</option>
-                 <option value="on_turn_start" ${ab.trigger === 'on_turn_start' ? 'selected' : ''}>INÍCIO DO TURNO</option>
-                 <option value="on_turn_end" ${ab.trigger === 'on_turn_end' ? 'selected' : ''}>FIM DO TURNO</option>
-              </select>
-           </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:end;">
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Ícone / Mídia</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                  <div style="width:36px; height:36px; border-radius:7px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+                    ${ab.image ? `<img src="${ab.image}" style="width:26px; height:26px; object-fit:contain;">` : `<span style="font-size:1rem;">${ab.icon || '✨'}</span>`}
+                  </div>
+                  <button type="button" id="btn-pick-ab-icon" class="editor-btn-secondary" style="flex:1; padding:8px 10px; font-size:0.68rem; color:#e2e8f0; border-color:rgba(255,255,255,0.2);">🖼️ Galeria</button>
+                </div>
+              </div>
 
-           <div class="form-row">
-              <div class="form-group" style="flex:1">
-                 <label style="color:#a335ee; font-weight:900; font-size:0.65rem; letter-spacing:1px; margin-bottom:10px; display:block;">🕹️ LÓGICA E ALVO</label>
-                 <select id="ab-type" class="editor-input">
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Texto de Popup (Gatilho)</label>
+                <input type="text" id="ab-trigger-text" class="editor-input" style="padding:8px 10px; font-size:0.8rem;" value="${ab.triggerText || ''}" placeholder="Ex: REFLEXO!">
+              </div>
+            </div>
+
+            <div class="form-group" style="gap:4px;">
+              <label style="font-size:0.64rem;">Descrição (In-Game)</label>
+              <textarea id="ab-desc" class="editor-input" rows="3" style="resize:vertical; padding:8px 10px; font-size:0.8rem;">${ab.description}</textarea>
+            </div>
+          </div>
+
+          <!-- COLUNA 2: LÓGICA DE COMBATE & DISPONIBILIDADE -->
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:10px;">
+              <div style="font-size:0.68rem; font-weight:900; color:#f59e0b; letter-spacing:0.8px; text-transform:uppercase;">⚡ Mecânica & Gatilho</div>
+
+              <div class="form-group" style="gap:4px;">
+                <label style="font-size:0.64rem;">Gatilho (Trigger)</label>
+                <select id="ab-trigger" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
+                  <option value="on_play" ${ab.trigger === 'on_play' ? 'selected' : ''}>AO ENTRAR EM CAMPO (On Play)</option>
+                  <option value="on_attack" ${ab.trigger === 'on_attack' ? 'selected' : ''}>AO ATACAR (On Attack)</option>
+                  <option value="on_defend" ${ab.trigger === 'on_defend' ? 'selected' : ''}>AO DEFENDER (On Defend)</option>
+                  <option value="on_death" ${ab.trigger === 'on_death' ? 'selected' : ''}>AO MORRER (On Death)</option>
+                  <option value="on_turn_start" ${ab.trigger === 'on_turn_start' ? 'selected' : ''}>INÍCIO DO TURNO</option>
+                  <option value="on_turn_end" ${ab.trigger === 'on_turn_end' ? 'selected' : ''}>FIM DO TURNO</option>
+                </select>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Lógica</label>
+                  <select id="ab-type" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
                     <option value="buff" ${ab.type === 'buff' ? 'selected' : ''}>📈 BUFF (Bônus)</option>
                     <option value="nerf" ${ab.type === 'nerf' ? 'selected' : ''}>📉 NERF (Penalidade)</option>
-                    <option value="special" ${ab.type === 'special' ? 'selected' : ''}>✨ ESPECIAL (Lógica Custom)</option>
-                 </select>
-              </div>
-              <div class="form-group" style="flex:1">
-                 <label style="opacity:0; margin-bottom:10px; display:block;">.</label>
-                 <select id="ab-target" class="editor-input">
-                    <option value="self" ${ab.target === 'self' ? 'selected' : ''}>👤 PRÓPRIA CARTA</option>
-                    <option value="attacker" ${ab.target === 'attacker' ? 'selected' : ''}>⚔️ ATACANTE</option>
-                    <option value="defender" ${ab.target === 'defender' ? 'selected' : ''}>🛡️ DEFENSOR</option>
-                    <option value="opponent_board" ${ab.target === 'opponent_board' ? 'selected' : ''}>🔥 TABULEIRO INIMIGO</option>
-                    <option value="own_board" ${ab.target === 'own_board' ? 'selected' : ''}>💎 MEU TABULEIRO</option>
-                    <option value="user" ${ab.target === 'user' ? 'selected' : ''}>👑 JOGADOR (USER)</option>
-                    <option value="opponent" ${ab.target === 'opponent' ? 'selected' : ''}>💀 OPONENTE</option>
-                 </select>
-              </div>
-           </div>
+                    <option value="special" ${ab.type === 'special' ? 'selected' : ''}>✨ ESPECIAL</option>
+                  </select>
+                </div>
 
-           <div class="form-row">
-              <div class="form-group" style="flex:1.5">
-                 <label style="color:#4cff88; font-weight:900; font-size:0.65rem; letter-spacing:1px; margin-bottom:10px; display:block;">💖 EFEITO E VALOR</label>
-                 <select id="ab-stat" class="editor-input">
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Alvo</label>
+                  <select id="ab-target" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
+                    <option value="self" ${ab.target === 'self' ? 'selected' : ''}>👤 Própria Carta</option>
+                    <option value="attacker" ${ab.target === 'attacker' ? 'selected' : ''}>⚔️ Atacante</option>
+                    <option value="defender" ${ab.target === 'defender' ? 'selected' : ''}>🛡️ Defensor</option>
+                    <option value="opponent_board" ${ab.target === 'opponent_board' ? 'selected' : ''}>🔥 Tabuleiro Inimigo</option>
+                    <option value="own_board" ${ab.target === 'own_board' ? 'selected' : ''}>💎 Meu Tabuleiro</option>
+                    <option value="user" ${ab.target === 'user' ? 'selected' : ''}>👑 Jogador</option>
+                    <option value="opponent" ${ab.target === 'opponent' ? 'selected' : ''}>💀 Oponente</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 110px; gap:10px;">
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Atributo / Efeito</label>
+                  <select id="ab-stat" class="editor-input" style="padding:8px 10px; font-size:0.78rem;">
                     <option value="pv" ${ab.stat === 'pv' ? 'selected' : ''}>❤️ Vida (PV)</option>
                     <option value="atk" ${ab.stat === 'atk' ? 'selected' : ''}>⚔️ Ataque (ATK)</option>
                     <option value="stun" ${ab.stat === 'stun' ? 'selected' : ''}>🌀 Atordoar (Stun)</option>
                     <option value="flip" ${ab.stat === 'flip' ? 'selected' : ''}>♻️ Virar Card (Flip)</option>
-                 </select>
+                  </select>
+                </div>
+                <div class="form-group" style="gap:4px;">
+                  <label style="font-size:0.64rem;">Valor</label>
+                  <input type="number" id="ab-value" class="editor-input" style="padding:8px 10px; font-size:0.8rem;" value="${ab.value || 0}">
+                </div>
               </div>
-              <div class="form-group" style="flex:0.5">
-                 <label style="opacity:0; margin-bottom:10px; display:block;">.</label>
-                 <input type="number" id="ab-value" class="editor-input" value="${ab.value || 0}">
-              </div>
-           </div>
+            </div>
 
-        </div>
+            <div style="background:rgba(255,215,0,0.04); border:1px solid rgba(255,215,0,0.18); border-radius:12px; padding:12px;">
+              <div style="font-size:0.66rem; font-weight:900; color:#ffd700; letter-spacing:0.8px; text-transform:uppercase; margin-bottom:6px;">🛒 Disponibilidade & Loja</div>
+              ${this.renderAvailabilityForm(ab.availability || { type: 'always' })}
+            </div>
+          </div>
 
-        <div class="form-group" style="margin-top:20px;">
-           <label>TEXTO DE GATILHO (POPUP)</label>
-           <input type="text" id="ab-trigger-text" class="editor-input" value="${ab.triggerText || ''}" placeholder="Ex: REFLEXO!">
-        </div>
-
-        <div class="form-group">
-           <label>DESCRIÇÃO (IN-GAME)</label>
-           <textarea id="ab-desc" class="editor-input" rows="3" style="resize:vertical">${ab.description}</textarea>
-        </div>
-
-        <div style="margin-top:auto; padding-top:20px;">
-           <button id="btn-save-abilities" class="editor-btn-primary" style="width:100%">💾 SALVAR HABILIDADES</button>
         </div>
       </div>
     `;
@@ -150,7 +183,7 @@ export class TabAbilities {
     const ab = this.abilities[this.selectedIndex];
     if (!ab) return;
 
-    container.querySelectorAll('.ars-artifact-grid .editor-list-item').forEach(el => {
+    container.querySelectorAll('.ars-artifact-grid .editor-list-item[data-idx]').forEach(el => {
       el.addEventListener('click', (e) => {
         const idx = (e.currentTarget as HTMLElement).dataset.idx;
         if (idx !== undefined) {
@@ -159,7 +192,7 @@ export class TabAbilities {
       });
     });
 
-    container.querySelector('#btn-add-ability')?.addEventListener('click', () => {
+    container.querySelector('#btn-add-ability')?.addEventListener('click', async () => {
        this.abilities.push({
           id: 'ab_' + Date.now(),
           name: 'Nova Habilidade',
@@ -173,7 +206,33 @@ export class TabAbilities {
           color: '#51c5ff',
           availability: { type: 'always' }
        });
+       await fetch('/api/save-abilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.abilities)
+       });
        this.setHabilidadesSelectedIndex(this.abilities.length - 1);
+    });
+
+    container.querySelector('#btn-delete-ability')?.addEventListener('click', async () => {
+       if (this.abilities.length <= 1) return;
+       this.abilities.splice(this.selectedIndex, 1);
+       await fetch('/api/save-abilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.abilities)
+       });
+       this.showToast('Passiva removida!', '#ef4444');
+       this.setHabilidadesSelectedIndex(Math.max(0, this.selectedIndex - 1));
+    });
+
+    container.querySelector('#btn-pick-ab-icon')?.addEventListener('click', () => {
+       if (this.openMediaPicker) {
+          this.openMediaPicker((url) => {
+             ab.image = url;
+             this.reRender();
+          });
+       }
     });
 
     const update = () => {
@@ -228,7 +287,7 @@ export class TabAbilities {
         const idx = parseInt((el as HTMLElement).dataset.idx || '-1');
         if (idx >= 0 && this.abilities[idx]) {
            const ab = this.abilities[idx];
-           const nameEl = el.querySelector('div:last-child');
+           const nameEl = el.querySelector('.ab-item-title');
            if (nameEl) nameEl.textContent = ab.name;
            
            const iconCircle = el.querySelector('.ab-icon-circle') as HTMLElement;

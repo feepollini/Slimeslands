@@ -91,18 +91,20 @@ const BoosterBridgeModal: React.FC<{
 
   return (
     <ProceduralEcosystemModal
-      isOpen={isOpen}
-      initialSection={options.initialSection || 'boosters'}
-      onClose={handleClose}
-      baseCharacters={baseCharacters}
-      onUpdateBaseCharacters={setBaseCharacters}
-      balanceTables={balanceTables}
-      onUpdateBalanceTables={setBalanceTables}
-      boosterModels={boosterModels}
-      onUpdateBoosterModels={setBoosterModels}
-      decks={decks}
-      onGrantCardsToInventory={handleGrant}
-      onInspectCard={() => {}}
+      {...({
+        isOpen,
+        initialSection: options.initialSection || 'boosters',
+        onClose: handleClose,
+        baseCharacters,
+        onUpdateBaseCharacters: setBaseCharacters,
+        balanceTables,
+        onUpdateBalanceTables: setBalanceTables,
+        boosterModels,
+        onUpdateBoosterModels: setBoosterModels,
+        decks,
+        onGrantCardsToInventory: handleGrant,
+        onInspectCard: () => {},
+      } as any)}
     />
   );
 };
@@ -202,7 +204,7 @@ const PlayerBoosterBridgeContainer: React.FC<{
 
       // Filter eligible matrix blueprints: must be classified!
       const classifiedPool = baseCharacters.filter(
-        (c) => c.rarity !== 'Não classificada' && c.isClassified !== false
+        (c: any) => c.rarity !== 'Não classificada' && c.isClassified !== false
       );
       const eligiblePool = classifiedPool.length > 0 ? classifiedPool : baseCharacters;
 

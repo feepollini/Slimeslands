@@ -473,6 +473,9 @@ export class PhaseDialog {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
+    const sf = this.state.phaseSpawnFrame;
+    if (!sf) return;
+
     // High-fidelity direct render
     if (this.renderPipeline) {
        this.renderPipeline.renderToExternalContext(ctx, sf, { w: cw, h: ch }, { showTechnical: false });

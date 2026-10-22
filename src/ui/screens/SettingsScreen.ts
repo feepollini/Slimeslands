@@ -2,12 +2,10 @@ import { SoundManager } from '../utils/SoundManager';
 import { t, getLang, setLang, getSkipIntro, setSkipIntro, LANGS, Lang } from '../../core/i18n';
 
 export class SettingsScreen {
-    private onOpenForja: () => void;
     private onOpenForjaV2: () => void;
     private onBack?: () => void;
 
-    constructor(onOpenForja: () => void, onOpenForjaV2: () => void, onBack?: () => void) {
-        this.onOpenForja = onOpenForja;
+    constructor(onOpenForjaV2: () => void, onBack?: () => void) {
         this.onOpenForjaV2 = onOpenForjaV2;
         this.onBack = onBack;
     }
@@ -57,25 +55,13 @@ export class SettingsScreen {
 
                     <div style="height:10px;"></div>
 
-                    <!-- FORJA ACCESS (só no servidor local) -->
-                    ${showForgeAccess ? `
-                    <div id="btn-open-forja" class="settings-item" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.3s; transform: scale(1);">
-                        <div style="display: flex; align-items: center; gap: 15px;">
-                            <span style="font-size: 1.5rem;">⚒️</span>
-                            <div style="display: flex; flex-direction: column;">
-                                <span style="color: #fff; font-weight: 950; font-size: 0.9rem; letter-spacing: 1px;">FORJA</span>
-                                <span style="color: rgba(255,255,255,0.5); font-size: 0.7rem;">${t('set.forgeDesc')}</span>
-                            </div>
-                        </div>
-                        <span style="color: rgba(255,255,255,0.3);">▶</span>
-                    </div>
-
                     <!-- FORJA V2 ACCESS -->
+                    ${showForgeAccess ? `
                     <div id="btn-open-forja-v2" class="settings-item" style="background: rgba(81,197,255,0.05); border: 1px solid rgba(81,197,255,0.2); border-radius: 15px; padding: 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: 0.3s; transform: scale(1);">
                         <div style="display: flex; align-items: center; gap: 15px;">
                             <span style="font-size: 1.5rem;">🚀</span>
                             <div style="display: flex; flex-direction: column;">
-                                <span style="color: #51c5ff; font-weight: 950; font-size: 0.9rem; letter-spacing: 1px;">FORJA V2 [BETA]</span>
+                                <span style="color: #51c5ff; font-weight: 950; font-size: 0.9rem; letter-spacing: 1px;">FORJA V2</span>
                                 <span style="color: rgba(255,255,255,0.5); font-size: 0.7rem;">${t('set.forgeV2Desc')}</span>
                             </div>
                         </div>
@@ -188,11 +174,6 @@ export class SettingsScreen {
 
         // Play small sound when released to confirm feedback
         sliderSfx?.addEventListener('change', () => SoundManager.playAction('clique_geral', 0.5));
-
-        document.getElementById('btn-open-forja')?.addEventListener('click', () => {
-            SoundManager.playAction('clique_geral', 0.6);
-            this.onOpenForja();
-        });
 
         document.getElementById('btn-open-forja-v2')?.addEventListener('click', () => {
             SoundManager.playAction('clique_geral', 0.6);

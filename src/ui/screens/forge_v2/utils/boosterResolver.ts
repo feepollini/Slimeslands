@@ -21,27 +21,96 @@ import { BaseCharacter } from '../../../../card_studio/src/types/slimelands';
 /**
  * Converte qualquer carta do jogo ou blueprint procedural em PackCardData 3D.
  */
+export function getCardRarityWeight(card: any): number {
+  if (!card) return 0;
+  const tpl = card.tpl || card.cardData || card;
+  const cls = String(
+    card.cardClass || card.matrixRarity || tpl.cardClass || tpl.matrixRarity || ''
+  ).toLowerCase();
+  const rawRarity = String(
+    card.rarity || card.preferredRarity || tpl.preferredRarity || tpl.rarity || ''
+  ).toLowerCase();
+  const rank = String(card.cardRank || tpl.cardRank || '').toLowerCase();
+  const label = String(card.rarityLabel || '').toLowerCase();
+
+  if (
+    cls.includes('mítica') ||
+    cls.includes('mitica') ||
+    cls.includes('limitada') ||
+    rawRarity.includes('mítica') ||
+    rawRarity.includes('mitica') ||
+    rawRarity.includes('mythic') ||
+    label.includes('mítica') ||
+    label.includes('mitica')
+  ) {
+    return 5;
+  }
+  if (
+    cls.includes('lendária') ||
+    cls.includes('lendaria') ||
+    rawRarity.includes('lendária') ||
+    rawRarity.includes('lendaria') ||
+    rawRarity.includes('legendary') ||
+    label.includes('lendária') ||
+    label.includes('lendaria') ||
+    rank === 's'
+  ) {
+    return 4;
+  }
+  if (
+    cls.includes('épica') ||
+    cls.includes('epica') ||
+    rawRarity.includes('épica') ||
+    rawRarity.includes('epica') ||
+    rawRarity.includes('epic') ||
+    label.includes('épica') ||
+    rank === 'a'
+  ) {
+    return 3;
+  }
+  if (
+    cls.includes('rara') ||
+    rawRarity.includes('rara') ||
+    rawRarity.includes('rare') ||
+    label.includes('rara') ||
+    rank === 'b'
+  ) {
+    return 2;
+  }
+  if (
+    cls.includes('incomum') ||
+    rawRarity.includes('incomum') ||
+    rawRarity.includes('uncommon') ||
+    label.includes('incomum') ||
+    rank === 'c'
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
 export function formatPackCardData(raw: any, index: number = 0): PackCardData {
   const tpl = raw.tpl || raw.cardData || raw;
   const name = String(raw.name || raw.title || tpl.name || tpl.title || `Carta ${index + 1}`).trim();
-  
-  const rawRarity = String(
-    raw.rarity || raw.preferredRarity || raw.cardRank || tpl.preferredRarity || tpl.rarity || 'common'
-  ).toLowerCase();
+
+  const weight = getCardRarityWeight(raw);
 
   let rarity: 'common' | 'uncommon' | 'rare' | 'legendary' = 'common';
   let rarityLabel = 'COMUM';
 
-  if (rawRarity === 's' || rawRarity.includes('mítica') || rawRarity.includes('legendary') || rawRarity.includes('lendária')) {
+  if (weight >= 5) {
     rarity = 'legendary';
-    rarityLabel = 'LENDÁRIA';
-  } else if (rawRarity === 'a' || rawRarity.includes('épica') || rawRarity.includes('epic')) {
+    rarityLabel = 'MÍTICA ★★★';
+  } else if (weight === 4) {
+    rarity = 'legendary';
+    rarityLabel = 'LENDÁRIA ★★★';
+  } else if (weight === 3) {
     rarity = 'rare';
-    rarityLabel = 'ÉPICA';
-  } else if (rawRarity === 'b' || rawRarity.includes('rara') || rawRarity.includes('rare')) {
+    rarityLabel = 'ÉPICA ★★';
+  } else if (weight === 2) {
     rarity = 'rare';
-    rarityLabel = 'RARA';
-  } else if (rawRarity === 'c' || rawRarity.includes('incomum') || rawRarity.includes('uncommon')) {
+    rarityLabel = 'RARA ★';
+  } else if (weight === 1) {
     rarity = 'uncommon';
     rarityLabel = 'INCOMUM';
   }
@@ -60,6 +129,7 @@ export function formatPackCardData(raw: any, index: number = 0): PackCardData {
     name,
     rarity,
     rarityLabel,
+    rarityWeight: weight,
     hp: pv,
     pv,
     atk,
@@ -93,11 +163,12 @@ export function formatPackCardData(raw: any, index: number = 0): PackCardData {
  */
 export async function resolveBoosterCards(
   pack: any,
-  providedTemplates: any[] = []
+  providedTemplates: any[] = [],
+  carouselSlotCount: number = 12
 ): Promise<PackCardData[]> {
   const targetCount = Number(pack.cardsCount) || 9;
   const fixedCardNames: string[] = Array.isArray(pack.fixedCards) ? [...pack.fixedCards] : [];
-  
+
   let snapshot: any = null;
   try {
     snapshot = await loadGameMatrixSnapshot();
@@ -107,12 +178,11 @@ export async function resolveBoosterCards(
 
   const isCleared = Boolean(snapshot?.isLibraryCleared);
 
-  const resolvedCards: PackCardData[] = [];
-
   // Se a biblioteca da Matriz estiver explicitamente limpa, não ressuscita cartas antigas
   if (isCleared) {
+    const emptyCards: PackCardData[] = [];
     for (let i = 0; i < targetCount; i++) {
-      resolvedCards.push(
+      emptyCards.push(
         formatPackCardData(
           {
             name: `Slot Matriz #${i + 1} (Vazio)`,
@@ -124,7 +194,7 @@ export async function resolveBoosterCards(
         )
       );
     }
-    return resolvedCards;
+    return emptyCards;
   }
 
   // Cartas e blueprints reais da Matriz + catálogo do jogo
@@ -154,128 +224,178 @@ export async function resolveBoosterCards(
     if (bc?.id) templateMap.set(String(bc.id).toLowerCase().trim(), bc);
   });
 
-  // 1. Processa cartas fixas selecionadas no editor de boosters
-  for (const name of fixedCardNames) {
-    if (resolvedCards.length >= targetCount) break;
-    const cleanKey = name.toLowerCase().trim();
-    const match = templateMap.get(cleanKey);
+  const boosterModels =
+    snapshot?.boosterModels && snapshot.boosterModels.length > 0
+      ? snapshot.boosterModels
+      : DEFAULT_BOOSTER_MODELS;
 
-    if (match) {
-      if ((match as any).family || (match as any).baseArchetype) {
-        // É um blueprint procedural: gera a instância com rolagem de stats e raridade da matriz
-        const balanceTables = snapshot?.balanceTables || DEFAULT_CLASS_BALANCE_TABLES;
-        const generated = generateProceduralCard({
-          character: match as BaseCharacter,
-          charactersPool: baseCharacters,
-          balanceTables,
-          origin: 'Booster',
-          deckId: 'deck-inventory',
-        });
-        resolvedCards.push(formatPackCardData(generated, resolvedCards.length));
-      } else {
-        // Carta existente do catálogo/matriz
-        resolvedCards.push(formatPackCardData(match, resolvedCards.length));
-      }
-    } else {
-      // Cria card básico com o nome configurado se não achou objeto completo
-      resolvedCards.push(
-        formatPackCardData(
-          {
-            name,
-            rarity: 'rare',
-            pv: 350,
-            atk: 180,
-          },
-          resolvedCards.length
-        )
-      );
-    }
-  }
+  const matchingBooster =
+    boosterModels.find(
+      (b: any) => b.id === pack.id || b.name?.toLowerCase() === pack.name?.toLowerCase()
+    ) || boosterModels[0];
 
-  // 2. Processa grupos configurados (cardGroups) se existirem
-  if (resolvedCards.length < targetCount && pack.cardGroups) {
-    const groupPool: string[] = [
-      ...(pack.cardGroups.legendary || []),
-      ...(pack.cardGroups.rare || []),
-      ...(pack.cardGroups.common || []),
-    ];
-    for (const name of groupPool) {
-      if (resolvedCards.length >= targetCount) break;
+  const balanceTables = snapshot?.balanceTables || DEFAULT_CLASS_BALANCE_TABLES;
+  const activePool = baseCharacters.filter((c) => c.active !== false);
+  const charsPool = activePool.length > 0 ? activePool : baseCharacters;
+
+  /**
+   * Rola de verdade um pacote individual para um dos 12 envelopes da ciranda.
+   * Cada envelope tem sua própria rolagem procedural real de cartas, atributos, ranks e raridades.
+   */
+  const rollRawCardsForEnvelope = (slotIdx: number): any[] => {
+    const rawList: any[] = [];
+
+    // 1. Processa cartas fixas selecionadas no editor de boosters (com rolagem procedural individual por envelope)
+    for (const name of fixedCardNames) {
+      if (rawList.length >= targetCount) break;
       const cleanKey = name.toLowerCase().trim();
       const match = templateMap.get(cleanKey);
+
       if (match) {
-        resolvedCards.push(formatPackCardData(match, resolvedCards.length));
+        if ((match as any).family || (match as any).baseArchetype) {
+          const generated = generateProceduralCard({
+            character: match as BaseCharacter,
+            charactersPool: baseCharacters,
+            balanceTables,
+            origin: 'Booster',
+            deckId: 'deck-inventory',
+          });
+          rawList.push(generated);
+        } else {
+          rawList.push({
+            ...match,
+            id: `${match.id || 'card'}-env${slotIdx}-${rawList.length}-${Math.random().toString(36).slice(2, 6)}`,
+          });
+        }
+      } else {
+        rawList.push({
+          name,
+          rarity: 'rare',
+          pv: 350,
+          atk: 180,
+        });
       }
     }
-  }
 
-  // 3. Preenche as vagas restantes usando o motor procedural da Matriz
-  const remaining = targetCount - resolvedCards.length;
-  if (remaining > 0) {
-    const boosterModels =
-      snapshot?.boosterModels && snapshot.boosterModels.length > 0
-        ? snapshot.boosterModels
-        : DEFAULT_BOOSTER_MODELS;
-
-    const matchingBooster =
-      boosterModels.find((b: any) => b.id === pack.id || b.name.toLowerCase() === pack.name?.toLowerCase()) ||
-      boosterModels[0];
-
-    const balanceTables = snapshot?.balanceTables || DEFAULT_CLASS_BALANCE_TABLES;
-    const pool = baseCharacters.filter((c) => c.active !== false);
-    const matrixCards =
-      snapshot?.cards && snapshot.cards.length > 0 ? snapshot.cards : INITIAL_CARDS;
-
-    const generated = generateBoosterPack(
-      matchingBooster,
-      pool.length > 0 ? pool : baseCharacters,
-      balanceTables,
-      'deck-inventory',
-      matrixCards
-    );
-    for (let i = 0; i < remaining && i < generated.length; i++) {
-      resolvedCards.push(formatPackCardData(generated[i], resolvedCards.length));
-    }
-  }
-
-  // Se mesmo assim faltar alguma carta, completa com fallback
-  while (resolvedCards.length < targetCount) {
-    resolvedCards.push(
-      formatPackCardData(
-        {
-          name: `Guardião Mistico #${resolvedCards.length + 1}`,
-          rarity: 'common',
-          pv: 300,
-          atk: 150,
-        },
-        resolvedCards.length
-      )
-    );
-  }
-
-  // 3.5. Garante que todas as imagens sejam convertidas em Data URLs base64 autossuficientes
-  // para que o CardFrameSVG oficial renderize de forma instantânea e sem restrições na textura 3D
-  for (const rc of resolvedCards) {
-    const rawImg = (rc as any).image || (rc as any).imageUrl;
-    if (rawImg && !rawImg.startsWith('data:')) {
-      const dataUrl = await ensureDataUrl(rawImg);
-      if (dataUrl && dataUrl.startsWith('data:')) {
-        (rc as any).image = dataUrl;
-        (rc as any).imageUrl = dataUrl;
-        rc.texture = createMatrixCardTexture(rc);
+    // 2. Processa grupos configurados (cardGroups) se existirem
+    if (rawList.length < targetCount && pack.cardGroups) {
+      const groupPool: string[] = [
+        ...(pack.cardGroups.legendary || []),
+        ...(pack.cardGroups.rare || []),
+        ...(pack.cardGroups.common || []),
+      ];
+      // Embaralha o pool para que cada envelope da roda tenha sorteio próprio
+      const shuffledGroup = [...groupPool].sort(() => Math.random() - 0.5);
+      for (const name of shuffledGroup) {
+        if (rawList.length >= targetCount) break;
+        const cleanKey = name.toLowerCase().trim();
+        const match = templateMap.get(cleanKey);
+        if (match) {
+          rawList.push({
+            ...match,
+            id: `${match.id || 'grp'}-env${slotIdx}-${rawList.length}-${Math.random().toString(36).slice(2, 6)}`,
+          });
+        }
       }
     }
-  }
 
-  // 4. Salva as novas cartas na Matriz / inventário do jogo apenas se não for biblioteca limpa
-  if (!isCleared && resolvedCards.length > 0) {
-    try {
-      const cardsToPersist: CardData[] = resolvedCards.map((rc) => toMatrixCardData(rc));
-      await upsertCardsIntoMatrixSnapshot(cardsToPersist);
-    } catch (saveErr) {
-      console.warn('Erro ao salvar cartas abertas na matriz:', saveErr);
+    // 3. Preenche as vagas restantes usando o motor procedural oficial da Matriz
+    const remaining = targetCount - rawList.length;
+    if (remaining > 0) {
+      const generated = generateBoosterPack(
+        matchingBooster,
+        charsPool,
+        balanceTables,
+        'deck-inventory',
+        activeMatrixCards
+      );
+      for (let i = 0; i < remaining && i < generated.length; i++) {
+        rawList.push(generated[i]);
+      }
     }
+
+    // Fallback caso ainda falte alguma carta
+    while (rawList.length < targetCount) {
+      rawList.push({
+        name: `Guardião Místico #${rawList.length + 1}`,
+        rarity: 'common',
+        pv: 300,
+        atk: 150,
+      });
+    }
+
+    // Ordena para que a carta Mítica ou Lendária SEMPRE seja a última carta do envelope
+    rawList.sort((a, b) => getCardRarityWeight(a) - getCardRarityWeight(b));
+    return rawList;
+  };
+
+  // Gera os 12 pacotes reais (um para cada um dos 12 envelopes da ciranda)
+  const totalSlots = Math.max(1, carouselSlotCount);
+  const slotRawPacks: any[][] = [];
+  for (let s = 0; s < totalSlots; s++) {
+    slotRawPacks.push(rollRawCardsForEnvelope(s));
   }
 
-  return resolvedCards;
+  const materializedCache = new Map<number, PackCardData[]>();
+
+  const materializeCarouselSlot = async (
+    slotIdx: number,
+    persistToMatrix: boolean = true
+  ): Promise<PackCardData[]> => {
+    const normalizedIdx = ((slotIdx % totalSlots) + totalSlots) % totalSlots;
+    let packCards = materializedCache.get(normalizedIdx);
+
+    if (!packCards) {
+      const rawItems = slotRawPacks[normalizedIdx] || rollRawCardsForEnvelope(normalizedIdx);
+      packCards = rawItems.map((item, idx) => formatPackCardData(item, idx));
+
+      // Ordena garantindo que Mítica / Lendária fique sempre na última posição
+      packCards.sort((a: any, b: any) => {
+        const wa = typeof a.rarityWeight === 'number' ? a.rarityWeight : getCardRarityWeight(a);
+        const wb = typeof b.rarityWeight === 'number' ? b.rarityWeight : getCardRarityWeight(b);
+        return wa - wb;
+      });
+
+      // Converte imagens para Data URLs base64 para renderização instantânea no Three.js e SVG
+      for (const rc of packCards) {
+        const rawImg = (rc as any).image || (rc as any).imageUrl;
+        if (rawImg && !rawImg.startsWith('data:')) {
+          const dataUrl = await ensureDataUrl(rawImg);
+          if (dataUrl && dataUrl.startsWith('data:')) {
+            (rc as any).image = dataUrl;
+            (rc as any).imageUrl = dataUrl;
+            rc.texture = createMatrixCardTexture(rc);
+          }
+        }
+      }
+
+      materializedCache.set(normalizedIdx, packCards);
+    }
+
+    if (persistToMatrix && !isCleared && packCards.length > 0) {
+      try {
+        const cardsToPersist: CardData[] = packCards.map((rc) => toMatrixCardData(rc));
+        await upsertCardsIntoMatrixSnapshot(cardsToPersist);
+      } catch (saveErr) {
+        console.warn('Erro ao salvar cartas do booster escolhido na matriz:', saveErr);
+      }
+    }
+
+    return packCards;
+  };
+
+  // Pré-materializa o slot 0 (sem persistir ainda se o usuário for escolher na roda, ou persiste ao abrir)
+  const initialResolved = await materializeCarouselSlot(0, false);
+
+  // Anexa os 12 pacotes reais e o materializador por slot para o BoosterPackViewer usar ao escolher qualquer envelope
+  (initialResolved as any).carouselSlotRawPacks = slotRawPacks;
+  (initialResolved as any).materializeCarouselSlot = materializeCarouselSlot;
+  (initialResolved as any).rerollCarouselSlot = async (slotIdx: number) => {
+    const normalizedIdx = ((slotIdx % totalSlots) + totalSlots) % totalSlots;
+    slotRawPacks[normalizedIdx] = rollRawCardsForEnvelope(normalizedIdx);
+    materializedCache.delete(normalizedIdx);
+    return materializeCarouselSlot(normalizedIdx, true);
+  };
+
+  return initialResolved;
 }

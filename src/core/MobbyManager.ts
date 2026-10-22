@@ -17,9 +17,10 @@ export interface Mobby {
   maxHp: number;
   atk: number;
   rewardCardId: string;
+  linkedCardId?: string; // ID ou Título da carta vinculada bidirecionalmente
   artifacts: string[]; // 4 artefatos
   dialogues: MobbyDialogue[];
-  // Novos controles de escala, posição, rotação, fundo e som
+  // Controles de escala, posição, rotação, fundo e som
   scale?: number; // Escala percentual (ex: 100 = 1x, 130 = 1.3x)
   offsetX?: number; // Deslocamento horizontal em px
   offsetY?: number; // Deslocamento vertical em px
@@ -30,6 +31,7 @@ export interface Mobby {
 }
 
 const STORAGE_KEY = 'legends_mobbys_data';
+const MATRIX_STORAGE_KEY = 'slimelands_matrix_v1_snapshot';
 
 export class MobbyManager {
   private static mobbys: Mobby[] = [];
@@ -68,6 +70,104 @@ export class MobbyManager {
     return list.length > 0 ? JSON.parse(JSON.stringify(list[0])) : null;
   }
 
+  public static getLinkedMobbyForCard(cardId?: string, cardTitle?: string): Mobby | null {
+    const list = this.getMobbys();
+    const normTitle = (cardTitle || '').trim().toLowerCase();
+    const normId = (cardId || '').trim().toLowerCase();
+    if (!normTitle && !normId) return null;
+
+    const found = list.find(m => {
+      const mLinkedId = (m.linkedCardId || '').trim().toLowerCase();
+      const mRewardId = (m.rewardCardId || '').trim().toLowerCase();
+      if (normId && (mLinkedId === normId || mRewardId === normId)) return true;
+      if (normTitle && (mRewardId === normTitle || mLinkedId === normTitle)) return true;
+      return false;
+    });
+    return found ? JSON.parse(JSON.stringify(found)) : null;
+  }
+
+  /**
+   * Vincula bidirecionalmente um Mobby e uma Carta tanto na lista de Mobbys quanto no Snapshot da Matriz.
+   */
+  public static setBidirectionalLink(
+    mobbyId: string | null,
+    cardId: string,
+    cardTitle: string,
+    syncImageUrl?: string
+  ): void {
+    const list = this.getMobbys();
+    const normCardTitle = (cardTitle || '').trim();
+    const normCardId = (cardId || '').trim();
+
+    let targetMobby: Mobby | undefined;
+
+    if (mobbyId) {
+      targetMobby = list.find(m => m.id === mobbyId);
+      if (targetMobby) {
+        targetMobby.rewardCardId = normCardTitle || normCardId;
+        targetMobby.linkedCardId = normCardId || normCardTitle;
+        if (syncImageUrl) {
+          targetMobby.image = syncImageUrl;
+        }
+      }
+    } else {
+      // Desvincular Mobbys que apontavam para esta carta
+      list.forEach(m => {
+        if (
+          m.linkedCardId === normCardId ||
+          m.rewardCardId.toLowerCase() === normCardTitle.toLowerCase()
+        ) {
+          m.linkedCardId = '';
+        }
+      });
+    }
+
+    this.saveMobbys(list);
+
+    // Atualiza o snapshot da Matriz (localStorage) para refletir o vínculo na Carta
+    try {
+      const rawSnap = localStorage.getItem(MATRIX_STORAGE_KEY);
+      if (rawSnap) {
+        const snap = JSON.parse(rawSnap);
+        if (Array.isArray(snap.cards)) {
+          snap.cards = snap.cards.map((c: any) => {
+            const isTargetCard =
+              (normCardId && c.id === normCardId) ||
+              (normCardTitle && (c.title || '').trim().toLowerCase() === normCardTitle.toLowerCase());
+            if (isTargetCard) {
+              return {
+                ...c,
+                linkedMobbyId: targetMobby ? targetMobby.id : undefined,
+                linkedMobbyName: targetMobby ? targetMobby.name : undefined,
+                ...(syncImageUrl ? { imageUrl: syncImageUrl } : {}),
+              };
+            }
+            // Se outro card apontava exclusivamente para este mesmo mobby, mantém ou atualiza
+            return c;
+          });
+          localStorage.setItem(MATRIX_STORAGE_KEY, JSON.stringify(snap));
+        }
+      }
+    } catch (err) {
+      console.warn('Falha ao sincronizar vínculo Mobby-Carta no snapshot da Matriz:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('slimelands:mobby-card-link-updated', {
+          detail: {
+            mobbyId: targetMobby?.id || null,
+            mobbyName: targetMobby?.name || null,
+            mobbyImage: targetMobby?.image || null,
+            cardId: normCardId,
+            cardTitle: normCardTitle,
+            syncImageUrl,
+          },
+        })
+      );
+    }
+  }
+
   private static backendDebounceTimer: any = null;
 
   public static saveMobbys(list: Mobby[]): void {
@@ -90,10 +190,13 @@ export class MobbyManager {
           body: JSON.stringify(list)
         }).catch(() => {});
       } catch (_) {}
-    }, 2000);
+    }, 800);
   }
 
   public static upsertMobby(mobby: Mobby): void {
+    if (mobby.rewardCardId && !mobby.linkedCardId) {
+      mobby.linkedCardId = mobby.rewardCardId;
+    }
     const list = this.getMobbys();
     const idx = list.findIndex(m => m.id === mobby.id);
     if (idx >= 0) {

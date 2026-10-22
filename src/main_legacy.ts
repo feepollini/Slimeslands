@@ -6,7 +6,6 @@ import { CARD_ABILITIES } from './core/constants';
 import type { AbilityTriggered, CardAbilityId } from './core/types';
 import { MenuScreen } from './ui/screens/MenuScreen';
 import { BoardScreen } from './ui/screens/BoardScreen';
-import { CardEditorScreen } from './ui/screens/CardEditorScreen';
 import { ArsenalScreen } from './ui/screens/ArsenalScreen';
 import { CARD_TEMPLATES, SKILL_POOL } from './core/constants';
 import SCENARIOS from './core/scenarios.json';
@@ -203,12 +202,7 @@ class App {
   // ─── ROUTING ─────────────────────────────────────────────────────────────────
 
   private openEditor() {
-    this.container.innerHTML = '';
-    const editor = new CardEditorScreen(() => {
-      this.engine.state = 'menu';
-      this.render();
-    });
-    editor.init(this.container);
+    window.location.href = 'forge.html';
   }
 
   private async openArsenal(isBattlePrep = false) {

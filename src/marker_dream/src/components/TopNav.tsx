@@ -21,6 +21,7 @@ import {
   Users,
   Package,
   GitBranch,
+  Brain,
 } from 'lucide-react';
 
 import type { TabId } from '../types/map';
@@ -46,6 +47,7 @@ interface Props {
   onOpenInventory?: () => void;
   onOpenQuests?: () => void;
   onOpenHudUniversal?: () => void;
+  onOpenMindMap?: () => void;
 }
 
 export const TopNav: React.FC<Props> = ({
@@ -69,6 +71,7 @@ export const TopNav: React.FC<Props> = ({
   onOpenInventory,
   onOpenQuests,
   onOpenHudUniversal,
+  onOpenMindMap,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -206,6 +209,18 @@ export const TopNav: React.FC<Props> = ({
           >
             <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
             <span className="hidden sm:inline">HUD Universal (Mestre)</span>
+          </button>
+        )}
+
+        {onOpenMindMap && (
+          <button
+            type="button"
+            onClick={onOpenMindMap}
+            className="px-2.5 py-1 rounded-md bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/40 text-[11px] font-bold text-pink-300 hover:text-pink-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-pink-500/10"
+            title="Abrir o Editor de Mapa Mental & Conceitos"
+          >
+            <Brain className="w-3.5 h-3.5 text-pink-400" />
+            <span className="hidden sm:inline">Mapa Mental</span>
           </button>
         )}
 

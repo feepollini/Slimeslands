@@ -33,10 +33,11 @@ import { CharactersSoloScreen } from './components/playerEditor/CharactersSoloSc
 import { InventorySoloScreen } from './components/inventory/InventorySoloScreen';
 import { QuestSoloScreen } from './components/quests/QuestSoloScreen';
 import { HudUniversalSoloScreen } from './components/screens/HudUniversalSoloScreen';
+import { MindMapSoloScreen } from './components/mindmap/MindMapSoloScreen';
 
 export default function App() {
-  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal'
-  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal'>(() => {
+  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap'
+  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap'>(() => {
     if (typeof window !== 'undefined') {
       const skip = localStorage.getItem('marker_dream_skip_intro');
       if (skip === 'true') {
@@ -495,6 +496,25 @@ export default function App() {
     );
   }
 
+  // Screen 2.999: Dedicated Mind Map & Concepts Studio
+  if (hubView === 'mindmap') {
+    return (
+      <>
+        <MindMapSoloScreen
+          onGoToDashboard={() => setHubView('dashboard')}
+          onGoToEditor={() => setHubView('editor')}
+          showToast={showToast}
+        />
+        {persistence.toastMsg && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-amber-300 border border-amber-500/50 px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl backdrop-blur-md pointer-events-none flex items-center gap-2">
+            <span>✨</span>
+            <span>{persistence.toastMsg}</span>
+          </div>
+        )}
+      </>
+    );
+  }
+
   // Screen 2.5: Dedicated Play Mode Screen (Sem o editor em primeiro plano, com estados e variáveis reais da fase)
   if (hubView === 'play') {
     const activeLevelName =
@@ -572,6 +592,7 @@ export default function App() {
         onOpenInventory={() => setHubView('inventory')}
         onOpenQuests={() => setHubView('quests')}
         onOpenHudUniversal={() => setHubView('hud_universal')}
+        onOpenMindMap={() => setHubView('mindmap')}
       />
 
       {/* Régua de TELAS (canvas tabs) */}

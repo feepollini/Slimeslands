@@ -269,7 +269,7 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
 }
 
 function extractUniqueMatrixCards(snapshot: SlimelandsGameMatrixSnapshot | null): CardData[] {
-  if (!snapshot || snapshot.isLibraryCleared) {
+  if (snapshot?.isLibraryCleared) {
     return [];
   }
   const combined: CardData[] = [];
@@ -286,25 +286,31 @@ function extractUniqueMatrixCards(snapshot: SlimelandsGameMatrixSnapshot | null)
     combined.push(c);
   };
 
-  if (Array.isArray(snapshot.cards)) {
-    snapshot.cards.forEach(addCard);
+  if (snapshot) {
+    if (Array.isArray(snapshot.cards)) {
+      snapshot.cards.forEach(addCard);
+    }
+    if (Array.isArray(snapshot.playerInventory)) {
+      snapshot.playerInventory.forEach(addCard);
+    }
   }
-  if (Array.isArray(snapshot.playerInventory)) {
-    snapshot.playerInventory.forEach(addCard);
+  if (combined.length === 0) {
+    INITIAL_CARDS.forEach(addCard);
   }
-  // Presets removidos: não injetamos INITIAL_CARDS de fábrica
   return combined;
 }
 
 function mergeWithBaseTemplates(
   matrixCards: CardData[],
-  _baseTemplates: any[] = [],
+  baseTemplates: any[] = [],
   isLibraryCleared: boolean = false
 ): any[] {
   if (isLibraryCleared) return [];
   const matrixConverted = matrixCards.map(convertMatrixCardToGameTemplate);
-  // Presets de cartas removidos conforme solicitado: retornamos estritamente as cartas criadas na Matriz.
-  return matrixConverted;
+  if (matrixConverted.length > 0) {
+    return matrixConverted;
+  }
+  return baseTemplates;
 }
 
 export interface CustomDeckData {

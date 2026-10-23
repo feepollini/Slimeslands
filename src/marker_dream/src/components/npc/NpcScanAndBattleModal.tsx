@@ -5,6 +5,7 @@ import {
   resolveNpcBattleMode,
   resolveNpcDeckCards,
   getRarityRules,
+  prepareNpcBattleContext,
   RolledCardVariation,
   NpcBattleOutcome,
   consumeLastNpcBattleOutcome,
@@ -16,7 +17,8 @@ interface NpcScanBattleDialogueModalProps {
   marker: MapMarker;
   isLandscape?: boolean;
   onStartBattle: (marker: MapMarker, mode: 'boss' | 'duel') => void;
-  onDirectScan: (marker: MapMarker) => void;
+  onDirectScan?: (marker: MapMarker) => void;
+  onQuickScanInPlace?: (marker: MapMarker) => void;
   onClose: () => void;
 }
 
@@ -25,6 +27,7 @@ export const NpcScanBattleDialogueModal: React.FC<NpcScanBattleDialogueModalProp
   isLandscape = false,
   onStartBattle,
   onDirectScan,
+  onQuickScanInPlace,
   onClose,
 }) => {
   const repCard = useMemo(() => resolveNpcMatrixCard(marker), [marker]);
@@ -232,7 +235,10 @@ export const NpcScanBattleDialogueModal: React.FC<NpcScanBattleDialogueModalProp
 
         <button
           type="button"
-          onClick={() => onDirectScan(marker)}
+          onClick={() => {
+            if (onDirectScan) onDirectScan(marker);
+            else if (onQuickScanInPlace) onQuickScanInPlace(marker);
+          }}
           className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500/25 to-teal-500/25 hover:from-emerald-500/35 hover:to-teal-500/35 border border-emerald-400/60 text-emerald-200 font-black text-[11px] flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-98"
         >
           <span>📡</span>
@@ -244,32 +250,60 @@ export const NpcScanBattleDialogueModal: React.FC<NpcScanBattleDialogueModalProp
 };
 
 interface NpcEmbeddedBattleIframeModalProps {
-  battleUrl: string;
-  npcName: string;
+  marker?: MapMarker;
+  battleUrl?: string;
+  npcName?: string;
   battleMode: 'boss' | 'duel';
-  onBattleFinished: (outcome: NpcBattleOutcome) => void;
+  onBattleFinished?: (outcome: NpcBattleOutcome) => void;
+  onBattleComplete?: (outcome: NpcBattleOutcome) => void;
   onCancel: () => void;
 }
 
 export const NpcEmbeddedBattleIframeModal: React.FC<NpcEmbeddedBattleIframeModalProps> = ({
+  marker,
   battleUrl,
   npcName,
   battleMode,
   onBattleFinished,
+  onBattleComplete,
   onCancel,
 }) => {
+  const preparedCtx = useMemo(() => {
+    if (marker) {
+      return prepareNpcBattleContext(marker, battleMode);
+    }
+    return null;
+  }, [marker, battleMode]);
+
+  const effectiveNpcName = npcName || marker?.name || preparedCtx?.npcName || 'NPC Desafiante';
+  const effectiveBattleUrl = useMemo(() => {
+    if (battleUrl) return battleUrl;
+    if (battleMode === 'boss') {
+      const mobbyParam = preparedCtx?.linkedMobbyId
+        ? `mobby=${encodeURIComponent(preparedCtx.linkedMobbyId)}&`
+        : '';
+      return `/boss_battle.html?${mobbyParam}npcBattle=1&embedded=1`;
+    }
+    return `/battle.html?npcBattle=1&embedded=1`;
+  }, [battleUrl, battleMode, preparedCtx]);
+
   useEffect(() => {
+    const notifyComplete = (outcome: NpcBattleOutcome) => {
+      if (onBattleFinished) onBattleFinished(outcome);
+      else if (onBattleComplete) onBattleComplete(outcome);
+    };
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'SLIMELANDS_NPC_BATTLE_COMPLETED') {
         consumeLastNpcBattleOutcome();
-        onBattleFinished(event.data.outcome as NpcBattleOutcome);
+        notifyComplete(event.data.outcome as NpcBattleOutcome);
       }
     };
 
     const pollInterval = setInterval(() => {
       const outcome = consumeLastNpcBattleOutcome();
       if (outcome) {
-        onBattleFinished(outcome);
+        notifyComplete(outcome);
       }
     }, 500);
 
@@ -278,7 +312,7 @@ export const NpcEmbeddedBattleIframeModal: React.FC<NpcEmbeddedBattleIframeModal
       window.removeEventListener('message', handleMessage);
       clearInterval(pollInterval);
     };
-  }, [onBattleFinished]);
+  }, [onBattleFinished, onBattleComplete]);
 
   return (
     <div
@@ -292,7 +326,7 @@ export const NpcEmbeddedBattleIframeModal: React.FC<NpcEmbeddedBattleIframeModal
             {battleMode === 'boss' ? '👹 Boss Battle 3x1' : '🃏 Duelo de Cartas'}
           </span>
           <span className="text-xs font-black text-white">
-            Enfrentando: <strong className="text-amber-300">{npcName}</strong>
+            Enfrentando: <strong className="text-amber-300">{effectiveNpcName}</strong>
           </span>
         </div>
 
@@ -307,8 +341,8 @@ export const NpcEmbeddedBattleIframeModal: React.FC<NpcEmbeddedBattleIframeModal
       </div>
 
       <iframe
-        src={battleUrl}
-        title={`Batalha contra ${npcName}`}
+        src={effectiveBattleUrl}
+        title={`Batalha contra ${effectiveNpcName}`}
         className="w-full flex-1 border-0 bg-black"
       />
     </div>
@@ -320,16 +354,25 @@ interface CardVariationDropShowcaseModalProps {
   goldEarned?: number;
   gemsEarned?: number;
   xpEarned?: number;
+  coinsAwarded?: number;
+  gemsAwarded?: number;
+  xpAwarded?: number;
   onClose: () => void;
 }
 
 export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseModalProps> = ({
   variation,
-  goldEarned = 150,
-  gemsEarned = 3,
-  xpEarned = 180,
+  goldEarned,
+  gemsEarned,
+  xpEarned,
+  coinsAwarded,
+  gemsAwarded,
+  xpAwarded,
   onClose,
 }) => {
+  const effectiveGold = coinsAwarded ?? goldEarned ?? 150;
+  const effectiveGems = gemsAwarded ?? gemsEarned ?? 3;
+  const effectiveXp = xpAwarded ?? xpEarned ?? 180;
   const cardSvgHtml = useMemo(() => {
     try {
       return renderMatrixCardSVG(
@@ -428,9 +471,9 @@ export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseM
           </div>
         </div>
         <div className="pt-1 flex items-center justify-center gap-3 text-[10px] font-black text-amber-300">
-          <span>🪙 +{goldEarned} Ouro</span>
-          <span>💎 +{gemsEarned} Gemas</span>
-          <span>⭐ +{xpEarned} XP</span>
+          <span>🪙 +{effectiveGold} Ouro</span>
+          <span>💎 +{effectiveGems} Gemas</span>
+          <span>⭐ +{effectiveXp} XP</span>
         </div>
       </div>
 

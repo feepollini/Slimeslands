@@ -27,6 +27,10 @@ import {
   getOrCreatePlayerInventory,
   addItemToPlayerInventory,
 } from './inventoryHelpers';
+import {
+  rollMatrixCardVariation,
+  saveRolledVariationToCollection,
+} from '../../../core/NpcCardBattleBridge';
 
 export const QUEST_STORAGE_KEY = 'slimelands_quest_system_v2_state';
 
@@ -1548,8 +1552,26 @@ export function executeRewardBundle(
           },
         },
       };
-      itemsGranted.push(`🃏 ${rew.cardName || rew.label}`);
-      logs.push(`🃏 Carta adicionada à coleção: "${rew.cardName || rew.label}".`);
+      try {
+        const rolled = rollMatrixCardVariation(
+          rew.cardId || rew.cardName || rew.label || '',
+          (rew.itemRarity as any) || 'rare',
+          'Recompensa de Quest'
+        );
+        if (rolled) {
+          saveRolledVariationToCollection(rolled);
+          itemsGranted.push(`🃏 ${rolled.name} (${rolled.rarityLabel} • ${rolled.variantTrait})`);
+          logs.push(
+            `🃏 Carta Matriz desbloqueada: "${rolled.name}" [${rolled.rarityLabel} ${rolled.serialNumber}] (ATK ${rolled.rolledAtk} / PV ${rolled.rolledPv}).`
+          );
+        } else {
+          itemsGranted.push(`🃏 ${rew.cardName || rew.label}`);
+          logs.push(`🃏 Carta adicionada à coleção: "${rew.cardName || rew.label}".`);
+        }
+      } catch {
+        itemsGranted.push(`🃏 ${rew.cardName || rew.label}`);
+        logs.push(`🃏 Carta adicionada à coleção: "${rew.cardName || rew.label}".`);
+      }
     } else if (rew.category === 'unlock_content' && rew.unlockTargetId) {
       const qCfg = getOrCreateProjectQuestsConfig(workingProject);
       const pState = qCfg.playerState;

@@ -23,6 +23,13 @@ import {
 import { BoardScreen } from './ui/screens/BoardScreen';
 import { BoardScreenLandscape } from './ui/screens_landscape/BoardScreenLandscape';
 import { OrientationManager } from './ui/OrientationManager';
+import {
+  getActiveNpcBattleContext,
+  resolveNpcDeckCards,
+  recordNpcBattleOutcome,
+  getBestVariationForCard,
+  RARITY_META,
+} from './core/NpcCardBattleBridge';
 
 // Helper to cast FX functions
 const { spawnParticles, deathExplosion, spawnFloatingText, triggerAbilityAnim, animateCapsulePv } = FX;
@@ -79,6 +86,14 @@ class BattleApp {
   }
 
   private initPreBattle() {
+    const params = new URLSearchParams(window.location.search);
+    const npcCtx = getActiveNpcBattleContext();
+    if (params.get('npcBattle') === '1' || (npcCtx && npcCtx.battleMode === 'duel')) {
+      this.difficulty = 'medium';
+      this.showCoinFlip();
+      return;
+    }
+
     applyScenarioBackground(getActiveScenario('difficulty', (SCENARIOS as any).difficulty || (SCENARIOS as any).lobby));
     this.container.innerHTML = this.board.renderDifficultyScreen();
     this.setupDifficultySelect();
@@ -192,8 +207,9 @@ class BattleApp {
         if (data.cards && data.cards.length > 0) {
           const pDeck = data.cards.map((c: any) => {
             const resolved = resolveMatrixOrGameCard(c?.name || c?.id || '', CARD_TEMPLATES) || c;
-            const atk = resolved.baseAtk || resolved.atk || c.baseAtk || c.atk || 100;
-            const pv = resolved.basePv || resolved.pv || c.basePv || c.pv || 500;
+            const bestVar = getBestVariationForCard(c?.id || c?.name || resolved?.id || resolved?.name || '');
+            const atk = bestVar?.rolledAtk || resolved.baseAtk || resolved.atk || c.baseAtk || c.atk || 100;
+            const pv = bestVar?.rolledPv || resolved.basePv || resolved.pv || c.basePv || c.pv || 500;
             return {
               ...resolved,
               ...c,
@@ -202,7 +218,7 @@ class BattleApp {
               atk,
               pv,
               maxPv: pv,
-              rarity: resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
+              rarity: bestVar?.rarity || resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
               manaCost: resolved.manaCost ?? c.manaCost ?? 1,
               staminaCost: resolved.staminaCost ?? c.staminaCost ?? 1,
               attacks: resolved.attacks || c.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
@@ -226,12 +242,56 @@ class BattleApp {
       applyScenarioBackground(getActiveScenario('battle', (SCENARIOS as any).battle));
     }
 
+    // Se houver contexto de Duelo contra NPC da Fase, equipa o Deck do NPC no Oponente
+    const npcCtx = getActiveNpcBattleContext();
+    if (npcCtx) {
+      const npcDeckTemplates = resolveNpcDeckCards({
+        id: npcCtx.npcId,
+        name: npcCtx.npcName,
+        matrixCardId: npcCtx.matrixCardId,
+        npcDeckCardIds: npcCtx.deckCardIds,
+      } as any);
+      if (npcDeckTemplates && npcDeckTemplates.length > 0) {
+        const customAiDeck: Card[] = npcDeckTemplates.map((tmpl: any, idx: number) => {
+          const atk = tmpl.baseAtk || tmpl.atk || 110;
+          const pv = tmpl.basePv || tmpl.pv || 480;
+          return {
+            ...tmpl,
+            id: `e-npc-${idx}-${Math.random().toString(36).substring(2, 7)}`,
+            name: tmpl.name || `Carta de ${npcCtx.npcName}`,
+            owner: 'e' as const,
+            atk,
+            pv,
+            maxPv: pv,
+            image: tmpl.image || npcCtx.npcImage,
+            manaCost: tmpl.manaCost ?? 1,
+            staminaCost: tmpl.staminaCost ?? 1,
+            rarity: tmpl.preferredRarity || tmpl.rarity || 'rare',
+            attacks: tmpl.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
+            specialAttack: tmpl.specialAttack,
+            matrixCard: tmpl.matrixCard || tmpl.cardData,
+          };
+        });
+        this.engine.aiDeck = customAiDeck.slice(3);
+        this.engine.aiHand = customAiDeck.slice(0, 3);
+      }
+      if (npcCtx.npcHp && npcCtx.npcHp > 0) {
+        this.engine.hp.e = Math.max(400, npcCtx.npcHp);
+      }
+    }
+
     if (starterTurn) this.engine.turn = starterTurn;
 
     this.render();
     this.startTimer();
     setTimeout(() => {
-      this.showBanner(this.engine.turn === 'p' ? t('bt.yourTurn') : t('bt.aiTurn'));
+      this.showBanner(
+        npcCtx
+          ? `⚔️ DUELO: ${npcCtx.npcName.toUpperCase()}`
+          : this.engine.turn === 'p'
+          ? t('bt.yourTurn')
+          : t('bt.aiTurn')
+      );
       this.animateHandCards();
       if (this.engine.turn === 'e') setTimeout(() => this.runAI(), 1200);
     }, 120);
@@ -559,10 +619,12 @@ class BattleApp {
     };
 
     const { data: newData, rewards } = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
+    const npcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+    const droppedVar = npcOutcome?.droppedVariation || null;
 
-    const xpGained = rewards.xpGained;
-    const coinsGained = rewards.goldGained;
-    const diamondsGained = rewards.diamondGained;
+    const xpGained = rewards.xpGained + (npcOutcome?.xpEarned || 0);
+    const coinsGained = rewards.goldGained + (npcOutcome?.goldEarned || 0);
+    const diamondsGained = rewards.diamondGained + (npcOutcome?.gemsEarned || 0);
     const enjinGained = rewards.enjinGained ?? (isWin ? 1 : 0);
     const cardsUsed = matchStats.cardsUsed;
     const defeatedEnemies = matchStats.cardsDefeated;
@@ -578,6 +640,21 @@ class BattleApp {
     const overlay = document.createElement('div');
     overlay.id = 'end-battle-overlay';
     overlay.className = themeClass;
+
+    const droppedRarityMeta = droppedVar ? RARITY_META[droppedVar.rarity] : null;
+    const droppedCardHtml = droppedVar && droppedRarityMeta ? `
+      <div style="margin: 10px 0 6px; padding: 10px 12px; border-radius: 14px; background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,27,75,0.92)); border: 2px solid ${droppedRarityMeta.color}; box-shadow: 0 0 22px ${droppedRarityMeta.glow}; display: flex; align-items: center; gap: 12px; text-align: left;">
+        <img src="${droppedVar.image}" alt="${droppedVar.name}" style="width: 48px; height: 64px; object-fit: cover; border-radius: 8px; border: 1.5px solid ${droppedRarityMeta.color}; flex-shrink: 0;" />
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size: 9px; font-weight: 900; padding: 2px 7px; border-radius: 99px; background: ${droppedRarityMeta.color}; color: #090d16; text-transform: uppercase; letter-spacing: 0.08em;">✨ ${droppedRarityMeta.label}</span>
+            <span style="font-size: 9px; font-family: monospace; color: #cbd5e1; font-weight: 700;">${droppedVar.serialNumber}</span>
+          </div>
+          <div style="font-size: 13px; font-weight: 900; color: #ffffff; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🃏 ${droppedVar.name}</div>
+          <div style="font-size: 10px; font-weight: 800; color: #fde68a; margin-top: 2px;">${droppedVar.variantTrait} • ⚔️ ATK ${droppedVar.rolledAtk} • ❤️ PV ${droppedVar.rolledPv}</div>
+        </div>
+      </div>
+    ` : '';
     
     overlay.innerHTML = `
       <div id="er-particles" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
@@ -603,6 +680,8 @@ class BattleApp {
             <div class="end-level-pill">${t('bt.level')} ${userLevel}</div>
             <div class="end-section-header">${t('bt.end.rewards')}</div>
           </div>
+
+          ${droppedCardHtml}
 
           <!-- 3 CÁPSULAS DE RECOMPENSAS LADO A LADO -->
           <div class="end-capsules-row" id="end-capsules">
@@ -673,7 +752,11 @@ class BattleApp {
         </div>
 
         <!-- BOTÃO GRANDE CONTINUAR -->
-        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${t('bt.end.continue')}</button>
+        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${
+          window.location.search.includes('embedded=1')
+            ? 'COLETAR & VOLTAR À FASE'
+            : t('bt.end.continue')
+        }</button>
       </div>
 
       <div id="coin-fling-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999998;overflow:hidden;"></div>
@@ -754,6 +837,13 @@ class BattleApp {
     if (btn) {
       btn.onclick = (e) => {
         e.stopPropagation();
+        if (window.location.search.includes('embedded=1') && window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'SLIMELANDS_NPC_BATTLE_COMPLETED', outcome: npcOutcome },
+            '*'
+          );
+          return;
+        }
         window.location.href = 'hub.html';
       };
     }

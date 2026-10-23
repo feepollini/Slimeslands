@@ -7667,13 +7667,13 @@ export const PortraitEmulator: React.FC<Props> = ({
                                 {marker.type === 'event' && marker.eventKind === 'duel' && (
                                   <button
                                     onClick={() => {
-                                      creditDuel(marker.id);
                                       setInspectedMarker(null);
                                       onSelectMarker(null);
+                                      setScanBattleModalMarker(marker);
                                     }}
                                     className="w-full py-1 px-2 rounded-xl bg-gradient-to-r from-rose-500 to-red-500 text-white font-black text-[9.5px] flex items-center justify-center gap-1 shadow-[0_2px_0_#9f1239] active:translate-y-0.5 transition-all"
                                   >
-                                    <span>⚔️ Desafiar</span>
+                                    <span>⚔️ Desafiar ({marker.npcBattleMode === 'duel' ? 'Duelo de Cartas' : 'Boss Battle'})</span>
                                   </button>
                                 )}
 
@@ -8747,11 +8747,12 @@ export const PortraitEmulator: React.FC<Props> = ({
                       <div className="grid grid-cols-2 gap-3.5 max-w-[85%] mx-auto">
                         <button
                           onClick={() => {
-                            creditDuel(activeDialogueMarker.id);
+                            const targetMarker = activeDialogueMarker;
                             setActiveDialogueMarker(null);
                             setInspectedMarker(null);
                             eventFreezeUntilRef.current = 0;
                             onCloseDialogue?.();
+                            setScanBattleModalMarker(targetMarker);
                           }}
                           className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
                           style={{ backgroundColor: '#e11d48' }}

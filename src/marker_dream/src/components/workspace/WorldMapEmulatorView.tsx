@@ -760,7 +760,27 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const targetLevel = savedLevels.find((l) => l.id === selectedPoi.targetLevelId);
+                    const targetLevel =
+                      savedLevels.find((l) => l.id === selectedPoi.targetLevelId) ||
+                      savedLevels.find(
+                        (l) =>
+                          l.name &&
+                          selectedPoi.name &&
+                          l.name.toLowerCase().trim() === selectedPoi.name.toLowerCase().trim()
+                      ) ||
+                      savedLevels[0] ||
+                      (onLoadLevel
+                        ? ({
+                            id: selectedPoi.targetLevelId || selectedPoi.id || 'level-active',
+                            name: selectedPoi.name || project.title || 'Fase Explorável',
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                            projectData: {
+                              ...project,
+                              title: selectedPoi.name || project.title || 'Fase Explorável',
+                            },
+                          } as SavedLevel)
+                        : undefined);
                     if (targetLevel && onLoadLevel) {
                       onLoadLevel(targetLevel);
                       handleCloseModal();

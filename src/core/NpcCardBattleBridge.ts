@@ -27,6 +27,7 @@ export interface RolledCardVariation {
   baseCardName: string;
   variationName: string;
   variantTrait: string;
+  variantLabel: string;
   serialNumber: string;
   rarity: RarityKey;
   rarityLabel: string;
@@ -36,10 +37,14 @@ export interface RolledCardVariation {
   baseAtk: number;
   rolledPv: number;
   rolledAtk: number;
+  finalHp: number;
+  finalAtk: number;
   atkMultiplier: number;
   pvMultiplier: number;
   category: string;
   image: string;
+  artUrl: string;
+  loreText: string;
   sourceNpcId?: string;
   sourceNpcName?: string;
   obtainedVia: 'boss_battle' | 'card_duel' | 'scan' | 'quest' | 'booster';
@@ -59,7 +64,7 @@ export interface ActiveNpcBattleContext {
   matrixCardId: string;
   matrixCardName: string;
   deckCardIds: string[];
-  rarityDropRule: 'auto' | RarityKey;
+  rarityDropRule: 'auto' | 'default' | RarityKey;
   npcHp: number;
   npcAtk: number;
   speechPhrases: string[];
@@ -77,15 +82,45 @@ export interface NpcBattleOutcome {
   battleMode: 'boss' | 'duel';
   victory: boolean;
   droppedVariation?: RolledCardVariation;
+  rolledVariation?: RolledCardVariation;
   goldEarned: number;
   gemsEarned: number;
   xpEarned: number;
+  coinsAwarded: number;
+  gemsAwarded: number;
+  xpAwarded: number;
   completedAt: number;
 }
 
 const ACTIVE_BATTLE_CONTEXT_KEY = 'slimelands_active_npc_battle_context_v1';
 const LAST_BATTLE_OUTCOME_KEY = 'slimelands_last_npc_battle_outcome_v1';
 const PLAYER_VARIATIONS_KEY = 'player_card_variations';
+
+export const RARITY_META: Record<
+  RarityKey,
+  { label: string; color: string; glow: string }
+> = {
+  common: {
+    label: 'Comum',
+    color: '#94a3b8',
+    glow: 'rgba(148, 163, 184, 0.45)',
+  },
+  rare: {
+    label: 'Rara',
+    color: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.55)',
+  },
+  epic: {
+    label: 'Épica',
+    color: '#c084fc',
+    glow: 'rgba(192, 132, 252, 0.65)',
+  },
+  legendary: {
+    label: 'Lendária',
+    color: '#fbbf24',
+    glow: 'rgba(251, 191, 36, 0.75)',
+  },
+};
 
 const VARIATION_TRAITS: {
   name: string;
@@ -282,11 +317,11 @@ export function resolveNpcDeckCards(marker?: Partial<MapMarker> | null): any[] {
 /**
  * Sorteia uma Raridade respeitando a regra configurada no NPC ou Quest
  */
-export function pickRarityByRule(rule: 'auto' | RarityKey = 'auto'): RarityRuleDefinition {
+export function pickRarityByRule(rule: 'auto' | 'default' | RarityKey = 'auto'): RarityRuleDefinition {
   const rules = getRarityRules();
   const order: RarityKey[] = ['common', 'rare', 'epic', 'legendary'];
 
-  if (rule !== 'auto' && rules[rule]) {
+  if (rule !== 'auto' && rule !== 'default' && rules[rule]) {
     // Permite que a regra funcione como raridade mínima garantida com chance de subir!
     const minIdx = order.indexOf(rule);
     const eligible = order.slice(Math.max(0, minIdx)).map((k) => rules[k]);
@@ -316,7 +351,7 @@ export function pickRarityByRule(rule: 'auto' | RarityKey = 'auto'): RarityRuleD
 export function rollMatrixCardVariation(options: {
   cardIdOrName?: string;
   marker?: Partial<MapMarker> | null;
-  rarityRule?: 'auto' | RarityKey;
+  rarityRule?: 'auto' | 'default' | RarityKey;
   obtainedVia?: RolledCardVariation['obtainedVia'];
 }): RolledCardVariation {
   const baseCard = options.cardIdOrName
@@ -354,12 +389,22 @@ export function rollMatrixCardVariation(options: {
   const serialNumber = `#${String(sameCardCount + 1).padStart(3, '0')}`;
 
   const baseName = baseCard?.name || options.marker?.name || 'Guardião Slime';
+  const resolvedImage =
+    baseCard?.image ||
+    options.marker?.customIconPng ||
+    '/_galeria_backup/01.jpg';
+  const resolvedLore =
+    baseCard?.desc ||
+    baseCard?._rawMatrixCard?.lore ||
+    `Variação ${rarityDef.label} (${trait.name}) obtida de ${options.marker?.name || baseName}.`;
+
   const variation: RolledCardVariation = {
     variationId: `var-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     baseCardId: String(baseCard?.id || baseName),
     baseCardName: baseName,
     variationName: `${baseName} • ${trait.name}`,
     variantTrait: trait.name,
+    variantLabel: trait.name,
     serialNumber,
     rarity: rarityDef.key,
     rarityLabel: rarityDef.label,
@@ -369,13 +414,14 @@ export function rollMatrixCardVariation(options: {
     baseAtk,
     rolledPv,
     rolledAtk,
+    finalHp: rolledPv,
+    finalAtk: rolledAtk,
     atkMultiplier: Math.round(atkMult * 100) / 100,
     pvMultiplier: Math.round(pvMult * 100) / 100,
     category: baseCard?.category || ' GUARDIÃO',
-    image:
-      baseCard?.image ||
-      options.marker?.customIconPng ||
-      '/_galeria_backup/01.jpg',
+    image: resolvedImage,
+    artUrl: resolvedImage,
+    loreText: resolvedLore,
     sourceNpcId: options.marker?.id,
     sourceNpcName: options.marker?.name,
     obtainedVia: options.obtainedVia || 'scan',
@@ -403,8 +449,10 @@ export function rollMatrixCardVariation(options: {
 export function saveRolledVariationToCollection(variation: RolledCardVariation): void {
   try {
     const list = getPlayerCardVariations();
-    list.unshift(variation);
-    localStorage.setItem(PLAYER_VARIATIONS_KEY, JSON.stringify(list.slice(0, 200)));
+    if (!list.some((item) => item.variationId === variation.variationId)) {
+      list.unshift(variation);
+      localStorage.setItem(PLAYER_VARIATIONS_KEY, JSON.stringify(list.slice(0, 200)));
+    }
   } catch {}
 
   // 1. Desbloqueia em 'unlocked_cards'
@@ -627,9 +675,13 @@ export function recordNpcBattleOutcome(
     battleMode: ctx.battleMode,
     victory,
     droppedVariation,
+    rolledVariation: droppedVariation,
     goldEarned,
     gemsEarned,
     xpEarned,
+    coinsAwarded: goldEarned,
+    gemsAwarded: gemsEarned,
+    xpAwarded: xpEarned,
     completedAt: Date.now(),
   };
 

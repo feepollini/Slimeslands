@@ -562,6 +562,7 @@ export default defineConfig({
     server: {
         port: 3000,
         host: '0.0.0.0',
+        hmr: process.env.DISABLE_HMR !== 'true',
         watch: {
             ignored: [
                 '**/src/core/*.json',
@@ -569,9 +570,23 @@ export default defineConfig({
                 '**/src/core/cards.json',
                 '**/src/core/store.json',
                 '**/src/core/scenarios.json',
-                '**/public/cards/**'
+                '**/public/cards/**',
+                '**/_galeria_backup/**',
+                '**/updates/**',
+                '**/.aistudio/**'
             ]
         }
+    },
+    optimizeDeps: {
+        entries: [
+            'index.html',
+            'hub.html',
+            'battle.html',
+            'boss_battle.html',
+            'arsenal.html',
+            'store.html',
+            'forge.html'
+        ]
     },
     build: {
         rollupOptions: {

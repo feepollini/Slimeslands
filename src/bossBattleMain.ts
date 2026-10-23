@@ -26,6 +26,13 @@ import {
   getMergedGameTemplates,
   resolveMatrixOrGameCard,
 } from './ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
+import {
+  getActiveNpcBattleContext,
+  recordNpcBattleOutcome,
+  getBestVariationForCard,
+  RARITY_META,
+  NpcBattleOutcome,
+} from './core/NpcCardBattleBridge';
 
 // Helper to cast FX functions
 const { spawnParticles, deathExplosion, spawnFloatingText, triggerAbilityAnim, animateCapsulePv } = FX;
@@ -65,6 +72,7 @@ class BossBattleApp {
   private difficulty: AIDifficulty = 'easy';
   private aiLogic = new GameAI();
   private isAIProcessing = false;
+  private lastNpcOutcome: NpcBattleOutcome | null = null;
   public landscapeDeviceState: 'portrait' | 'mobile-landscape' | 'tablet-landscape' | 'desktop-landscape' = 'portrait';
 
   constructor() {
@@ -81,10 +89,24 @@ class BossBattleApp {
       }
     });
 
-    // Carregar Mobby selecionado
+    // Carregar Mobby selecionado ou NPC de Batalha da Fase
     const params = new URLSearchParams(window.location.search);
     const mobbyId = params.get('mobby') || '';
-    this.mobby = MobbyManager.getMobbyById(mobbyId) || MobbyManager.getMobbys()[0];
+    const npcCtx = getActiveNpcBattleContext();
+    const baseMobby = MobbyManager.getMobbyById(mobbyId) || MobbyManager.getMobbys()[0];
+    if (npcCtx && (!mobbyId || mobbyId === `npc_boss_${npcCtx.npcId}`)) {
+      this.mobby = {
+        ...baseMobby,
+        id: `npc_boss_${npcCtx.npcId}`,
+        name: npcCtx.npcName || baseMobby.name,
+        image: npcCtx.npcImage || baseMobby.image,
+        hp: Math.max(300, npcCtx.npcHp || baseMobby.hp),
+        maxHp: Math.max(300, npcCtx.npcMaxHp || baseMobby.maxHp),
+        rewardCardId: npcCtx.matrixCardId || baseMobby.rewardCardId,
+      };
+    } else {
+      this.mobby = baseMobby;
+    }
 
     this.initPreBattle();
     gsap.fromTo(document.body, { opacity: 0 }, { opacity: 1, duration: 0.5 });
@@ -134,8 +156,9 @@ class BossBattleApp {
         if (data.cards && data.cards.length > 0) {
           const pDeck = data.cards.map((c: any) => {
             const resolved = resolveMatrixOrGameCard(c?.name || c?.id || '', CARD_TEMPLATES) || c;
-            const atk = resolved.baseAtk || resolved.atk || c.baseAtk || c.atk || 100;
-            const pv = resolved.basePv || resolved.pv || c.basePv || c.pv || 500;
+            const bestVar = getBestVariationForCard(c?.id || c?.name || resolved?.id || resolved?.name || '');
+            const atk = bestVar?.rolledAtk || resolved.baseAtk || resolved.atk || c.baseAtk || c.atk || 100;
+            const pv = bestVar?.rolledPv || resolved.basePv || resolved.pv || c.basePv || c.pv || 500;
             return {
               ...resolved,
               ...c,
@@ -144,7 +167,7 @@ class BossBattleApp {
               atk,
               pv,
               maxPv: pv,
-              rarity: resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
+              rarity: bestVar?.rarity || resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
               manaCost: resolved.manaCost ?? c.manaCost ?? 1,
               staminaCost: resolved.staminaCost ?? c.staminaCost ?? 1,
               attacks: resolved.attacks || c.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
@@ -498,26 +521,30 @@ class BossBattleApp {
     this.stopTimer();
     if (document.getElementById('boss-reward-showcase-overlay')) return;
 
-    // Carta recompensa definida na Forja (resolvida pela Matriz)
+    // Registra vitória e rola variação procedural da Carta Matriz do NPC/Boss
+    this.lastNpcOutcome = recordNpcBattleOutcome(true);
+    const droppedVar = this.lastNpcOutcome?.droppedVariation || null;
+
+    // Carta recompensa definida na Forja (resolvida pela Matriz + variação rolada)
     const tmpl =
-      resolveMatrixOrGameCard(this.mobby.rewardCardId, CARD_TEMPLATES) ||
+      resolveMatrixOrGameCard(droppedVar?.matrixCardId || this.mobby.rewardCardId, CARD_TEMPLATES) ||
       (CARD_TEMPLATES as any[]).find(c => c && c.name === this.mobby.rewardCardId) ||
       CARD_TEMPLATES[0];
     const rewardCard: Card = {
       ...tmpl,
-      id: `reward-${Date.now()}`,
-      name: tmpl?.name || 'Carta Ancestral',
-      atk: tmpl?.baseAtk || 500,
-      pv: tmpl?.basePv || 500,
-      maxPv: tmpl?.basePv || 500,
-      image: tmpl?.image || this.mobby.image,
+      id: droppedVar?.variationId || `reward-${Date.now()}`,
+      name: droppedVar?.name || tmpl?.name || 'Carta Ancestral',
+      atk: droppedVar?.rolledAtk || tmpl?.baseAtk || 500,
+      pv: droppedVar?.rolledPv || tmpl?.basePv || 500,
+      maxPv: droppedVar?.rolledPv || tmpl?.basePv || 500,
+      image: droppedVar?.image || tmpl?.image || this.mobby.image,
       manaCost: tmpl?.manaCost || 3,
       staminaCost: tmpl?.staminaCost || 10,
       owner: 'p',
       abilityId: tmpl?.abilityId,
-      rarity: tmpl?.preferredRarity || 'epic',
+      rarity: droppedVar?.rarity || tmpl?.preferredRarity || 'epic',
       attacks: tmpl?.attacks,
-      flavorText: tmpl?.flavorText,
+      flavorText: droppedVar ? `${droppedVar.variantTrait} (${droppedVar.serialNumber})` : tmpl?.flavorText,
       borderColor: tmpl?.borderColor,
       glowColor: tmpl?.glowColor,
       glowIntensity: tmpl?.glowIntensity
@@ -854,6 +881,30 @@ class BossBattleApp {
           });
 
           // 6. BOTÃO CÁPSULA SIMPLES COM A ID VISUAL DO JOGO E COMPATÍVEL COM PAISAGEM
+          if (droppedVar) {
+            const rMeta = RARITY_META[droppedVar.rarity];
+            const varBadge = document.createElement('div');
+            varBadge.style.cssText = `
+              position: fixed;
+              left: 50%;
+              top: ${Math.max(8, targetTop - 36)}px;
+              transform: translateX(-50%);
+              z-index: 1000002;
+              padding: 4px 12px;
+              border-radius: 999px;
+              background: rgba(15, 23, 42, 0.92);
+              border: 1.5px solid ${rMeta.color};
+              box-shadow: 0 0 18px ${rMeta.glow};
+              color: #ffffff;
+              font-size: 10px;
+              font-weight: 900;
+              white-space: nowrap;
+              pointer-events: none;
+            `;
+            varBadge.innerHTML = `<span style="color:${rMeta.color}">✦ ${rMeta.label.toUpperCase()} ${droppedVar.serialNumber}</span> • ${droppedVar.variantTrait} • ⚔️ ${droppedVar.rolledAtk} / ❤️ ${droppedVar.rolledPv}`;
+            overlay.appendChild(varBadge);
+          }
+
           const collectBtn = document.createElement('button');
           collectBtn.id = 'btn-collect-reward';
           collectBtn.className = 'btn-collect-reward-pulse';
@@ -923,6 +974,9 @@ class BossBattleApp {
   private triggerEndScreen(isWin: boolean, isSurrender: boolean = false) {
     this.stopTimer();
     if (document.getElementById('end-battle-overlay')) return;
+    if (!this.lastNpcOutcome) {
+      this.lastNpcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+    }
      
     let title = isWin ? t('bt.winTitle') : t('bt.loseTitle');
     if (isSurrender) title = t('bt.cowardTitle');
@@ -938,8 +992,8 @@ class BossBattleApp {
     };
 
     const { data: newData, rewards } = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
-    const coinsGained = rewards.goldGained;
-    const diamondsGained = rewards.diamondGained;
+    const coinsGained = rewards.goldGained + (this.lastNpcOutcome?.goldEarned || 0);
+    const diamondsGained = rewards.diamondGained + (this.lastNpcOutcome?.gemsEarned || 0);
     const enjinGained = rewards.enjinGained ?? (isWin ? 1 : 0);
     const newPct = Math.min(100, (newData.xp / xpForNextLevel) * 100);
 
@@ -1014,12 +1068,16 @@ class BossBattleApp {
             <div class="end-xp-compact-wrap">
               <div class="end-xp-compact-bar">
                 <div id="er-xp-bar" class="end-xp-compact-fill" style="width:${newPct}%;"></div>
-                <span id="er-xp-txt" class="end-xp-compact-txt">+${rewards.xpGained} XP</span>
+                <span id="er-xp-txt" class="end-xp-compact-txt">+${rewards.xpGained + (this.lastNpcOutcome?.xpEarned || 0)} XP</span>
               </div>
             </div>
           </div>
         </div>
-        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${t('bt.end.continue')}</button>
+        <button id="btn-return-lobby" class="btn-end-continue-game ${btnClass}">${
+          window.location.search.includes('embedded=1')
+            ? 'COLETAR & VOLTAR À FASE'
+            : t('bt.end.continue')
+        }</button>
       </div>
       <div id="coin-fling-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999998;overflow:hidden;"></div>
     `;
@@ -1033,7 +1091,16 @@ class BossBattleApp {
 
     const btn = document.getElementById('btn-return-lobby');
     if (btn) {
-      btn.onclick = () => { window.location.href = 'hub.html'; };
+      btn.onclick = () => {
+        if (window.location.search.includes('embedded=1') && window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'SLIMELANDS_NPC_BATTLE_COMPLETED', outcome: this.lastNpcOutcome },
+            '*'
+          );
+          return;
+        }
+        window.location.href = 'hub.html';
+      };
     }
   }
 

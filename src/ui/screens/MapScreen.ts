@@ -1,5 +1,8 @@
+import React from 'react';
+import { createRoot, Root } from 'react-dom/client';
 import { VirtualJoystick } from './forge_v2/tabs/quest_maker/world_map/VirtualJoystick';
 import { t } from '../../core/i18n';
+import { HubWorldMapGameView } from './HubWorldMapGameView';
 
 interface PhaseData {
     id?: string;
@@ -25,6 +28,7 @@ export class MapScreen {
     private _gameState: 'idle' | 'running' = 'idle';
     private _worldMapObjects: any[] = [];
     private _spawnFrameActive = false;
+    private _reactRoot: Root | null = null;
 
     constructor() {
         window.addEventListener('message', (e) => {
@@ -102,55 +106,37 @@ export class MapScreen {
     }
 
     public render(container: HTMLElement) {
-        container.innerHTML = `
-            <div id="map-screen-inner" style="height: 100%; width: 100%; position: relative; overflow: hidden;">
-                ${this._spawnFrameActive || this._currentPhase ? this.renderPreviewMode() : this.renderMapMode()}
-            </div>
-        `;
-        
-        this.bindEvents(container);
-        
-        if (this._currentPhase && this._gameState === 'running') {
-            this.startGameLoop();
-        } else if (this._spawnFrameActive) {
-            this.startPreviewLoop();
+        if (this._reactRoot) {
+            try {
+                this._reactRoot.unmount();
+            } catch {}
+            this._reactRoot = null;
         }
-    }
-    
-    private renderMapMode(): string {
-        const phases = this.getSavedPhases();
-        
-        return `
-            <div class="map-view-content" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0a0a12 0%, #1a1a2e 100%);">
-                <div style="font-size: 2rem; color: rgba(255,255,255,0.15); font-weight: 950; letter-spacing: 10px;">
-                    🗺️ ${t('map.map')}
+
+        if (this._spawnFrameActive || this._currentPhase) {
+            container.innerHTML = `
+                <div id="map-screen-inner" style="height: 100%; width: 100%; position: relative; overflow: hidden;">
+                    ${this.renderPreviewMode()}
                 </div>
-                
-                <div id="map-phases-panel" style="position: absolute; top: 0; right: 0; width: 240px; height: 100%; background: rgba(0,0,0,0.92); border-left: 2px solid rgba(102,187,106,0.4); display: flex; flex-direction: column; z-index: 100;">
-                    <div style="padding: 15px; border-bottom: 1px solid rgba(102,187,106,0.3);">
-                        <h3 style="color: #66bb6a; margin: 0; font-size: 0.85rem;">🗺️ ${t('map.phases')}</h3>
-                    </div>
-                    <div style="flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px;">
-                        ${phases.length === 0 ? `<div style="color: #666; font-size: 0.75rem; padding: 10px;">${t('map.noPhases')}</div>` : ''}
-                        ${phases.map((p, i) => `
-                            <button class="map-phase-btn" data-phase-index="${i}" style="
-                                padding: 12px; 
-                                background: rgba(102,187,106,0.15); 
-                                border: 1px solid rgba(102,187,106,0.4); 
-                                border-radius: 8px; 
-                                color: #66bb6a; 
-                                cursor: pointer;
-                                font-size: 0.75rem;
-                                text-align: left;
-                                transition: all 0.2s;
-                            ">
-                                🎮 ${p.name || p.label || (t('map.phaseFallback') + ' ' + (i + 1))}
-                            </button>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
+            `;
+            this.bindEvents(container);
+            if (this._currentPhase && this._gameState === 'running') {
+                this.startGameLoop();
+            } else if (this._spawnFrameActive) {
+                this.startPreviewLoop();
+            }
+            return;
+        }
+
+        // Modo Jogo Normal no Hub: Renderiza a saída real do Mapa criado no Editor de Mapas com seletor discreto ao lado
+        container.innerHTML = `
+            <div id="map-screen-inner" style="height: 100%; width: 100%; position: relative; overflow: hidden;"></div>
         `;
+        const mountEl = container.querySelector('#map-screen-inner') as HTMLElement | null;
+        if (mountEl) {
+            this._reactRoot = createRoot(mountEl);
+            this._reactRoot.render(React.createElement(HubWorldMapGameView));
+        }
     }
     
     private renderPreviewMode(): string {
@@ -248,14 +234,6 @@ export class MapScreen {
     }
 
     private bindEvents(container: HTMLElement) {
-        container.querySelectorAll('.map-phase-btn').forEach((btn: any) => {
-            btn.addEventListener('click', () => {
-                const idx = parseInt(btn.dataset.phaseIndex);
-                const phases = this.getSavedPhases();
-                this.loadPhase(phases[idx]);
-            });
-        });
-        
         const closeBtn = document.getElementById('pp-close-preview');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => this.deactivateSpawnPreview());
@@ -300,88 +278,23 @@ export class MapScreen {
             });
         }
     }
-    
-    private checkSensorTriggers() {
-        const objects = this._currentPhase?.worldMapObjects || this._worldMapObjects;
-        
-        for (const obj of objects) {
-            if (obj.type === 'area_sensor' && obj.area_sensorEvents) {
-                const playerX = this._playerPos.x;
-                const playerY = this._playerPos.y;
-                
-                if (obj.x && obj.w && playerX >= obj.x && playerX <= obj.x + obj.w &&
-                    obj.y && obj.h && playerY >= obj.y && playerY <= obj.y + obj.h) {
-                    
-                    for (const event of obj.area_sensorEvents) {
-                        this.triggerEvent(event);
-                    }
-                }
-            }
-        }
-    }
-    
-    private triggerEvent(event: any) {
-        if (!event || !event.type) return;
-        
-        if (event.type === 'showDialog' || event.type === 'showdialog') {
-            this._activeOverlay = { type: 'dialog', data: { speaker: event.speaker, text: event.text } };
-            this.rerender();
-        } else if (event.type === 'battleStart' || event.type === 'battlestart') {
-            this._activeOverlay = { type: 'battle', data: {} };
-            this.rerender();
-        } else if (event.type === 'screen') {
-            window.postMessage({ type: 'HUB_NAVIGATE', screen: event.screenType || 'map' }, '*');
-        }
-    }
-    
-    private togglePlay() {
-        if (this._gameState === 'running') {
-            this._gameState = 'idle';
-            this.stopGameLoop();
-        } else {
-            this._gameState = 'running';
-            if (this._currentPhase?.playerPos) {
-                this._playerPos = { ...this._currentPhase.playerPos };
-            }
-            this.startGameLoop();
-        }
-        this.rerender();
-    }
-    
-    private exitPhase() {
-        this._currentPhase = null;
-        this._gameState = 'idle';
-        this.stopGameLoop();
-        this.rerender();
-    }
-    
-    private rerender() {
-        const container = document.getElementById('map-screen-container');
-        if (container) {
-            this.render(container);
-        }
-    }
-    
+
     private startPreviewLoop() {
-        if (this.animId) return;
-        
+        this.stopGameLoop();
         const loop = () => {
-            this.drawPreview();
+            this.renderPreviewCanvas();
             this.animId = requestAnimationFrame(loop);
         };
-        
         loop();
     }
-    
+
     private startGameLoop() {
-        if (this.animId) return;
-        
+        this.stopGameLoop();
         const loop = () => {
             this.update();
-            this.draw();
+            this.renderGameCanvas();
             this.animId = requestAnimationFrame(loop);
         };
-        
         loop();
     }
     
@@ -391,141 +304,134 @@ export class MapScreen {
             this.animId = null;
         }
     }
-    
+
     private update() {
-        if (this._gameState !== 'running') return;
+        if (!this._currentPhase) return;
         this.checkSensorTriggers();
     }
     
-    private drawPreview() {
-        this.drawCameraView();
+    private checkSensorTriggers() {
+        const threshold = 40;
+        this._worldMapObjects.forEach((obj: any) => {
+            if (!obj.sensor) return;
+            const dist = Math.hypot((obj.x || 0) - this._playerPos.x, (obj.y || 0) - this._playerPos.y);
+            if (dist < threshold) {
+                this.triggerAction(obj.sensor.action);
+            }
+        });
     }
     
-    private draw() {
-        this.drawCameraView();
+    private triggerAction(action: string) {
+        if (action === 'battle') {
+            this._activeOverlay = { type: 'battle' };
+            this.rerender();
+        } else if (action === 'dialog') {
+            this._activeOverlay = { type: 'dialog', data: { speaker: 'NPC', text: 'Olá viajante!' } };
+            this.rerender();
+        }
     }
     
-    private drawCameraView() {
-        if (!this.canvas) return;
-        
+    private rerender() {
+        const container = document.getElementById('map-screen-container');
+        if (container) {
+            this.render(container);
+        }
+    }
+
+    private renderPreviewCanvas() {
+        if (!this.canvas || !this._currentPhase?.spawnFrame) return;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
-        
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        
-        ctx.fillStyle = '#0a0a12';
-        ctx.fillRect(0, 0, w, h);
-        
-        // Use camera frame dimensions from Camera2DOverlay (440x733 ratio)
-        const cameraW = 360;
-        const cameraH = 720;
-        
-        // Camera follows player, centered
-        const camWorldX = this._playerPos.x - cameraW / 2;
-        const camWorldY = this._playerPos.y - cameraH / 2;
-        
+        const container = this.canvas.parentElement;
+        if (!container) return;
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+        const frame = this._currentPhase.spawnFrame;
+        ctx.fillStyle = '#0d1520';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const scaleX = this.canvas.width / frame.w;
+        const scaleY = this.canvas.height / frame.h;
+        const scale = Math.min(scaleX, scaleY);
+        const offsetX = (this.canvas.width - frame.w * scale) / 2;
+        const offsetY = (this.canvas.height - frame.h * scale) / 2;
         ctx.save();
-        
-        const objects = this._currentPhase?.worldMapObjects || this._worldMapObjects;
-        
-        for (const obj of objects) {
-            const screenX = (obj.x || 0) - camWorldX;
-            const screenY = (obj.y || 0) - camWorldY;
-            
-            // Skip objects outside camera view
-            if (obj.w && obj.h) {
-                if (screenX + obj.w < 0 || screenX > w || screenY + obj.h < 0 || screenY > h) continue;
-            }
-            
-            if (obj.type === 'terrain' || obj.type === 'region') {
-                if (obj.w && obj.h) {
-                    ctx.fillStyle = obj.fill || 'rgba(100,100,150,0.3)';
-                    ctx.fillRect(screenX, screenY, obj.w, obj.h);
-                    
-                    if (obj.stroke) {
-                        ctx.strokeStyle = obj.stroke;
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(screenX, screenY, obj.w, obj.h);
-                    }
-                }
-            }
-            
-            if (obj.type === 'collision') {
-                if (obj.w && obj.h) {
-                    ctx.fillStyle = 'rgba(255,68,68,0.25)';
-                    ctx.fillRect(screenX, screenY, obj.w, obj.h);
-                }
-            }
-            
-            if (obj.type === 'area_sensor') {
-                if (obj.w && obj.h) {
-                    ctx.fillStyle = 'rgba(255,215,0,0.15)';
-                    ctx.fillRect(screenX, screenY, obj.w, obj.h);
-                    
-                    ctx.strokeStyle = 'rgba(255,215,0,0.5)';
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([5, 5]);
-                    ctx.strokeRect(screenX, screenY, obj.w, obj.h);
-                    ctx.setLineDash([]);
-                }
-            }
-            
-            if (obj.type === 'morph' && obj.assetUrl) {
-                if (obj.w && obj.h) {
-                    const img = new Image();
-                    img.src = obj.assetUrl;
-                    if (img.complete) {
-                        ctx.drawImage(img, screenX, screenY, obj.w, obj.h);
-                    }
-                }
-            }
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        ctx.translate(-frame.x, -frame.y);
+        ctx.strokeStyle = 'rgba(255,215,0,0.08)';
+        ctx.lineWidth = 1 / scale;
+        const gridSize = 50;
+        for (let x = frame.x; x < frame.x + frame.w; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, frame.y);
+            ctx.lineTo(x, frame.y + frame.h);
+            ctx.stroke();
         }
-        
-        // Draw player at center (where camera is)
-        const playerScreenX = w / 2;
-        const playerScreenY = h / 2;
-        
-        ctx.fillStyle = '#4cff88';
-        ctx.shadowColor = '#4cff88';
-        ctx.shadowBlur = 15;
+        for (let y = frame.y; y < frame.y + frame.h; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(frame.x, y);
+            ctx.lineTo(frame.x + frame.w, y);
+            ctx.stroke();
+        }
+        this._worldMapObjects.forEach((obj: any) => {
+            ctx.fillStyle = obj.color || '#66bb6a';
+            ctx.beginPath();
+            ctx.arc(obj.x || 0, obj.y || 0, (obj.size || 20) / 2, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.fillStyle = '#ff9800';
         ctx.beginPath();
-        ctx.arc(playerScreenX, playerScreenY, 20, 0, Math.PI * 2);
+        ctx.arc(this._playerPos.x, this._playerPos.y, 12, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
-        
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('P', playerScreenX, playerScreenY + 1);
-        
-        // Camera frame border
-        ctx.strokeStyle = 'rgba(255,215,0,0.6)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 5]);
-        ctx.strokeRect(0, 0, w, h);
-        ctx.setLineDash([]);
-        
         ctx.restore();
     }
-    
-    private loadPhase(phase: PhaseData) {
-        this._currentPhase = phase;
-        this._playerPos = phase.playerPos ? { ...phase.playerPos } : { x: 0, y: 0 };
-        this._worldMapObjects = phase.worldMapObjects || [];
-        this._gameState = 'idle';
-        this._activeOverlay = null;
-        
-        this.rerender();
+
+    private renderGameCanvas() {
+        if (!this.canvas || !this._currentPhase) return;
+        const ctx = this.canvas.getContext('2d');
+        if (!ctx) return;
+        const container = this.canvas.parentElement;
+        if (!container) return;
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+        const frame = this._currentPhase.spawnFrame || { x: 0, y: 0, w: 400, h: 300, mode: 'fixed' };
+        let camX = frame.x;
+        let camY = frame.y;
+        if (frame.mode === 'follow') {
+            camX = this._playerPos.x - frame.w / 2;
+            camY = this._playerPos.y - frame.h / 2;
+        }
+        ctx.fillStyle = '#0d1520';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const scaleX = this.canvas.width / frame.w;
+        const scaleY = this.canvas.height / frame.h;
+        const scale = Math.min(scaleX, scaleY);
+        const offsetX = (this.canvas.width - frame.w * scale) / 2;
+        const offsetY = (this.canvas.height - frame.h * scale) / 2;
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        ctx.translate(-camX, -camY);
+        this._worldMapObjects.forEach((obj: any) => {
+            ctx.fillStyle = obj.color || '#66bb6a';
+            ctx.beginPath();
+            ctx.arc(obj.x || 0, obj.y || 0, (obj.size || 20) / 2, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.fillStyle = '#4cff88';
+        ctx.beginPath();
+        ctx.arc(this._playerPos.x, this._playerPos.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     }
-    
-    private getSavedPhases(): PhaseData[] {
-        try {
-            const saved = localStorage.getItem('forge_phase_presets') || '[]';
-            return JSON.parse(saved);
-        } catch {
-            return [];
+
+    public destroy() {
+        this.stopGameLoop();
+        if (this._reactRoot) {
+            try {
+                this._reactRoot.unmount();
+            } catch {}
+            this._reactRoot = null;
         }
     }
 }

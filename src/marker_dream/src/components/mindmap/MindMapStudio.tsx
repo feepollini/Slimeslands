@@ -25,14 +25,28 @@ import {
   Search,
   SlidersHorizontal,
   Compass,
-  ExternalLink
+  ExternalLink,
+  Zap,
+  RefreshCw,
+  Play,
+  Sparkles as Wand2
 } from 'lucide-react';
+import type { MapProject, SavedLevel } from '../../types/map';
 import {
   EDITOR_CONTENT_CATALOG,
+  getDynamicEditorCatalog,
   getEditorMeta,
   NodeEditorLink,
-  EditorCatalogItem
+  EditorCatalogItem,
+  NodeQuickConfig
 } from './editorContentCatalog';
+import { NodeModuleQuickEditor } from './NodeModuleQuickEditor';
+import {
+  compileGraphToLevel,
+  projectLevelToGraph,
+  projectMobbysToGraph,
+  CompilationReport
+} from './graphLevelCompiler';
 
 export interface MindMapNode {
   id: string;
@@ -214,7 +228,21 @@ export interface SavedMapRecord {
 const STORAGE_KEY = 'marker_dream_mindmap_data';
 const GALLERY_STORAGE_KEY = 'marker_dream_mindmap_gallery';
 
-export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ showToast }) => {
+export interface MindMapStudioProps {
+  showToast: (msg: string) => void;
+  project?: MapProject;
+  setProject?: React.Dispatch<React.SetStateAction<MapProject>>;
+  savedLevels?: SavedLevel[];
+  onCompileLevel?: (newLevel: SavedLevel, mode: 'editor' | 'play' | 'stay') => void;
+}
+
+export const MindMapStudio: React.FC<MindMapStudioProps> = ({
+  showToast,
+  project,
+  setProject,
+  savedLevels = [],
+  onCompileLevel,
+}) => {
   const [data, setData] = useState<MindMapData>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -319,10 +347,19 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Editor Module Linking Modal & Search States
+  // Editor Module Linking Modal, Quick Edit Drawer, Compiler & Reverse Sync States
   const [searchModalNodeId, setSearchModalNodeId] = useState<string | null>(null);
   const [catalogSearchQuery, setCatalogSearchQuery] = useState<string>('');
   const [catalogFilterEditorId, setCatalogFilterEditorId] = useState<string>('all');
+  const [quickEditNodeId, setQuickEditNodeId] = useState<string | null>(null);
+  const [compilationReport, setCompilationReport] = useState<CompilationReport | null>(null);
+  const [isReverseSyncModalOpen, setIsReverseSyncModalOpen] = useState<boolean>(false);
+
+  // Dynamic Catalog combining base 17 categories + real-time game entities
+  const dynamicCatalog = useMemo(
+    () => getDynamicEditorCatalog(project, savedLevels),
+    [project, savedLevels]
+  );
 
   // Attach an editor catalog item to a node
   const handleAttachEditorItem = (
@@ -344,6 +381,10 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                 itemId: item.id,
                 itemLabel: item.label,
                 actionTrigger: actionTrigger || n.editorLink?.actionTrigger || '',
+                realEntityId: item.realEntityId,
+                quickConfig: item.initialQuickConfig
+                  ? { ...item.initialQuickConfig }
+                  : n.editorLink?.quickConfig || {},
               },
             }
           : n
@@ -351,6 +392,95 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
     }));
     setSearchModalNodeId(null);
     showToast(`Módulo "${item.label}" vinculado ao card!`);
+  };
+
+  // Save updates from In-Card Quick Editor with Undo/Redo History
+  const handleSaveQuickEditUpdates = useCallback(
+    (
+      nodeId: string,
+      updates: {
+        nodeTitle?: string;
+        nodeDescription?: string;
+        actionTrigger?: string;
+        quickConfig: NodeQuickConfig;
+      }
+    ) => {
+      updateDataWithHistory((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) => {
+          if (n.id !== nodeId) return n;
+          const baseLink: NodeEditorLink = n.editorLink || {
+            editorId:
+              n.category === 'combat'
+                ? 'mobbys'
+                : n.category === 'lore'
+                ? 'npcs'
+                : n.category === 'economy'
+                ? 'store'
+                : n.category === 'world'
+                ? 'maps'
+                : 'events',
+            subCategory: 'custom',
+            itemId: `custom-${n.id}`,
+            itemLabel: updates.nodeTitle || n.title,
+          };
+          return {
+            ...n,
+            title: updates.nodeTitle || n.title,
+            description:
+              updates.nodeDescription !== undefined ? updates.nodeDescription : n.description,
+            editorLink: {
+              ...baseLink,
+              actionTrigger:
+                updates.actionTrigger !== undefined
+                  ? updates.actionTrigger
+                  : baseLink.actionTrigger,
+              quickConfig: {
+                ...(baseLink.quickConfig || {}),
+                ...updates.quickConfig,
+              },
+            },
+          };
+        }),
+      }));
+    },
+    [updateDataWithHistory]
+  );
+
+  // Compile Mind Map Graph into a Real Playable Level in Marker Dream
+  const handleCompileGraph = () => {
+    try {
+      const report = compileGraphToLevel(data, project);
+      setCompilationReport(report);
+      if (onCompileLevel) {
+        onCompileLevel(report.level, 'stay');
+      }
+      showToast(`⚡ Fase "${report.level.name}" sintetizada no Marker Dream!`);
+    } catch (err) {
+      console.error('Erro ao compilar grafo em fase:', err);
+      showToast('Erro ao sintetizar fase a partir do grafo.');
+    }
+  };
+
+  // Reverse Sync: Project an existing Level or Mobbys into the Mind Map
+  const handleProjectLevelToMindMap = (level: SavedLevel) => {
+    const projected = projectLevelToGraph(level);
+    updateDataWithHistory(projected);
+    setIsReverseSyncModalOpen(false);
+    setTimeout(() => {
+      handleAutoArrangeTree('horizontal');
+    }, 60);
+    showToast(`🔄 Fase "${level.name}" projetada como Grafo Mental!`);
+  };
+
+  const handleProjectMobbysToMindMap = () => {
+    const projected = projectMobbysToGraph();
+    updateDataWithHistory(projected);
+    setIsReverseSyncModalOpen(false);
+    setTimeout(() => {
+      handleAutoArrangeTree('horizontal');
+    }, 60);
+    showToast('🔄 Panteão de Mobbys 3x1 projetado como Grafo Mental!');
   };
 
   // Detach editor module from a node
@@ -400,7 +530,7 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
       item: EditorCatalogItem;
     }> = [];
 
-    EDITOR_CONTENT_CATALOG.forEach((editor) => {
+    dynamicCatalog.forEach((editor) => {
       if (catalogFilterEditorId !== 'all' && editor.id !== catalogFilterEditorId) return;
 
       editor.subCategories.forEach((sub) => {
@@ -440,7 +570,7 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
     });
 
     return results;
-  }, [catalogSearchQuery, catalogFilterEditorId]);
+  }, [dynamicCatalog, catalogSearchQuery, catalogFilterEditorId]);
 
   // Auto-save active map to localStorage
   useEffect(() => {
@@ -1362,6 +1492,26 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Modelo</span>
           </button>
+
+          {/* Sincronização Inversa: Ler Fase ou Mobbys para o Grafo */}
+          <button
+            onClick={() => setIsReverseSyncModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Sincronização Inversa: Projetar Fases existentes ou Chefes Mobbys como um Grafo Mental Automático"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Sync Inverso</span>
+          </button>
+
+          {/* Síntese Reativa: Compilar Grafo em Fase Real no Marker Dream */}
+          <button
+            onClick={handleCompileGraph}
+            className="px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-pink-600 hover:from-amber-400 hover:to-pink-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-orange-600/25 cursor-pointer"
+            title="Compilar nós e conexões deste Mapa Mental em uma Fase Real jogável no Marker Dream"
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>⚡ Gerar Fase Real no Marker Dream</span>
+          </button>
         </div>
 
         {/* Floating Zoom Bar */}
@@ -1697,53 +1847,127 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                   </div>
                 )}
 
-                {/* Linked Editor Module Badge */}
+                {/* Linked Editor Module Badge + In-Card Quick Edit */}
                 {node.editorLink ? (
                   (() => {
                     const meta = getEditorMeta(node.editorLink.editorId);
+                    const qc = node.editorLink.quickConfig;
                     return (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedNodeId(node.id);
-                          setSearchModalNodeId(node.id);
-                          setCatalogFilterEditorId(node.editorLink?.editorId || 'all');
-                        }}
-                        className={`mt-2 px-2 py-1 rounded-lg border ${meta.bgColor} ${meta.borderColor} flex items-center justify-between gap-1 transition-all hover:scale-[1.02] cursor-pointer group/badge shadow-sm`}
-                        title="Módulo vinculado. Clique para alterar ou ver detalhes."
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className="text-xs">{meta.icon}</span>
-                          <div className="truncate">
-                            <span className="text-[10px] font-bold text-white block truncate leading-tight">
-                              {node.editorLink.itemLabel}
-                            </span>
-                            {node.editorLink.actionTrigger && (
-                              <span className="text-[8px] text-zinc-400 block truncate leading-tight">
-                                ⚡ {node.editorLink.actionTrigger}
+                      <div className="mt-2 space-y-1.5">
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedNodeId(node.id);
+                            setSearchModalNodeId(node.id);
+                            setCatalogFilterEditorId(node.editorLink?.editorId || 'all');
+                          }}
+                          className={`px-2 py-1 rounded-lg border ${meta.bgColor} ${meta.borderColor} flex items-center justify-between gap-1 transition-all hover:scale-[1.02] cursor-pointer group/badge shadow-sm`}
+                          title="Módulo vinculado. Clique para trocar o módulo."
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-xs">{meta.icon}</span>
+                            <div className="truncate">
+                              <span className="text-[10px] font-bold text-white block truncate leading-tight">
+                                {node.editorLink.itemLabel}
+                              </span>
+                              {node.editorLink.actionTrigger && (
+                                <span className="text-[8px] text-zinc-400 block truncate leading-tight">
+                                  ⚡ {node.editorLink.actionTrigger}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-[9px] text-zinc-400 group-hover/badge:text-white shrink-0">▾</span>
+                        </div>
+
+                        {/* Live Quick Config Summary Pills on Card */}
+                        {qc && (
+                          <div className="flex flex-wrap gap-1">
+                            {qc.hp !== undefined && (
+                              <span className="px-1.5 py-0.5 rounded bg-rose-950/70 border border-rose-500/30 text-[8px] font-mono text-rose-300">
+                                ❤️ {qc.hp} HP
+                              </span>
+                            )}
+                            {qc.atk !== undefined && (
+                              <span className="px-1.5 py-0.5 rounded bg-orange-950/70 border border-orange-500/30 text-[8px] font-mono text-orange-300">
+                                ⚔️ {qc.atk} ATK
+                              </span>
+                            )}
+                            {qc.priceCoins !== undefined && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/30 text-[8px] font-mono text-amber-300">
+                                💰 {qc.priceCoins}g
+                              </span>
+                            )}
+                            {qc.solidCollision && (
+                              <span className="px-1.5 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30 text-[8px] font-mono text-cyan-300">
+                                🧱 Sólido
+                              </span>
+                            )}
+                            {qc.hasLight && (
+                              <span className="px-1.5 py-0.5 rounded bg-yellow-950/70 border border-yellow-500/30 text-[8px] font-mono text-yellow-300">
+                                💡 Luz
+                              </span>
+                            )}
+                            {qc.isPortal && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-950/70 border border-purple-500/30 text-[8px] font-mono text-purple-300">
+                                🚪 Portal
+                              </span>
+                            )}
+                            {qc.dialogueLines && qc.dialogueLines.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/30 text-[8px] font-mono text-emerald-300">
+                                💬 {qc.dialogueLines.length} fala(s)
                               </span>
                             )}
                           </div>
-                        </div>
-                        <span className="text-[9px] text-zinc-400 group-hover/badge:text-white shrink-0">▾</span>
+                        )}
+
+                        {/* Botão de Edição Rápida Direto no Card (In-Card Quick Edit) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedNodeId(node.id);
+                            setQuickEditNodeId(node.id);
+                          }}
+                          className="w-full py-1 px-2 rounded-lg bg-gradient-to-r from-amber-500/20 via-pink-500/20 to-purple-500/20 hover:from-amber-500/40 hover:to-pink-500/40 border border-amber-400/40 hover:border-amber-300 text-amber-200 hover:text-white text-[9px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-sm"
+                          title="Abrir Edição Rápida deste Módulo (HP, Ataque, Falas, Boosters, Luz, Portal) sem sair do Mapa Mental"
+                        >
+                          <Zap className="w-2.5 h-2.5 text-amber-400 fill-current" />
+                          <span>⚡ Editar Propriedades deste Módulo</span>
+                        </button>
                       </div>
                     );
                   })()
                 ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedNodeId(node.id);
-                      setSearchModalNodeId(node.id);
-                      setCatalogFilterEditorId('all');
-                    }}
-                    className="mt-2 w-full py-1 px-2 rounded-lg border border-dashed border-zinc-700 hover:border-pink-500/70 bg-black/30 hover:bg-pink-950/20 text-zinc-400 hover:text-pink-300 text-[9px] font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    title="Vincular conteúdo de outros editores (Fases, Eventos, NPCs, Cenários, Mobbys, Cards...)"
-                  >
-                    <Link2 className="w-2.5 h-2.5" />
-                    <span>+ Vincular Módulo</span>
-                  </button>
+                  <div className="mt-2 space-y-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedNodeId(node.id);
+                        setSearchModalNodeId(node.id);
+                        setCatalogFilterEditorId('all');
+                      }}
+                      className="w-full py-1 px-2 rounded-lg border border-dashed border-zinc-700 hover:border-pink-500/70 bg-black/30 hover:bg-pink-950/20 text-zinc-400 hover:text-pink-300 text-[9px] font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      title="Vincular conteúdo de outros editores (Fases, Eventos, NPCs, Cenários, Mobbys, Cards...)"
+                    >
+                      <Link2 className="w-2.5 h-2.5" />
+                      <span>+ Vincular Módulo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedNodeId(node.id);
+                        setQuickEditNodeId(node.id);
+                      }}
+                      className="w-full py-1 px-2 rounded-lg bg-zinc-900/70 hover:bg-amber-950/40 border border-zinc-800 hover:border-amber-500/40 text-zinc-400 hover:text-amber-200 text-[8.5px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                      title="Configurar propriedades rápidas deste card diretamente"
+                    >
+                      <Zap className="w-2.5 h-2.5 text-amber-400" />
+                      <span>⚡ Editar Propriedades deste Módulo</span>
+                    </button>
+                  </div>
                 )}
               </div>
             );
@@ -1855,7 +2079,7 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                         handleDetachEditorItem(selectedNode.id);
                         return;
                       }
-                      const cat = EDITOR_CONTENT_CATALOG.find((c) => c.id === editorId);
+                      const cat = dynamicCatalog.find((c) => c.id === editorId);
                       if (cat && cat.subCategories.length > 0) {
                         const firstSub = cat.subCategories[0];
                         if (firstSub.items.length > 0) {
@@ -1872,7 +2096,7 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                     className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-white focus:outline-none focus:border-pink-500 cursor-pointer"
                   >
                     <option value="">(Nenhum vínculo)</option>
-                    {EDITOR_CONTENT_CATALOG.map((cat) => (
+                    {dynamicCatalog.map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
                       </option>
@@ -1883,7 +2107,7 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                 {/* Sub-selector 2: Sub-Categoria (se houver editor selecionado) */}
                 {selectedNode.editorLink && (
                   (() => {
-                    const currentEditor = EDITOR_CONTENT_CATALOG.find(
+                    const currentEditor = dynamicCatalog.find(
                       (c) => c.id === selectedNode.editorLink?.editorId
                     );
                     if (!currentEditor) return null;
@@ -1966,6 +2190,16 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
                             className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-200 focus:outline-none focus:border-pink-500"
                           />
                         </div>
+
+                        {/* Botão Principal de Edição Rápida no Inspetor */}
+                        <button
+                          type="button"
+                          onClick={() => setQuickEditNodeId(selectedNode.id)}
+                          className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-pink-600 hover:from-amber-400 hover:to-pink-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
+                        >
+                          <Zap className="w-3.5 h-3.5 fill-current" />
+                          <span>⚡ Editar Propriedades deste Módulo</span>
+                        </button>
 
                         {/* Botões de Ação do Vínculo */}
                         <div className="flex items-center gap-1.5 pt-1">
@@ -2409,6 +2643,241 @@ export const MindMapStudio: React.FC<{ showToast: (msg: string) => void }> = ({ 
               >
                 Fechar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Drawer: In-Card Quick Edit (`NodeModuleQuickEditor`) */}
+      {quickEditNodeId && (() => {
+        const targetNode = data.nodes.find((n) => n.id === quickEditNodeId);
+        if (!targetNode) return null;
+        const effectiveLink: NodeEditorLink = targetNode.editorLink || {
+          editorId:
+            targetNode.category === 'combat'
+              ? 'mobbys'
+              : targetNode.category === 'lore'
+              ? 'npcs'
+              : targetNode.category === 'economy'
+              ? 'store'
+              : targetNode.category === 'world'
+              ? 'maps'
+              : 'events',
+          subCategory: 'custom',
+          itemId: `custom-${targetNode.id}`,
+          itemLabel: targetNode.title,
+          actionTrigger: '',
+        };
+        return (
+          <NodeModuleQuickEditor
+            nodeId={targetNode.id}
+            nodeTitle={targetNode.title}
+            nodeDescription={targetNode.description}
+            editorLink={effectiveLink}
+            project={project}
+            onUpdateProject={setProject}
+            onSaveUpdates={(updates) => handleSaveQuickEditUpdates(targetNode.id, updates)}
+            onClose={() => setQuickEditNodeId(null)}
+            showToast={showToast}
+          />
+        );
+      })()}
+
+      {/* Modal: Relatório de Compilação de Fase Real no Marker Dream */}
+      {compilationReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="relative w-full max-w-lg bg-[#0c0e16] border border-amber-500/40 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-800 bg-gradient-to-r from-amber-950/60 via-pink-950/40 to-zinc-900 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-300">
+                  <Zap className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Fase Sintetizada com Sucesso!
+                  </h3>
+                  <p className="text-xs text-amber-300 font-medium">
+                    {compilationReport.level.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCompilationReport(null)}
+                className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                O compilador converteu a árvore lógica do Mapa Mental em uma fase real no{' '}
+                <strong className="text-white">LevelGalleryStudio / Marker Dream</strong>, posicionando biomas, marcadores $(X, Y)$, luzes, colisões, rotas Bézier e quests:
+              </p>
+
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-emerald-400 block">
+                    {compilationReport.biomesCreated + compilationReport.subBiomesCreated}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Biomas & Sub-Mapas</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-pink-400 block">
+                    {compilationReport.markersCreated}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Marcadores & NPCs</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-cyan-400 block">
+                    {compilationReport.routesCreated}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Rotas Conectadas</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-amber-400 block">
+                    {compilationReport.questsCreated}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Quests Geradas</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-rose-400 block">
+                    {compilationReport.mobbysSynced}
+                  </span>
+                  <span className="text-[10px] text-zinc-400">Mobbys Sincronizados</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800">
+                  <span className="text-lg font-bold text-purple-400 block">100%</span>
+                  <span className="text-[10px] text-zinc-400">Pronta p/ Jogar</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
+                {onCompileLevel && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lvl = compilationReport.level;
+                        setCompilationReport(null);
+                        onCompileLevel(lvl, 'editor');
+                      }}
+                      className="flex-1 w-full py-2.5 px-3 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer"
+                    >
+                      <Layers className="w-4 h-4" />
+                      <span>Abrir Fase no Editor</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lvl = compilationReport.level;
+                        setCompilationReport(null);
+                        onCompileLevel(lvl, 'play');
+                      }}
+                      className="flex-1 w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Jogar Fase Agora</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCompilationReport(null)}
+                  className="py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold cursor-pointer"
+                >
+                  Continuar Aqui
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Sincronização Inversa (Ler Fase Existente ou Mobbys para o Mapa Mental) */}
+      {isReverseSyncModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="relative w-full max-w-2xl bg-[#0c0e16] border border-indigo-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[82vh]">
+            <div className="px-6 py-4 border-b border-zinc-800 bg-zinc-900/80 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300">
+                  <RefreshCw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Sincronização Inversa (Projeto ➔ Mapa Mental)
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Leia fases ou chefes já existentes e projete-os automaticamente como uma árvore viva de cards
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReverseSyncModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Option 1: MobbyManager Bosses */}
+              <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-500/30 flex items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>👹 Panteão de Chefes Mobbys (TabMobbys 3x1)</span>
+                  </h4>
+                  <p className="text-[11px] text-zinc-300 mt-1">
+                    Gera automaticamente o grafo com todos os Mobbys cadastrados, incluindo HP, Dificuldade, Falas de Fúria e Cartas de Recompensa prontos para edição in-card.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleProjectMobbysToMindMap}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold whitespace-nowrap cursor-pointer shadow-lg"
+                >
+                  Projetar Mobbys
+                </button>
+              </div>
+
+              {/* Option 2: Existing Saved Levels */}
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+                  🗺️ Fases Salvas no Marker Dream ({savedLevels.length})
+                </h4>
+                {savedLevels.length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic">
+                    Nenhuma fase encontrada na galeria ativa.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {savedLevels.map((lvl) => (
+                      <div
+                        key={lvl.id}
+                        className="p-3 rounded-xl bg-zinc-900/70 border border-zinc-800 hover:border-emerald-500/40 flex flex-col justify-between gap-2"
+                      >
+                        <div>
+                          <div className="text-xs font-bold text-white line-clamp-1">
+                            {lvl.name}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 mt-0.5">
+                            {(lvl.projectData?.biomes || []).length} biomas •{' '}
+                            {(lvl.projectData?.markers || []).length} marcadores •{' '}
+                            {(lvl.projectData?.questsConfig?.quests || []).length} quests
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleProjectLevelToMindMap(lvl)}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 text-[11px] font-semibold transition-colors cursor-pointer"
+                        >
+                          🔄 Projetar Fase em Grafo
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

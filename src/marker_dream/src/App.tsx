@@ -34,6 +34,7 @@ import { InventorySoloScreen } from './components/inventory/InventorySoloScreen'
 import { QuestSoloScreen } from './components/quests/QuestSoloScreen';
 import { HudUniversalSoloScreen } from './components/screens/HudUniversalSoloScreen';
 import { MindMapSoloScreen } from './components/mindmap/MindMapSoloScreen';
+import { saveSingleLevelSlot } from './utils/storage';
 
 export default function App() {
   // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap'
@@ -505,6 +506,26 @@ export default function App() {
           onGoToDashboard={() => setHubView('dashboard')}
           onGoToEditor={() => setHubView('editor')}
           showToast={showToast}
+          project={project}
+          setProject={setProject}
+          savedLevels={savedLevels}
+          onCompileLevel={(newLevel, mode) => {
+            persistence.setSavedLevels((prev) => {
+              const filtered = prev.filter((l) => l.id !== newLevel.id);
+              const next = [newLevel, ...filtered];
+              saveSingleLevelSlot(newLevel, next);
+              return next;
+            });
+            if (mode === 'editor') {
+              persistence.switchCanvasLevel(newLevel);
+              setHubView('editor');
+            } else if (mode === 'play') {
+              persistence.switchCanvasLevel(newLevel);
+              setTimeout(() => {
+                handlePlayPhase();
+              }, 80);
+            }
+          }}
         />
         {persistence.toastMsg && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-amber-300 border border-amber-500/50 px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl backdrop-blur-md pointer-events-none flex items-center gap-2">

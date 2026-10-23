@@ -102,6 +102,20 @@ import {
   createInitialQuestRuntimeProgress,
   saveProjectQuestsConfigToStorage,
 } from '../utils/questEngine';
+import {
+  rollMatrixCardVariation,
+  saveRolledVariationToCollection,
+  rewardPlayerCoinsAndGems,
+  RolledCardVariation,
+  NpcBattleOutcome,
+  resolveNpcBattleMode,
+  resolveNpcMatrixCard,
+} from '../../../core/NpcCardBattleBridge';
+import {
+  NpcScanBattleDialogueModal,
+  NpcEmbeddedBattleIframeModal,
+  CardVariationDropShowcaseModal,
+} from './npc/NpcScanAndBattleModal';
 
 interface Props {
   project: MapProject;
@@ -1341,7 +1355,8 @@ export const PortraitEmulator: React.FC<Props> = ({
         nowMs
       );
       if (res.enteredStun) {
-        setActionFeedback(`💫 ${nearestNpc.name} atingiu 50% PV e entrou em Tontura por 15s!`);
+        setActionFeedback(`💫 ${nearestNpc.name} atingiu 50% PV (Fase de Scan)! Escolha Boss Battle, Duelo ou Scan!`);
+        setScanBattleModalMarker(nearestNpc);
       } else {
         setActionFeedback(`⚔️ Golpe em ${nearestNpc.name}!`);
       }
@@ -1350,6 +1365,165 @@ export const PortraitEmulator: React.FC<Props> = ({
       setActionFeedback('⚔️ Golpe executado!');
       setTimeout(() => setActionFeedback(null), 1500);
     }
+  };
+
+  // Estados de Diálogo de Fase de Scan / Boss Battle / Duelo de Cartas e Showcase de Drop de Variação da Matriz
+  const [scanBattleModalMarker, setScanBattleModalMarker] = useState<MapMarker | null>(null);
+  const [activeEmbeddedBattle, setActiveEmbeddedBattle] = useState<{
+    marker: MapMarker;
+    mode: 'boss' | 'duel';
+  } | null>(null);
+  const [droppedCardVariationShowcase, setDroppedCardVariationShowcase] = useState<{
+    variation: RolledCardVariation;
+    coinsAwarded?: number;
+    gemsAwarded?: number;
+    xpAwarded?: number;
+  } | null>(null);
+
+  // Processa o retorno da Batalha Boss ou Duelo de Cartas contra um NPC Action
+  const handleNpcBattleComplete = (marker: MapMarker, outcome: NpcBattleOutcome) => {
+    setActiveEmbeddedBattle(null);
+    setScanBattleModalMarker(null);
+
+    if (!outcome.victory) {
+      setActionFeedback(`💀 Você recuou ou foi derrotado por ${marker.name}. Prepare seu Deck e tente novamente!`);
+      setTimeout(() => setActionFeedback(null), 3800);
+      return;
+    }
+
+    // 1. O NPC foi derrotado: despawna do mapa e agenda respawn
+    const nowMs = performance.now();
+    const rs = globalNpcActionEngine.getRuntimeState(marker.id);
+    if (rs) {
+      rs.stunUntil = 0;
+    }
+    setStunnedNpcsInfo((prev) => {
+      const next = new Map(prev);
+      next.delete(marker.id);
+      return next;
+    });
+    if (petRuntimeRef.current.combatTargetId === marker.id) {
+      petRuntimeRef.current.combatTargetId = null;
+    }
+    globalNpcActionEngine.despawnAndScheduleRespawn(marker.id, marker, nowMs);
+    const mobEl = markerElMapRef.current.get(marker.id);
+    if (mobEl) {
+      mobEl.style.display = 'none';
+    }
+
+    // 2. Credita duelo nas quests e adiciona também como Pet aliado no projeto
+    creditDuel(marker.id);
+    if (marker.quest?.kind === 'duel') {
+      completeQuest(marker);
+    }
+
+    const rolledVar = outcome.rolledVariation || rollMatrixCardVariation({
+      marker,
+      obtainedVia: outcome.battleMode === 'boss' ? 'boss_battle' : 'card_duel',
+    });
+    saveRolledVariationToCollection(rolledVar);
+
+    const curProj = projectRef.current || project;
+    const latestPlayer = curProj.player;
+    const curInv = getOrCreatePlayerInventory(curProj);
+    const prevGold = curInv.currencies?.gold ?? 0;
+    const prevGems = curInv.currencies?.gems ?? 0;
+
+    if (latestPlayer && onUpdateProject) {
+      const resolved = getResolvedPlayerPetConfig(latestPlayer);
+      const scannedCardId = `pet-scanned-${marker.id}`;
+      const existingCard = resolved.petGallery.find(
+        (p) => p.id === scannedCardId || p.scannedFromMarkerId === marker.id
+      );
+      const isSlime = isSlimeMarker(marker);
+      const newPetCard: PlayerPetCatalogItem = existingCard
+        ? {
+            ...existingCard,
+            level: (existingCard.level || 1) + 1,
+            maxHp: Math.max(existingCard.maxHp || 100, rolledVar.finalHp),
+            hp: Math.max(existingCard.maxHp || 100, rolledVar.finalHp),
+            attackDamage: Math.max(existingCard.attackDamage || 20, rolledVar.finalAtk),
+          }
+        : {
+            id: scannedCardId,
+            name: `${rolledVar.baseCardName} (${rolledVar.variantLabel})`,
+            iconEmoji: isSlime ? '💧' : '🃏',
+            avatarPng: rolledVar.artUrl || marker.customIconPng,
+            rarity: (rolledVar.rarity.toLowerCase() as any) || 'legendary',
+            roleLabel: `${rolledVar.rarity} • ${rolledVar.serialNumber}`,
+            shortDescription: `Carta Matriz dropada de ${marker.name} (${rolledVar.variantLabel}).`,
+            detailedLore: rolledVar.loreText,
+            hp: rolledVar.finalHp,
+            maxHp: rolledVar.finalHp,
+            defense: 20,
+            level: 1,
+            xp: 0,
+            maxXp: 100,
+            growthPerLevel: 0.1,
+            locomotionType: marker.actionNpc?.combatStyle === 'ranged_kite' ? 'flying' : 'walker',
+            attackStyle:
+              marker.actionNpc?.combatStyle === 'ranged_kite'
+                ? 'flying_ranged'
+                : isSlime
+                ? 'walker_dash'
+                : 'berserker_spin',
+            aiAggroMode: 'command_auto',
+            projectileEmoji: isSlime ? '💧' : '✨',
+            attackDamage: rolledVar.finalAtk,
+            attackRange: 210,
+            scale: 0.85,
+            followLagSteps: 11,
+            curiousRadius: 46,
+            curiousSpeed: 1.1,
+            color: marker.color || '#38bdf8',
+            scannedFromMarkerId: marker.id,
+          };
+
+      const nextGallery = existingCard
+        ? resolved.petGallery.map((p) => (p.id === existingCard.id ? newPetCard : p))
+        : [...resolved.petGallery, newPetCard];
+
+      const nextSlots: [string | null, string | null, string | null] = [
+        resolved.equippedPetIds[0] ?? null,
+        resolved.equippedPetIds[1] ?? null,
+        resolved.equippedPetIds[2] ?? null,
+      ];
+      if (!nextSlots.includes(newPetCard.id)) {
+        const emptyIdx = nextSlots.findIndex((id) => !id);
+        if (emptyIdx !== -1) {
+          nextSlots[emptyIdx] = newPetCard.id;
+        }
+      }
+
+      onUpdateProject({
+        playerInventory: {
+          ...curInv,
+          currencies: {
+            gold: prevGold + (outcome.coinsAwarded || 150),
+            gems: prevGems + (outcome.gemsAwarded || 3),
+          },
+        },
+        player: {
+          ...latestPlayer,
+          petConfig: {
+            ...(latestPlayer.petConfig || {}),
+            enabled: true,
+            activePetId: resolved.activePetId || newPetCard.id,
+            equippedPetIds: nextSlots,
+            activePetSlotIndex: resolved.activePetSlotIndex,
+            petGallery: nextGallery,
+          },
+        },
+      });
+    }
+
+    // 3. Abre o Modal de Drop da Variação de Carta da Matriz!
+    setDroppedCardVariationShowcase({
+      variation: rolledVar,
+      coinsAwarded: outcome.coinsAwarded || 150,
+      gemsAwarded: outcome.gemsAwarded || 3,
+      xpAwarded: outcome.xpAwarded || 220,
+    });
   };
 
   // Escaneia um Mobby tonto (50% PV): Zoom cinematográfico -> Tela Preta -> Retorno com Mobby sumindo e agendando Respawn!
@@ -1484,7 +1658,24 @@ export const PortraitEmulator: React.FC<Props> = ({
         mobEl.style.display = 'none';
       }
 
+      // Sorteia e salva a Variação da Carta Matriz correspondente a este NPC Action!
+      const rolledVariation = rollMatrixCardVariation({
+        marker,
+        obtainedVia: 'scan',
+      });
+      saveRolledVariationToCollection(rolledVariation);
+      rewardPlayerCoinsAndGems(80, 2, 120);
+      creditDuel(marker.id);
+
+      const curInv = getOrCreatePlayerInventory(projectRef.current || project);
       onUpdateProject({
+        playerInventory: {
+          ...curInv,
+          currencies: {
+            gold: (curInv.currencies?.gold ?? 0) + 80,
+            gems: (curInv.currencies?.gems ?? 0) + 2,
+          },
+        },
         player: {
           ...latestPlayer,
           petConfig: {
@@ -1511,9 +1702,7 @@ export const PortraitEmulator: React.FC<Props> = ({
           : `Respawn em ${respawnInfo.respawnTimeSeconds}s`;
 
       setActionFeedback(
-        existingCard
-          ? `🔍✨ "${marker.name}" Escaneado! Carta Nv.${newCard.level} no Deck • Mobby sumiu (${respawnLabel})`
-          : `🔍🃏 "${marker.name}" Escaneado p/ o Deck! • Mobby sumiu (${respawnLabel})`
+        `🔍🃏 "${rolledVariation.baseCardName}" (${rolledVariation.rarity} • ${rolledVariation.variantLabel}) Escaneado! (${respawnLabel})`
       );
 
       setTimeout(() => {
@@ -1521,6 +1710,13 @@ export const PortraitEmulator: React.FC<Props> = ({
         if (contentRef.current) {
           contentRef.current.style.transition = '';
         }
+        // Abre o showcase da Carta Matriz escaneada com sua variação de raridade!
+        setDroppedCardVariationShowcase({
+          variation: rolledVariation,
+          coinsAwarded: 80,
+          gemsAwarded: 2,
+          xpAwarded: 120,
+        });
       }, 420);
 
       setTimeout(() => setActionFeedback(null), 4000);
@@ -2586,6 +2782,10 @@ export const PortraitEmulator: React.FC<Props> = ({
         .filter((it) => (it.quantity || 0) > 0);
     }
 
+    const questCoins = q?.rewardCoins ?? 120;
+    const questGems = q?.rewardGems ?? 2;
+    rewardPlayerCoinsAndGems(questCoins, questGems, 200);
+
     let workingProj: MapProject = {
       ...currentProj,
       markers: updatedMarkers,
@@ -2593,8 +2793,8 @@ export const PortraitEmulator: React.FC<Props> = ({
         ...curInv,
         items: nextBagItems,
         currencies: {
-          gold: prevGold + 120,
-          gems: (curInv.currencies?.gems ?? 0) + 2,
+          gold: prevGold + questCoins,
+          gems: (curInv.currencies?.gems ?? 0) + questGems,
         },
       },
       questsConfig: {
@@ -2637,7 +2837,25 @@ export const PortraitEmulator: React.FC<Props> = ({
       });
     }
 
-    const rewardMsg = q?.successMessage || `🎉 Missão "${q?.title || m.name}" Finalizada! +200 XP • +120 Ouro! ⭐`;
+    // Se a Quest possui Carta Matriz de Recompensa (ou é uma Quest de Duelo/NPC com Carta Matriz), sorteia a variação e entrega ao jogador!
+    const rewardCardTarget = q?.rewardCardId || m.actionNpc?.matrixCardId || m.matrixCardId;
+    if (rewardCardTarget || q?.kind === 'duel') {
+      const rolledQuestCard = rollMatrixCardVariation({
+        cardIdOrName: rewardCardTarget,
+        marker: m,
+        rarityRule: q?.rewardRarityRule || m.actionNpc?.rarityDropRule || 'default',
+        obtainedVia: 'quest',
+      });
+      saveRolledVariationToCollection(rolledQuestCard);
+      setDroppedCardVariationShowcase({
+        variation: rolledQuestCard,
+        coinsAwarded: questCoins,
+        gemsAwarded: questGems,
+        xpAwarded: 200,
+      });
+    }
+
+    const rewardMsg = q?.successMessage || `🎉 Missão "${q?.title || m.name}" Finalizada! +200 XP • +${questCoins} Ouro! ⭐`;
     setActionFeedback(rewardMsg);
     setTimeout(() => setActionFeedback(null), 4000);
     setInspectedMarker(null);
@@ -4216,11 +4434,12 @@ export const PortraitEmulator: React.FC<Props> = ({
                   nowMs
                 );
                 if (dmgRes.enteredStun) {
-                  pr.emoteText = '💫 50% PV! Tonto 15s!';
+                  pr.emoteText = '💫 50% PV! Fase de Scan!';
                   pr.emoteUntil = nowMs + 2500;
                   setActionFeedback(
-                    `💫 ${targetMarker.name} caiu em Tontura por 15s (50% PV)! Clique em Batalhar ou Escanear!`
+                    `💫 ${targetMarker.name} entrou em Fase de Scan (50% PV)! Abrindo Diálogo de Boss Battle / Scan!`
                   );
+                  setScanBattleModalMarker(targetMarker);
                   setTimeout(() => setActionFeedback(null), 3500);
                 } else if (dmgRes.died) {
                   pr.combatTargetId = null;
@@ -4309,11 +4528,12 @@ export const PortraitEmulator: React.FC<Props> = ({
                 nowMs
               );
               if (dmgRes.enteredStun && tMarker) {
-                pr.emoteText = '💫 50% PV! Tonto 15s!';
+                pr.emoteText = '💫 50% PV! Fase de Scan!';
                 pr.emoteUntil = nowMs + 2500;
                 setActionFeedback(
-                  `💫 ${tMarker.name} caiu em Tontura por 15s (50% PV)! Clique em Batalhar ou Escanear!`
+                  `💫 ${tMarker.name} entrou em Fase de Scan (50% PV)! Abrindo Diálogo de Boss Battle / Scan!`
                 );
+                setScanBattleModalMarker(tMarker);
                 setTimeout(() => setActionFeedback(null), 3500);
               } else if (dmgRes.died) {
                 if (pr.combatTargetId === proj.targetId) {
@@ -7224,10 +7444,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          setActionFeedback(
-                                            `⚔️ Iniciando Batalha contra ${marker.name}! (Pronto p/ conectar à Engine de Batalha)`
-                                          );
-                                          setTimeout(() => setActionFeedback(null), 3200);
+                                          setScanBattleModalMarker(marker);
                                         }}
                                         className="py-1.5 px-2 rounded-xl bg-gradient-to-b from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-black text-[9.5px] border border-rose-300/70 shadow-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1"
                                       >
@@ -8231,11 +8448,13 @@ export const PortraitEmulator: React.FC<Props> = ({
                   const handleFinalizeDialogueOption = (isPrimaryOption: boolean) => {
                     const targetMarker = activeDialogueMarker;
                     if (isPrimaryOption) {
-                      if (isDuelQuest) {
-                        creditDuel(targetMarker.id);
-                        if (markerHasQuest) {
-                          completeQuest(targetMarker);
-                        }
+                      if (isDuelQuest || targetMarker.actionNpc?.enabled || targetMarker.matrixCardId || targetMarker.actionNpc?.matrixCardId) {
+                        setActiveDialogueMarker(null);
+                        setInspectedMarker(null);
+                        eventFreezeUntilRef.current = 0;
+                        onCloseDialogue?.();
+                        setScanBattleModalMarker(targetMarker);
+                        return;
                       } else if (markerHasQuest) {
                         if ((prog.accepted && !prog.done && ready) || (!prog.accepted && ready && targetMarker.quest?.kind !== 'collect')) {
                           completeQuest(targetMarker);
@@ -9877,6 +10096,45 @@ export const PortraitEmulator: React.FC<Props> = ({
             onUpdateProject={onUpdateProject}
             isInsideEmulator={true}
             isLandscape={isLandscape}
+          />
+        )}
+
+        {/* Modal de Diálogo de Fase de Scan / Boss Battle / Duelo de Cartas */}
+        {scanBattleModalMarker && (
+          <NpcScanBattleDialogueModal
+            marker={scanBattleModalMarker}
+            onClose={() => setScanBattleModalMarker(null)}
+            onStartBattle={(targetMarker, chosenMode) => {
+              setScanBattleModalMarker(null);
+              setActiveEmbeddedBattle({ marker: targetMarker, mode: chosenMode });
+            }}
+            onQuickScanInPlace={(targetMarker) => {
+              setScanBattleModalMarker(null);
+              handleScanStunnedMobToDeck(targetMarker);
+            }}
+          />
+        )}
+
+        {/* Arena Embutida de Boss Battle (boss_battle.html) ou Duelo de Cartas (battle.html) */}
+        {activeEmbeddedBattle && (
+          <NpcEmbeddedBattleIframeModal
+            marker={activeEmbeddedBattle.marker}
+            battleMode={activeEmbeddedBattle.mode}
+            onBattleComplete={(outcome) =>
+              handleNpcBattleComplete(activeEmbeddedBattle.marker, outcome)
+            }
+            onCancel={() => setActiveEmbeddedBattle(null)}
+          />
+        )}
+
+        {/* Showcase de Drop de Variação de Carta da Matriz (pós-Scan, Boss Battle, Duelo ou Quest) */}
+        {droppedCardVariationShowcase && (
+          <CardVariationDropShowcaseModal
+            variation={droppedCardVariationShowcase.variation}
+            coinsAwarded={droppedCardVariationShowcase.coinsAwarded}
+            gemsAwarded={droppedCardVariationShowcase.gemsAwarded}
+            xpAwarded={droppedCardVariationShowcase.xpAwarded}
+            onClose={() => setDroppedCardVariationShowcase(null)}
           />
         )}
 

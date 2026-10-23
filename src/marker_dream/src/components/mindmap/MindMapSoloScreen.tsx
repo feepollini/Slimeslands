@@ -1,17 +1,26 @@
 import React from 'react';
 import { MindMapStudio } from './MindMapStudio';
 import { ArrowLeft, Brain, Layers } from 'lucide-react';
+import type { MapProject, SavedLevel } from '../../types/map';
 
 interface MindMapSoloScreenProps {
   onGoToDashboard: () => void;
   onGoToEditor: () => void;
   showToast: (msg: string) => void;
+  project?: MapProject;
+  setProject?: React.Dispatch<React.SetStateAction<MapProject>>;
+  savedLevels?: SavedLevel[];
+  onCompileLevel?: (newLevel: SavedLevel, mode: 'editor' | 'play' | 'stay') => void;
 }
 
 export const MindMapSoloScreen: React.FC<MindMapSoloScreenProps> = ({
   onGoToDashboard,
   onGoToEditor,
   showToast,
+  project,
+  setProject,
+  savedLevels,
+  onCompileLevel,
 }) => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-black text-white select-none">
@@ -39,13 +48,19 @@ export const MindMapSoloScreen: React.FC<MindMapSoloScreenProps> = ({
         <div className="flex items-center gap-2">
           <Brain className="w-4 h-4 text-pink-400 animate-pulse" />
           <span className="text-xs font-bold text-white tracking-wide">
-            EDITOR DE MAPA MENTAL &amp; GDD
+            EDITOR DE MAPA MENTAL &amp; MOTOR DE SÍNTESE REATIVA
           </span>
         </div>
       </header>
 
       <div className="flex-1 w-full h-full overflow-hidden">
-        <MindMapStudio showToast={showToast} />
+        <MindMapStudio
+          showToast={showToast}
+          project={project}
+          setProject={setProject}
+          savedLevels={savedLevels}
+          onCompileLevel={onCompileLevel}
+        />
       </div>
     </div>
   );

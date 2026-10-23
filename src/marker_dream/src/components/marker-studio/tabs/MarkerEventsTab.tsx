@@ -14,6 +14,7 @@ import {
   Gift,
   X,
 } from 'lucide-react';
+import { getAvailableMatrixCards } from '../../../../../core/NpcCardBattleBridge';
 
 interface MarkerEventsTabProps {
   selectedMarker: MapMarker;
@@ -677,6 +678,55 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                             </div>
                           </div>
                         )}
+
+                        {/* Recompensa de Carta Matriz na Quest */}
+                        <div className="p-2.5 bg-amber-950/25 rounded-lg border border-amber-500/35 space-y-1.5">
+                          <label className="text-[10px] font-black text-amber-300 uppercase tracking-wide flex items-center justify-between">
+                            <span>🃏 Carta Matriz de Recompensa da Quest (Opcional):</span>
+                            <span className="text-[9px] text-emerald-300 font-mono">+Variação de Raridade</span>
+                          </label>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <select
+                              value={selectedMarker.quest?.rewardCardId || ''}
+                              onChange={(e) => {
+                                const val = e.target.value || undefined;
+                                onUpdateMarker(selectedMarker.id, {
+                                  quest: {
+                                    ...(selectedMarker.quest || { kind: event.quest?.kind || 'collect' }),
+                                    rewardCardId: val,
+                                  },
+                                });
+                              }}
+                              className="col-span-2 bg-slate-950 border border-amber-500/40 rounded px-2 py-1 text-[10.5px] font-bold text-amber-100 focus:outline-none focus:border-amber-400"
+                            >
+                              <option value="">✨ Sorteio Automático da Matriz (ou Sem Carta Fixa)</option>
+                              {getAvailableMatrixCards().map((c, cIdx) => (
+                                <option key={`q-card-${cIdx}`} value={String(c.name || c.id)}>
+                                  🃏 {c.name} (PV {c.pv || 50} / ATK {c.atk || 15})
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={selectedMarker.quest?.rewardRarityRule || 'auto'}
+                              onChange={(e) => {
+                                onUpdateMarker(selectedMarker.id, {
+                                  quest: {
+                                    ...(selectedMarker.quest || { kind: event.quest?.kind || 'collect' }),
+                                    rewardRarityRule: e.target.value as any,
+                                  },
+                                });
+                              }}
+                              className="bg-slate-950 border border-purple-500/40 rounded px-1.5 py-1 text-[10px] font-bold text-purple-200 focus:outline-none"
+                            >
+                              <option value="auto">🎲 Raridade Sorteada</option>
+                              <option value="common">⬜ Comum+</option>
+                              <option value="rare">🔷 Rara+</option>
+                              <option value="epic">🔮 Épica+</option>
+                              <option value="legendary">⭐ Lendária</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
                     )}
 

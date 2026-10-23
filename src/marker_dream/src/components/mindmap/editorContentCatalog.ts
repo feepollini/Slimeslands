@@ -1,3 +1,9 @@
+import type { MapProject, SavedLevel, MarkerType } from '../../types/map';
+import { MobbyManager, MobbyDialogue } from '../../../../core/MobbyManager';
+import defaultStoreJson from '../../../../core/store.json';
+import defaultScenariosJson from '../../../../core/scenarios.json';
+import defaultSoundsJson from '../../../../core/sounds.json';
+
 export interface EditorCatalogItem {
   id: string;
   label: string;
@@ -5,6 +11,8 @@ export interface EditorCatalogItem {
   description: string;
   icon: string;
   type?: string;
+  realEntityId?: string;
+  initialQuickConfig?: NodeQuickConfig;
 }
 
 export interface EditorSubCategory {
@@ -26,12 +34,80 @@ export interface EditorCategoryDef {
   subCategories: EditorSubCategory[];
 }
 
+export interface NodeQuickConfig {
+  // Status & Balanceamento
+  hp?: number;
+  maxHp?: number;
+  atk?: number;
+  defense?: number;
+  speed?: number;
+  manaCost?: number;
+  scale?: number;
+  price?: number;
+  currency?: 'gold' | 'gems';
+  rarity?: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  // Mobby 3x1
+  mobbyId?: string;
+  rewardCardId?: string;
+  artifacts?: string[];
+  mobbyDialogues?: MobbyDialogue[];
+  // Booster / Pack
+  packId?: string;
+  cardsCount?: number;
+  packMode?: 'special' | 'random';
+  dropRates?: { common: number; rare: number; legendary: number };
+  published?: boolean;
+  // Marker / Mundo / Física
+  markerId?: string;
+  markerType?: MarkerType;
+  solidCollision?: boolean;
+  hasLight?: boolean;
+  lightRadius?: number;
+  lightColor?: string;
+  lightFlicker?: boolean;
+  isPortal?: boolean;
+  travelTargetType?: 'marker' | 'level' | 'sub_biome';
+  travelTargetId?: string;
+  travelAuto?: boolean;
+  npcBounce?: boolean;
+  jellyEffect?: 'none' | 'jelly' | 'water' | 'fire' | 'glow';
+  actionNpcEnabled?: boolean;
+  actionNpcRole?: 'hostile' | 'guardian' | 'peaceful' | 'curious' | 'coward';
+  detectionRadius?: number;
+  // Narrativa & Diálogos
+  speakerName?: string;
+  dialogueText?: string;
+  npcPhrases?: string[];
+  hintText?: string;
+  // Cenário, Clima & Áudio
+  scenarioScreenId?: string;
+  backgroundUrl?: string;
+  bgmUrl?: string;
+  sfxUrl?: string;
+  audioVolume?: number;
+  weatherType?: 'none' | 'rain' | 'fog' | 'leaves' | 'night' | 'snow' | 'dawn';
+  particleType?: 'none' | 'sparks' | 'snow' | 'embers';
+  // Vídeo Chroma Key
+  chromaKeyEnabled?: boolean;
+  chromaKeyColor?: string;
+  chromaKeyTolerance?: number;
+  // Quest & Gatilhos
+  triggerCondition?: 'proximity' | 'interact' | 'on_enter_map' | 'hp_below' | 'quest_complete';
+  questKind?: 'collect' | 'deliver' | 'reach' | 'interact' | 'talk' | 'discover' | 'duel';
+  questRequiredAmount?: number;
+  questResourceName?: string;
+  rewardGold?: number;
+  rewardXp?: number;
+}
+
 export interface NodeEditorLink {
   editorId: string;
   subCategory: string;
   itemId: string;
   itemLabel: string;
   actionTrigger?: string;
+  realEntityId?: string;
+  quickConfig?: NodeQuickConfig;
 }
 
 export const EDITOR_CONTENT_CATALOG: EditorCategoryDef[] = [
@@ -792,7 +868,12 @@ export const EDITOR_CONTENT_CATALOG: EditorCategoryDef[] = [
 ];
 
 export const getEditorMeta = (editorId?: string) => {
-  const found = EDITOR_CONTENT_CATALOG.find((cat) => cat.id === editorId);
+  const aliasMap: Record<string, string> = {
+    maps: 'levels',
+    cards: 'card_engine',
+  };
+  const resolvedId = (editorId && aliasMap[editorId]) || editorId;
+  const found = EDITOR_CONTENT_CATALOG.find((cat) => cat.id === resolvedId);
   if (found) return found;
   return {
     id: 'generic',
@@ -806,3 +887,324 @@ export const getEditorMeta = (editorId?: string) => {
     subCategories: [],
   };
 };
+
+/**
+ * Lê em tempo real os dados vivos da Engine (MobbyManager, Fases Salvas, Marcadores da Fase,
+ * Boosters da Loja, Cenários, Áudios e Quests) e mescla com o catálogo base de 17 categorias.
+ */
+export function getDynamicEditorCatalog(
+  project?: MapProject,
+  savedLevels?: SavedLevel[]
+): EditorCategoryDef[] {
+  const catalog: EditorCategoryDef[] = JSON.parse(JSON.stringify(EDITOR_CONTENT_CATALOG));
+
+  const findCat = (id: string) => catalog.find((c) => c.id === id);
+
+  // 1. Mobbys reais do MobbyManager
+  try {
+    const mobbys = MobbyManager.getMobbys();
+    const mobbyCat = findCat('mobbys');
+    if (mobbyCat && mobbys.length > 0) {
+      mobbyCat.subCategories.unshift({
+        id: 'live_mobbys',
+        name: 'Chefes Mobbys Ativos (Tempo Real)',
+        icon: '🔥',
+        items: mobbys.map((m) => ({
+          id: `live-mobby-${m.id}`,
+          realEntityId: m.id,
+          label: `Mobby: ${m.name} (HP: ${m.hp} / ATK: ${m.atk})`,
+          badge: `HP ${m.hp}`,
+          icon: '👹',
+          description: m.description || 'Chefe Mobby 3x1 sincronizado com o banco de dados.',
+          initialQuickConfig: {
+            mobbyId: m.id,
+            hp: m.hp,
+            maxHp: m.maxHp || m.hp,
+            atk: m.atk,
+            scale: m.scale ?? 100,
+            rewardCardId: m.rewardCardId,
+            artifacts: m.artifacts || [],
+            mobbyDialogues: m.dialogues || [],
+            backgroundUrl: m.backgroundUrl,
+            bgmUrl: m.bgmUrl,
+            sfxUrl: m.attackSfxUrl,
+          },
+        })),
+      });
+    }
+  } catch {}
+
+  // 2. Fases Salvas e Biomas reais do Marker Dream
+  try {
+    const levelsCat = findCat('levels');
+    if (levelsCat) {
+      if (savedLevels && savedLevels.length > 0) {
+        levelsCat.subCategories.unshift({
+          id: 'live_saved_levels',
+          name: 'Fases Salvas no Marker Dream (Tempo Real)',
+          icon: '💾',
+          items: savedLevels.map((lvl) => ({
+            id: `live-lvl-${lvl.id}`,
+            realEntityId: lvl.id,
+            label: `Fase: ${lvl.name}`,
+            badge: lvl.stats?.canvasKind === 'extended' ? 'Extended' : 'Vertical',
+            icon: '🗺️',
+            description:
+              lvl.description ||
+              `${lvl.stats?.markersCount ?? (lvl.projectData?.markers?.length || 0)} marcadores • ${
+                lvl.stats?.biomesCount ?? (lvl.projectData?.biomes?.length || 0)
+              } biomas`,
+          })),
+        });
+      }
+      if (project && (project.biomes?.length > 0 || (project.subBiomes && project.subBiomes.length > 0))) {
+        const biomeItems: EditorCatalogItem[] = [
+          ...(project.biomes || []).map((b) => ({
+            id: `live-biome-${b.id}`,
+            realEntityId: b.id,
+            label: `Bioma: ${b.name}`,
+            badge: 'Bioma Ativo',
+            icon: '🌲',
+            description: `Velocidade: ${b.walkSpeed ?? 1}x • Zoom: ${b.cameraZoom ?? 1}x`,
+            initialQuickConfig: {
+              bgmUrl: b.bgmAudioUrl,
+              audioVolume: b.bgmVolume ?? 0.7,
+              weatherType: (b.biomeEvent as any) || 'none',
+            },
+          })),
+          ...(project.subBiomes || []).map((sb) => ({
+            id: `live-subbiome-${sb.id}`,
+            realEntityId: sb.id,
+            label: `Sub-Bioma: ${sb.name}`,
+            badge: 'Sub-Bioma',
+            icon: '🚪',
+            description: sb.description || 'Ambiente interior ou arena instanciada.',
+            initialQuickConfig: {
+              bgmUrl: sb.bgmAudioUrl,
+              audioVolume: sb.bgmVolume ?? 0.7,
+              weatherType: (sb.biomeEvent as any) || 'none',
+            },
+          })),
+        ];
+        if (biomeItems.length > 0) {
+          levelsCat.subCategories.push({
+            id: 'live_project_biomes',
+            name: 'Biomas & Sub-Biomas da Fase Atual',
+            icon: '🌿',
+            items: biomeItems,
+          });
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Marcadores e NPCs reais da Fase Ativa
+  try {
+    if (project && Array.isArray(project.markers) && project.markers.length > 0) {
+      const markersCat = findCat('markers');
+      const npcsCat = findCat('npcs');
+      const nonGrassMarkers = project.markers.filter(
+        (m) => !m.id.startsWith('terrain-grass-') && !m.id.startsWith('terrain-flower-')
+      );
+
+      if (markersCat && nonGrassMarkers.length > 0) {
+        markersCat.subCategories.unshift({
+          id: 'live_phase_markers',
+          name: 'Marcadores na Fase Atual (Tempo Real)',
+          icon: '📍',
+          items: nonGrassMarkers.slice(0, 40).map((m) => ({
+            id: `live-mrk-${m.id}`,
+            realEntityId: m.id,
+            label: `${m.name} (${m.type})`,
+            badge: m.type.toUpperCase(),
+            icon: m.type === 'boss' ? '💀' : m.type === 'travel' || m.type === 'portal' ? '🌀' : m.type === 'light' ? '💡' : '📍',
+            description: m.description || `Posição (${Math.round(m.x)}, ${Math.round(m.y)}) na fase atual.`,
+            type: m.type,
+            initialQuickConfig: {
+              markerId: m.id,
+              markerType: m.type,
+              solidCollision: !!m.solidCollision,
+              hasLight: m.type === 'light' || !!m.lightConfig,
+              lightRadius: m.lightConfig?.radius ?? 160,
+              lightColor: m.lightConfig?.color ?? '#f59e0b',
+              lightFlicker: m.lightConfig?.flicker ?? true,
+              isPortal: m.type === 'travel' || m.type === 'portal',
+              travelTargetType: m.travelTargetType || 'level',
+              travelTargetId: m.targetLevelId || m.targetTravelMarkerId || m.targetSubBiomeId,
+              travelAuto: m.travelAuto ?? true,
+              npcBounce: m.npcBounce ?? true,
+              jellyEffect: (m.effect as any) || 'jelly',
+              actionNpcEnabled: !!m.actionNpc?.enabled,
+              actionNpcRole: (m.actionNpc?.role as any) || 'hostile',
+              hp: m.actionNpc?.health ?? m.actionNpc?.maxHp ?? 100,
+              maxHp: m.actionNpc?.maxHp ?? 100,
+              atk: m.actionNpc?.attackDamage ?? 15,
+              speakerName: m.dialogueCharacterName || m.name,
+              dialogueText: m.dialogueText || m.dialogueSteps?.[0]?.text || m.npcPhrases?.[0] || '',
+              npcPhrases: m.npcPhrases || [],
+            },
+          })),
+        });
+      }
+
+      const npcMarkers = nonGrassMarkers.filter(
+        (m) => m.type === 'npc' || m.type === 'boss' || m.dialogueEnabled || m.actionNpc?.enabled
+      );
+      if (npcsCat && npcMarkers.length > 0) {
+        npcsCat.subCategories.unshift({
+          id: 'live_phase_npcs',
+          name: 'NPCs & Chefes na Fase Atual (Tempo Real)',
+          icon: '🗣️',
+          items: npcMarkers.map((m) => ({
+            id: `live-npc-${m.id}`,
+            realEntityId: m.id,
+            label: `${m.name}`,
+            badge: m.actionNpc?.enabled ? `HP ${m.actionNpc.maxHp || 100}` : 'NPC',
+            icon: m.type === 'boss' ? '👹' : '🧙‍♂️',
+            description: m.dialogueText || m.npcPhrases?.[0] || m.description || 'NPC interativo na fase.',
+            initialQuickConfig: {
+              markerId: m.id,
+              markerType: m.type,
+              hp: m.actionNpc?.health ?? m.actionNpc?.maxHp ?? 100,
+              maxHp: m.actionNpc?.maxHp ?? 100,
+              atk: m.actionNpc?.attackDamage ?? 15,
+              actionNpcEnabled: !!m.actionNpc?.enabled,
+              actionNpcRole: (m.actionNpc?.role as any) || 'peaceful',
+              speakerName: m.dialogueCharacterName || m.name,
+              dialogueText: m.dialogueText || m.dialogueSteps?.[0]?.text || m.npcPhrases?.[0] || '',
+              npcPhrases: m.npcPhrases || [],
+            },
+          })),
+        });
+      }
+    }
+  } catch {}
+
+  // 4. Boosters e Loja reais (store.json / localStorage)
+  try {
+    let storeData: any = defaultStoreJson;
+    if (typeof window !== 'undefined') {
+      const rawStore = localStorage.getItem('forge_store');
+      if (rawStore) {
+        storeData = JSON.parse(rawStore);
+      }
+    }
+    const boostersCat = findCat('boosters');
+    if (boostersCat && Array.isArray(storeData?.packs) && storeData.packs.length > 0) {
+      boostersCat.subCategories.unshift({
+        id: 'live_store_packs',
+        name: 'Boosters Reais da Loja (TabPacks)',
+        icon: '📦',
+        items: storeData.packs.map((p: any) => ({
+          id: `live-pack-${p.id}`,
+          realEntityId: p.id,
+          label: `Booster: ${p.name} (${p.cardsCount || 5} cartas)`,
+          badge: `${p.price || 0} ${p.currency || 'gold'}`,
+          icon: '🎁',
+          description: p.desc || 'Pacote 3D configurado no TabPacks.',
+          initialQuickConfig: {
+            packId: p.id,
+            price: p.price ?? 0,
+            currency: p.currency === 'gems' ? 'gems' : 'gold',
+            cardsCount: p.cardsCount ?? 9,
+            packMode: p.mode || 'special',
+            dropRates: p.rates || { common: 75, rare: 20, legendary: 5 },
+            published: p.published ?? true,
+          },
+        })),
+      });
+    }
+  } catch {}
+
+  // 5. Cenários reais (TabScenarios / scenarios.json)
+  try {
+    let scenariosData: any = defaultScenariosJson;
+    if (typeof window !== 'undefined') {
+      const rawScn = localStorage.getItem('forge_scenarios');
+      if (rawScn) {
+        scenariosData = { ...scenariosData, ...JSON.parse(rawScn) };
+      }
+    }
+    const scnCat = findCat('scenarios');
+    if (scnCat && scenariosData) {
+      const meta = scenariosData.__meta || {};
+      scnCat.subCategories[0].items = scnCat.subCategories[0].items.map((item) => {
+        const keyMap: Record<string, string> = {
+          'scn-lobby': 'lobby',
+          'scn-battle': 'battle',
+          'scn-boss-3x1': 'boss_battle',
+          'scn-academy': 'academy',
+          'scn-store': 'store',
+          'scn-booster': 'booster',
+          'scn-coinflip': 'coin_flip',
+        };
+        const scnKey = keyMap[item.id] || item.id.replace('scn-', '');
+        const m = meta[scnKey] || {};
+        return {
+          ...item,
+          realEntityId: scnKey,
+          initialQuickConfig: {
+            scenarioScreenId: scnKey,
+            backgroundUrl: m.url || '/cards/Obscure_summoning_dnd_battle_map.jpg',
+            particleType: m.particles?.type || 'none',
+          },
+        };
+      });
+    }
+  } catch {}
+
+  // 6. Sons reais (sounds.json)
+  try {
+    const soundCat = findCat('sound');
+    if (soundCat && Array.isArray((defaultSoundsJson as any)?.library)) {
+      soundCat.subCategories.push({
+        id: 'live_sound_library',
+        name: 'Biblioteca de Áudio do Disco (/sounds)',
+        icon: '🎧',
+        items: (defaultSoundsJson as any).library.map((s: any, idx: number) => ({
+          id: `live-snd-${idx}`,
+          realEntityId: s.url,
+          label: `Áudio: ${s.name}`,
+          badge: s.url.endsWith('.mp3') ? 'BGM/MP3' : 'SFX/WAV',
+          icon: s.url.endsWith('.mp3') ? '🎵' : '🔊',
+          description: `Arquivo: ${s.url}`,
+          initialQuickConfig: {
+            bgmUrl: s.url.endsWith('.mp3') ? s.url : undefined,
+            sfxUrl: !s.url.endsWith('.mp3') ? s.url : undefined,
+            audioVolume: 0.8,
+          },
+        })),
+      });
+    }
+  } catch {}
+
+  // 7. Quests reais do Projeto (Quest System V2)
+  try {
+    const questsCat = findCat('quests');
+    const projectQuests = project?.questsConfig?.quests || [];
+    if (questsCat && projectQuests.length > 0) {
+      questsCat.subCategories.unshift({
+        id: 'live_project_quests',
+        name: 'Quests Ativas do Projeto (V2)',
+        icon: '⚡',
+        items: projectQuests.map((q) => ({
+          id: `live-qst-${q.id}`,
+          realEntityId: q.id,
+          label: `Quest: ${q.title}`,
+          badge: q.category === 'main' ? 'Jornada' : 'Tarefa',
+          icon: '📜',
+          description: q.shortDescription || q.narrativeText || 'Missão configurada no Quest System V2.',
+          initialQuickConfig: {
+            questKind: 'collect',
+            questRequiredAmount: q.objectives?.[0]?.targetCount || 1,
+            rewardGold: q.rewards?.gold || 100,
+            rewardXp: q.rewards?.xp || 50,
+          },
+        })),
+      });
+    }
+  } catch {}
+
+  return catalog;
+}
+

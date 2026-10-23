@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MarkerModuleCommonProps } from '../types';
 import { MessageSquare, Swords, Footprints } from 'lucide-react';
 import { MarkerActionNpcModule } from './MarkerActionNpcModule';
+import { NpcMatrixCardLinkPanel } from './NpcMatrixCardLinkPanel';
 
 export const MarkerNpcModule: React.FC<MarkerModuleCommonProps> = (props) => {
   const { marker, onUpdateMarker } = props;
@@ -423,6 +424,9 @@ export const MarkerNpcModule: React.FC<MarkerModuleCommonProps> = (props) => {
           className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
         />
       </label>
+
+      {/* Vínculo de Carta Matriz & Modo de Duelo para este NPC */}
+      <NpcMatrixCardLinkPanel marker={marker} onUpdateMarker={onUpdateMarker} compact />
         </div>
       )}
     </div>

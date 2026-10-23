@@ -353,23 +353,23 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
   };
 
   return (
-    <div className="min-h-screen w-full bg-black text-white flex flex-col select-none overflow-x-hidden font-sans">
+    <div className="h-full max-h-screen w-full bg-black text-white flex flex-col select-none overflow-y-auto overflow-x-hidden font-sans">
       {/* Linha técnica superior em 4 cores (vermelho, laranja, verde, azul) */}
-      <div className="w-full h-[2px] flex">
+      <div className="w-full h-[2px] flex shrink-0">
         <div className="h-full flex-1 bg-red-600" />
         <div className="h-full flex-1 bg-orange-500" />
         <div className="h-full flex-1 bg-emerald-500" />
         <div className="h-full flex-1 bg-blue-600" />
       </div>
 
-      {/* Conteúdo Principal da Dashboard (Sem Header Duplicado — Foco Direto nos 6 Editores + Galeria de Fases) */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8 space-y-6">
-        {/* SELETOR PRINCIPAL DOS 6 TIPOS DE EDITOR DA ENGINE */}
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Conteúdo Principal da Dashboard (Com rolagem vertical ativa e cards compactos) */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-4 md:px-6 md:py-5 space-y-4 pb-16">
+        {/* SELETOR PRINCIPAL DOS 7 TIPOS DE EDITOR DA ENGINE (COMPACTO) */}
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] font-mono tracking-widest text-zinc-400 uppercase flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-500" />
-              <span>Marker Dream • Estúdios e Editores da Engine (6 Editores Integrados)</span>
+              <span>Marker Dream • Estúdios e Editores da Engine (7 Editores Integrados)</span>
             </span>
             <div className="flex items-center gap-2">
               {activeLevel && (
@@ -395,39 +395,39 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5">
             {/* 1. EDITOR DE FASE */}
-            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-orange-500/50 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 shadow-sm">
-                    <MonitorPlay className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-orange-500/50 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400 shrink-0">
+                    <MonitorPlay className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-orange-500/15 text-orange-300 border border-orange-500/30 font-bold">
-                    {stats.total} Fases Salvas
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 border border-orange-500/30 font-bold truncate">
+                    {stats.total} Fases
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-orange-300 transition-colors">
+                <h3 className="text-xs font-bold text-white group-hover:text-orange-300 transition-colors leading-tight">
                   1. Editor de Fase
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Crie, monte e refine cenários, obstáculos, quests, NPCs, diálogos e mecânicas da fase.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Cenários, obstáculos, NPCs, diálogos e mecânicas.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850 flex items-center gap-2">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80 flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => onGoToEditor()}
-                  className="flex-1 py-2 px-3 rounded-lg bg-orange-500 hover:bg-orange-600 text-black text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="flex-1 py-1.5 px-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-black text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <MonitorPlay className="w-3.5 h-3.5" />
-                  <span>{activeLevel ? 'Editar Fase Ativa' : 'Abrir Editor de Fase'}</span>
+                  <MonitorPlay className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{activeLevel ? 'Editar Ativa' : 'Abrir Fase'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(true)}
-                  className="py-2 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-750 text-xs text-zinc-200 font-semibold transition-colors cursor-pointer"
+                  className="py-1.5 px-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-750 text-xs text-zinc-200 font-semibold transition-colors cursor-pointer shrink-0"
                   title="Criar nova fase"
                 >
                   <Plus className="w-3.5 h-3.5 text-orange-400" />
@@ -436,187 +436,187 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
             </div>
 
             {/* 2. EDITOR DE MAPA */}
-            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-amber-500/50 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-sm">
-                    <Compass className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-amber-500/50 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                    <Compass className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
-                    Overworld Global
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold truncate">
+                    Overworld
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors">
+                <h3 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors leading-tight">
                   2. Editor de Mapa
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Editor visual de mapa global, rotas de mundo, conexões de fases e visualização panorâmica.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Mapa global, rotas de mundo e conexões de fases.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenWorldMap ? onOpenWorldMap() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <Compass className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Abrir Editor de Mapa</span>
+                  <Compass className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span className="truncate">Abrir Mapa</span>
                 </button>
               </div>
             </div>
 
             {/* 3. EDITOR DE PERSONAGENS */}
-            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-blue-500/50 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shadow-sm">
-                    <Users className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-blue-500/50 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+                    <Users className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 font-bold">
-                    {charactersCount} Personagens
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 font-bold truncate">
+                    {charactersCount} Heróis
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">
-                  3. Editor de Personagens
+                <h3 className="text-xs font-bold text-white group-hover:text-blue-300 transition-colors leading-tight">
+                  3. Personagens
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Crie múltiplos personagens salvos à parte da fase. Configure sprites, atributos e limite de inventário pré-definidos.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Sprites, direções, atributos e limite de inventário.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenCharacters ? onOpenCharacters() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Abrir Editor de Personagens</span>
+                  <Users className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Personagens</span>
                 </button>
               </div>
             </div>
 
             {/* 4. EDITOR DE INVENTÁRIOS */}
-            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-emerald-500/50 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-sm">
-                    <Package className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-emerald-500/50 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <Package className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold truncate">
                     {inventoryProjectsCount} Projetos
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors">
-                  4. Editor de Inventários
+                <h3 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors leading-tight">
+                  4. Inventários
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Gerencie múltiplos Projetos de Inventário e, dentro de cada projeto, seu inventário de itens interativos e Test Spawn.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Projetos de inventário, catálogo de itens e Test Spawn.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenInventory ? onOpenInventory() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-extrabold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Abrir Editor de Inventários</span>
+                  <Package className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Inventários</span>
                 </button>
               </div>
             </div>
 
             {/* 5. EDITOR DE QUESTS & PROGRESSÃO GLOBAL */}
-            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-5 flex flex-col justify-between hover:border-purple-500/50 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shadow-sm">
-                    <GitBranch className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-purple-500/50 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 shrink-0">
+                    <GitBranch className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold truncate">
                     {questsCount} Quests V2
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+                <h3 className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors leading-tight">
                   5. Editor de Quests
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Motor de eventos, comércio (compra/venda/barter), grafo ramificado, recompensas atômicas e espelhamento na fase.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Eventos, comércio, grafo ramificado e recompensas.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenQuests ? onOpenQuests() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <GitBranch className="w-3.5 h-3.5" />
-                  <span>Abrir Editor de Quests</span>
+                  <GitBranch className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Abrir Quests</span>
                 </button>
               </div>
             </div>
 
             {/* 6. EDITOR UNIVERSAL DE HUD & TELAS MESTRE */}
-            <div className="rounded-xl bg-gradient-to-b from-cyan-950/40 via-zinc-900/90 to-zinc-950 border border-cyan-500/40 p-5 flex flex-col justify-between hover:border-cyan-400 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-sm">
-                    <Smartphone className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-cyan-950/40 via-zinc-900/90 to-zinc-950 border border-cyan-500/40 p-3 flex flex-col justify-between hover:border-cyan-400 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                    <Smartphone className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
-                    Universal • Mestre
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold truncate">
+                    Universal
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-cyan-300 transition-colors">
-                  6. HUD &amp; Telas Mestre
+                <h3 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors leading-tight">
+                  6. HUD &amp; Telas
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Configure Joystick, Header PV/EXP, Barra Vidro (6 Ícones), Quests Retráteis (◀) e Barras de Coleta para todas as fases.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Joystick, Header PV/EXP, Barra Vidro e HUD global.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenHudUniversal ? onOpenHudUniversal() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-extrabold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                  className="w-full py-1.5 px-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm truncate"
                 >
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span>Abrir HUD Universal</span>
+                  <Smartphone className="w-3 h-3 shrink-0" />
+                  <span className="truncate">HUD Universal</span>
                 </button>
               </div>
             </div>
 
             {/* 7. EDITOR DE MAPA MENTAL & CONCEITOS */}
-            <div className="rounded-xl bg-gradient-to-b from-pink-950/40 via-zinc-900/90 to-zinc-950 border border-pink-500/40 p-5 flex flex-col justify-between hover:border-pink-400 transition-all group shadow-sm">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-lg bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-sm">
-                    <Brain className="w-5 h-5" />
+            <div className="rounded-xl bg-gradient-to-b from-pink-950/40 via-zinc-900/90 to-zinc-950 border border-pink-500/40 p-3 flex flex-col justify-between hover:border-pink-400 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shrink-0">
+                    <Brain className="w-3.5 h-3.5" />
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 font-bold">
-                    Conceitos • GDD
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30 font-bold truncate">
+                    Síntese • GDD
                   </span>
                 </div>
-                <h3 className="text-base font-bold text-white group-hover:text-pink-300 transition-colors">
+                <h3 className="text-xs font-bold text-white group-hover:text-pink-300 transition-colors leading-tight">
                   7. Mapa Mental
                 </h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Estruture ideias, fluxo de fases, árvores de bosses, lore, mecânicas e conexões em nós com curvas Bézier.
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Grafo de fases, edição rápida in-card e compilador.
                 </p>
               </div>
 
-              <div className="pt-4 mt-3 border-t border-zinc-850">
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
                 <button
                   type="button"
                   onClick={() => (onOpenMindMap ? onOpenMindMap() : onGoToEditor())}
-                  className="w-full py-2 px-3 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-xs font-extrabold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm shadow-pink-600/20"
+                  className="w-full py-1.5 px-2 rounded-lg bg-pink-600 hover:bg-pink-500 text-white text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-pink-600/20 truncate"
                 >
-                  <Brain className="w-3.5 h-3.5" />
-                  <span>Abrir Mapa Mental</span>
+                  <Brain className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Mapa Mental</span>
                 </button>
               </div>
             </div>

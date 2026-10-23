@@ -12,6 +12,7 @@ import {
 } from '../../../utils/npcActionEngine';
 import { Swords, Eye, ShieldAlert, Sparkles, MessageSquare, Zap, Crosshair, Heart } from 'lucide-react';
 import { AttackAssetSelector } from './AttackAssetSelector';
+import { NpcMatrixCardLinkPanel } from './NpcMatrixCardLinkPanel';
 
 export const MarkerActionNpcModule: React.FC<MarkerModuleCommonProps> = ({
   marker,
@@ -192,6 +193,9 @@ export const MarkerActionNpcModule: React.FC<MarkerModuleCommonProps> = ({
           </div>
         )}
       </div>
+
+      {/* 1.5 Vínculo de Carta Matriz (Forja V2), Modo Boss Battle vs Duelo de Cartas & Raridade */}
+      <NpcMatrixCardLinkPanel marker={marker} onUpdateMarker={onUpdateMarker} />
 
       {cfg.enabled && (
         <>

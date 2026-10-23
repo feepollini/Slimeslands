@@ -233,6 +233,13 @@ export interface ActionNpcConfig {
   combatStyle?: string;
   respawnMode?: 'timed' | 'never'; // Regra de respawn ao morrer ou ser escaneado (padrão 'timed')
   respawnTimeSeconds?: number; // Tempo em segundos para reaparecer no ponto de origem (padrão 25s)
+  // Vínculo com a Matriz de Cartas (Forge V2) e Modos de Batalha (Boss Battle vs Duelo de Cartas)
+  matrixCardId?: string; // ID ou Nome da Carta Matriz representante deste NPC Action
+  battleMode?: 'boss' | 'duel'; // 'boss' = Boss Battle (asset do NPC no tabuleiro) | 'duel' = Duelo de Cartas (NPC joga com seu deck)
+  deckCardIds?: string[]; // Cartas do Deck do NPC quando battleMode === 'duel'
+  rarityDropRule?: 'auto' | 'common' | 'rare' | 'epic' | 'legendary'; // Regra de raridade p/ drop de variação da Carta Matriz
+  scanDialogueText?: string; // Fala exibida ao entrar na Fase de Escaneamento / Desafio Boss Battle
+  linkedMobbyId?: string; // Vínculo opcional com Mobby do MobbyManager
 }
 
 export interface QuestResource {
@@ -487,7 +494,16 @@ export interface MapMarker {
     targetBiomeId?: string; // Bioma ou sub-bioma alvo
     requiredCount?: number;
     completed?: boolean;
+    rewardCardId?: string; // Carta Matriz entregue como recompensa desta Quest
+    rewardRarityRule?: 'auto' | 'common' | 'rare' | 'epic' | 'legendary'; // Raridade da variação da carta da Quest
+    rewardCoins?: number; // Recompensa em Ouro sincronizada com ProgressionManager
+    rewardGems?: number; // Recompensa em Diamantes/Gemas
   };
+  // Atalhos diretos de Vínculo de Carta Matriz e Batalha para qualquer NPC/Evento
+  matrixCardId?: string;
+  battleMode?: 'boss' | 'duel';
+  deckCardIds?: string[];
+  rarityDropRule?: 'auto' | 'common' | 'rare' | 'epic' | 'legendary';
   eventFadeColor?: string; // Cor do desvanecer da cena (hex, ex: #000000 preto, #ffffff branco)
   // Motion pen: recorte extraído do mapa (asset overlay com gelatina, pivô central)
   motionAsset?: boolean;

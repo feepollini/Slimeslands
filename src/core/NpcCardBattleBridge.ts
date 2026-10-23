@@ -1,7 +1,9 @@
-import { CARD_TEMPLATES } from './constants';
+import { CARD_TEMPLATES, CARD_ABILITIES, SKILL_POOL } from './constants';
 import { ProgressionManager } from './ProgressionManager';
 import { MobbyManager, Mobby } from './MobbyManager';
 import raritiesDefault from './rarities.json';
+import scenariosDefault from './scenarios.json';
+import soundsDefault from './sounds.json';
 import {
   getMergedGameTemplatesSync,
   resolveMatrixOrGameCard,
@@ -45,6 +47,9 @@ export interface RolledCardVariation {
   image: string;
   artUrl: string;
   loreText: string;
+  passiveAbilityId?: string;
+  passiveAbilityName?: string;
+  passiveAbilityIcon?: string;
   sourceNpcId?: string;
   sourceNpcName?: string;
   obtainedVia: 'boss_battle' | 'card_duel' | 'scan' | 'quest' | 'booster';
@@ -55,8 +60,10 @@ export interface RolledCardVariation {
 export interface ActiveNpcBattleContext {
   battleSessionId: string;
   markerId: string;
+  npcId: string;
   npcName: string;
   npcAvatarUrl: string;
+  npcImage: string;
   npcVideoUrl?: string;
   npcColor: string;
   battleMode: 'boss' | 'duel';
@@ -66,13 +73,27 @@ export interface ActiveNpcBattleContext {
   deckCardIds: string[];
   rarityDropRule: 'auto' | 'default' | RarityKey;
   npcHp: number;
+  npcMaxHp: number;
   npcAtk: number;
   speechPhrases: string[];
   scanDialogueText?: string;
   linkedMobbyId?: string;
+  passiveAbilityId?: string;
+  activeArtifactId?: string;
+  battleScenarioKey?: string;
+  battleBgmUrl?: string;
   phaseId?: string;
   phaseName?: string;
   startedAt: number;
+}
+
+export interface UnlockedArtifactDrop {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  image?: string;
+  group?: string;
 }
 
 export interface NpcBattleOutcome {
@@ -83,6 +104,7 @@ export interface NpcBattleOutcome {
   victory: boolean;
   droppedVariation?: RolledCardVariation;
   rolledVariation?: RolledCardVariation;
+  unlockedArtifact?: UnlockedArtifactDrop;
   goldEarned: number;
   gemsEarned: number;
   xpEarned: number;
@@ -217,6 +239,174 @@ export function getAvailableMatrixCards(): any[] {
 }
 
 /**
+ * Retorna todas as Habilidades Passivas da Forja V2 (TabAbilities / abilities.json)
+ */
+export function getAvailablePassiveAbilities(): {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  triggerText?: string;
+  color?: string;
+}[] {
+  try {
+    const saved = localStorage.getItem('forge_abilities');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return CARD_ABILITIES as any[];
+}
+
+/**
+ * Retorna todos os Artefatos / Habilidades Ativas da Forja V2 (TabArtefatos / skills.json)
+ */
+export function getAvailableActiveArtifacts(): {
+  id: string;
+  name: string;
+  icon: string;
+  image?: string;
+  effect: string;
+  category: string;
+  group: string;
+  description: string;
+  flavorText?: string;
+  power?: number;
+}[] {
+  try {
+    const saved = localStorage.getItem('forge_skills');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return SKILL_POOL as any[];
+}
+
+/**
+ * Retorna os Cenários configurados na Forja V2 (TabScenarios / scenarios.json)
+ */
+export function getAvailableBattleScenarios(): {
+  key: string;
+  label: string;
+  previewUrl?: string;
+}[] {
+  const labels: Record<string, string> = {
+    battle: '⚔️ Arena de Duelo Padrão (Forja V2)',
+    boss_battle: '👹 Arena de Boss Battle (Forja V2)',
+    lobby: '🏠 Cenário do Hub / Lobby',
+    map: '🗺️ Cenário do Mapa Mundi',
+    arsenal: '🛡️ Cenário do Arsenal',
+    store: '🛒 Cenário da Loja',
+    preparation: '🎴 Sala de Preparação',
+    difficulty: '🔥 Tela de Desafio',
+    coin_flip: '🪙 Arena do Destino (Moeda)',
+  };
+
+  let merged: Record<string, any> = { ...(scenariosDefault as any) };
+  try {
+    const raw = localStorage.getItem('forge_scenarios');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        merged = { ...merged, ...parsed };
+      }
+    }
+  } catch {}
+
+  const list: { key: string; label: string; previewUrl?: string }[] = [];
+  for (const key of Object.keys(merged)) {
+    if (key === '__meta') continue;
+    let previewUrl = '';
+    const val = merged[key];
+    if (typeof val === 'string' && val.startsWith('{')) {
+      try {
+        const obj = JSON.parse(val);
+        previewUrl = obj.url || '';
+      } catch {}
+    } else if (typeof val === 'string') {
+      previewUrl = val;
+    }
+    list.push({
+      key,
+      label: labels[key] || `🌌 Cenário Custom: ${key}`,
+      previewUrl,
+    });
+  }
+  return list;
+}
+
+/**
+ * Retorna as Trilhas e Efeitos Sonoros da Central de Sons da Forja V2 (SoundCentralScreen / sounds.json)
+ */
+export function getAvailableForgeSounds(): { url: string; name: string }[] {
+  try {
+    const lib = (soundsDefault as any)?.library;
+    if (Array.isArray(lib) && lib.length > 0) return lib;
+  } catch {}
+  return [
+    { url: '/sounds/battle_2.mp3', name: 'battle_2.mp3' },
+    { url: '/sounds/Cozy_RPG_Ambience__1_.mp3', name: 'Cozy RPG Ambience (1)' },
+  ];
+}
+
+/**
+ * Desbloqueia um Artefato / Habilidade Ativa da Forja V2 para o jogador (Arsenal, Loja e Battle Prep)
+ */
+export function unlockActiveArtifactForPlayer(
+  artifactIdOrName?: string
+): UnlockedArtifactDrop | undefined {
+  if (!artifactIdOrName || artifactIdOrName === 'none') return undefined;
+  const allArtifacts = getAvailableActiveArtifacts();
+  const found = allArtifacts.find(
+    (a) =>
+      a.id.toLowerCase() === artifactIdOrName.toLowerCase() ||
+      a.name.toLowerCase() === artifactIdOrName.toLowerCase()
+  );
+  if (!found) return undefined;
+
+  // 1. Salva em 'store_owned.artifacts'
+  try {
+    const rawOwned = localStorage.getItem('store_owned');
+    const owned = rawOwned
+      ? JSON.parse(rawOwned)
+      : { cards: [], decks: [], artifacts: [] };
+    owned.artifacts = Array.isArray(owned.artifacts) ? owned.artifacts : [];
+    if (!owned.artifacts.includes(found.id)) {
+      owned.artifacts.push(found.id);
+    }
+    if (!owned.artifacts.includes(found.name)) {
+      owned.artifacts.push(found.name);
+    }
+    localStorage.setItem('store_owned', JSON.stringify(owned));
+  } catch {}
+
+  // 2. Se o jogador tiver menos de 3 skills equipadas no 'battle_prep', já equipa automaticamente!
+  try {
+    const rawPrep = localStorage.getItem('battle_prep');
+    const prep = rawPrep ? JSON.parse(rawPrep) : { cards: [], skills: [] };
+    prep.skills = Array.isArray(prep.skills) ? prep.skills : [];
+    if (
+      prep.skills.length < 3 &&
+      !prep.skills.some((s: any) => s && (s.id === found.id || s.name === found.name))
+    ) {
+      prep.skills.push(found);
+      localStorage.setItem('battle_prep', JSON.stringify(prep));
+    }
+  } catch {}
+
+  return {
+    id: found.id,
+    name: found.name,
+    icon: found.icon || '💎',
+    description: found.description || '',
+    image: found.image,
+    group: found.group,
+  };
+}
+
+/**
  * Resolve a Carta Matriz representante de um NPC Action ou Marcador.
  * Se o NPC não tiver um matrixCardId explícito, vincula deterministicamente uma carta da Matriz.
  */
@@ -288,6 +478,7 @@ export function resolveNpcDeckCards(marker?: Partial<MapMarker> | null): any[] {
   const configuredIds =
     marker?.actionNpc?.deckCardIds ||
     marker?.deckCardIds ||
+    (marker as any)?.npcDeckCardIds ||
     [];
 
   const resolvedDeck: any[] = [];
@@ -382,6 +573,17 @@ export function rollMatrixCardVariation(options: {
   const rolledPv = Math.max(10, Math.round(basePv * pvMult));
   const rolledAtk = Math.max(5, Math.round(baseAtk * atkMult));
 
+  // Resolve Habilidade Passiva (da configuração do NPC, da carta base ou sorteada para Rara+)
+  const allPassives = getAvailablePassiveAbilities();
+  const explicitPassiveId =
+    options.marker?.actionNpc?.passiveAbilityId ||
+    options.marker?.passiveAbilityId ||
+    baseCard?.abilityId;
+  let chosenPassive = allPassives.find((p) => p.id === explicitPassiveId);
+  if (!chosenPassive && rarityDef.key !== 'common' && allPassives.length > 0) {
+    chosenPassive = allPassives[Math.floor(Math.random() * allPassives.length)];
+  }
+
   const existingVariations = getPlayerCardVariations();
   const sameCardCount = existingVariations.filter(
     (v) => v.baseCardName === (baseCard?.name || 'Carta')
@@ -422,6 +624,9 @@ export function rollMatrixCardVariation(options: {
     image: resolvedImage,
     artUrl: resolvedImage,
     loreText: resolvedLore,
+    passiveAbilityId: chosenPassive?.id,
+    passiveAbilityName: chosenPassive?.name,
+    passiveAbilityIcon: chosenPassive?.icon,
     sourceNpcId: options.marker?.id,
     sourceNpcName: options.marker?.name,
     obtainedVia: options.obtainedVia || 'scan',
@@ -556,24 +761,55 @@ export function prepareNpcBattleContext(
     ]
   ) as string[];
 
+  const passiveAbilityId =
+    marker.actionNpc?.passiveAbilityId ||
+    marker.passiveAbilityId ||
+    repCard?.abilityId ||
+    undefined;
+  const activeArtifactId =
+    marker.actionNpc?.activeArtifactId || marker.activeArtifactId || undefined;
+  const battleScenarioKey =
+    marker.actionNpc?.battleScenarioKey || marker.battleScenarioKey || undefined;
+  const battleBgmUrl =
+    marker.actionNpc?.battleBgmUrl || marker.battleBgmUrl || undefined;
+
+  const avatarUrl =
+    marker.customIconPng || repCard?.image || '/_galeria_backup/01.jpg';
+
   // Se for Boss Battle, também garante que exista um Mobby temporário/vinculado no MobbyManager
   let linkedMobbyId = marker.actionNpc?.linkedMobbyId;
   if (mode === 'boss') {
     const mobbyId = linkedMobbyId || `npc_boss_${marker.id}`;
+    const mobbyHp = Math.max(300, npcHp);
     const mobbyObj: Mobby = {
       id: mobbyId,
       name: marker.name || 'Boss Desconhecido',
-      image:
-        marker.customIconPng ||
-        repCard?.image ||
-        '/_galeria_backup/01.jpg',
-      pv: npcHp,
+      description:
+        marker.description ||
+        repCard?.desc ||
+        `Guardião da Matriz (${repCard?.name || marker.name})`,
+      image: avatarUrl,
+      hp: mobbyHp,
+      maxHp: mobbyHp,
       atk: npcAtk,
-       linkedCardId: repCard?.id || repCard?.name || '1',
+      rewardCardId: String(repCard?.name || repCard?.id || '1'),
+      linkedCardId: String(repCard?.id || repCard?.name || '1'),
+      artifacts: activeArtifactId ? [activeArtifactId] : [],
+      backgroundUrl: battleScenarioKey,
+      bgmUrl: battleBgmUrl,
       dialogues: [
-        { trigger: 'start', text: phrases[0] || `${marker.name} desafia você!` },
-        { trigger: 'half_hp', text: phrases[1] || `Argh! Minha matriz está instável!` },
-        { trigger: 'defeat', text: phrases[2] || `Não... fui escaneado!` },
+        {
+          triggerType: 'turn_reached',
+          triggerValue: 1,
+          speaker: 'mobby',
+          text: phrases[0] || `${marker.name} desafia você!`,
+        },
+        {
+          triggerType: 'hp_below',
+          triggerValue: 50,
+          speaker: 'mobby',
+          text: phrases[1] || `Argh! Minha matriz está instável!`,
+        },
       ],
     };
     const allMobbys = MobbyManager.getMobbys();
@@ -590,11 +826,10 @@ export function prepareNpcBattleContext(
   const ctx: ActiveNpcBattleContext = {
     battleSessionId: `bs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     markerId: marker.id,
+    npcId: marker.id,
     npcName: marker.name || 'NPC Desafiante',
-    npcAvatarUrl:
-      marker.customIconPng ||
-      repCard?.image ||
-      '/_galeria_backup/01.jpg',
+    npcAvatarUrl: avatarUrl,
+    npcImage: avatarUrl,
     npcVideoUrl: marker.videoUrl,
     npcColor: marker.color || '#f59e0b',
     battleMode: mode,
@@ -605,10 +840,15 @@ export function prepareNpcBattleContext(
     rarityDropRule:
       marker.actionNpc?.rarityDropRule || marker.rarityDropRule || 'auto',
     npcHp,
+    npcMaxHp: npcHp,
     npcAtk,
     speechPhrases: phrases,
     scanDialogueText: marker.actionNpc?.scanDialogueText,
     linkedMobbyId,
+    passiveAbilityId,
+    activeArtifactId,
+    battleScenarioKey,
+    battleBgmUrl,
     phaseId: phaseInfo?.id,
     phaseName: phaseInfo?.name,
     startedAt: Date.now(),
@@ -639,7 +879,7 @@ export function clearActiveNpcBattleContext(): void {
 
 /**
  * Registra o resultado da Batalha (Boss ou Duelo de Cartas), sorteia a variação da Carta Matriz se venceu,
- * entrega Ouro/XP no ProgressionManager e notifica o iframe/emulador!
+ * desbloqueia o Artefato Ativo vinculado (se houver), entrega Ouro/XP no ProgressionManager e notifica o emulador!
  */
 export function recordNpcBattleOutcome(
   victory: boolean,
@@ -658,8 +898,14 @@ export function recordNpcBattleOutcome(
         id: ctx.markerId,
         name: ctx.npcName,
         customIconPng: ctx.npcAvatarUrl,
+        passiveAbilityId: ctx.passiveAbilityId,
       },
     });
+  }
+
+  let unlockedArtifact: UnlockedArtifactDrop | undefined;
+  if (victory && ctx.activeArtifactId) {
+    unlockedArtifact = unlockActiveArtifactForPlayer(ctx.activeArtifactId);
   }
 
   const goldEarned = victory ? (ctx.battleMode === 'boss' ? 180 : 140) : 25;
@@ -676,6 +922,7 @@ export function recordNpcBattleOutcome(
     victory,
     droppedVariation,
     rolledVariation: droppedVariation,
+    unlockedArtifact,
     goldEarned,
     gemsEarned,
     xpEarned,
@@ -771,3 +1018,4 @@ export function syncProjectEconomyWithProgression(project: MapProject): {
     xp: prog.xp || 0,
   };
 }
+

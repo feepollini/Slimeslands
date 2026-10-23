@@ -28,6 +28,7 @@ import {
   resolveNpcDeckCards,
   recordNpcBattleOutcome,
   getBestVariationForCard,
+  getAvailableActiveArtifacts,
   RARITY_META,
 } from './core/NpcCardBattleBridge';
 
@@ -219,6 +220,7 @@ class BattleApp {
               pv,
               maxPv: pv,
               rarity: bestVar?.rarity || resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
+              abilityId: (bestVar?.passiveAbilityId || resolved.abilityId || c.abilityId || 'none') as any,
               manaCost: resolved.manaCost ?? c.manaCost ?? 1,
               staminaCost: resolved.staminaCost ?? c.staminaCost ?? 1,
               attacks: resolved.attacks || c.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
@@ -242,9 +244,17 @@ class BattleApp {
       applyScenarioBackground(getActiveScenario('battle', (SCENARIOS as any).battle));
     }
 
-    // Se houver contexto de Duelo contra NPC da Fase, equipa o Deck do NPC no Oponente
+    // Se houver contexto de Duelo contra NPC da Fase, equipa Deck, Passiva, Artefato, Cenário e Trilha do NPC
     const npcCtx = getActiveNpcBattleContext();
     if (npcCtx) {
+      if (npcCtx.battleScenarioKey) {
+        applyScenarioBackground(
+          getActiveScenario(npcCtx.battleScenarioKey, npcCtx.battleScenarioKey)
+        );
+      }
+      if (npcCtx.battleBgmUrl) {
+        SoundManager.playTrackUrl(npcCtx.battleBgmUrl);
+      }
       const npcDeckTemplates = resolveNpcDeckCards({
         id: npcCtx.npcId,
         name: npcCtx.npcName,
@@ -267,6 +277,11 @@ class BattleApp {
             manaCost: tmpl.manaCost ?? 1,
             staminaCost: tmpl.staminaCost ?? 1,
             rarity: tmpl.preferredRarity || tmpl.rarity || 'rare',
+            abilityId: (
+              (idx === 0 && npcCtx.passiveAbilityId) ||
+              tmpl.abilityId ||
+              'none'
+            ) as any,
             attacks: tmpl.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
             specialAttack: tmpl.specialAttack,
             matrixCard: tmpl.matrixCard || tmpl.cardData,
@@ -274,6 +289,14 @@ class BattleApp {
         });
         this.engine.aiDeck = customAiDeck.slice(3);
         this.engine.aiHand = customAiDeck.slice(0, 3);
+      }
+      if (npcCtx.activeArtifactId) {
+        const foundArt = getAvailableActiveArtifacts().find(
+          (a) => a.id === npcCtx.activeArtifactId || a.name === npcCtx.activeArtifactId
+        );
+        if (foundArt) {
+          this.engine.aiSkills[0] = { ...(foundArt as any) };
+        }
       }
       if (npcCtx.npcHp && npcCtx.npcHp > 0) {
         this.engine.hp.e = Math.max(400, npcCtx.npcHp);

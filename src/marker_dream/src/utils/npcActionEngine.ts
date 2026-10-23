@@ -148,6 +148,7 @@ export interface NpcRuntimeState {
   permanentlyDespawned?: boolean;
   respawnMode?: 'timed' | 'never';
   respawnTimeSeconds?: number;
+  lastFacingDir?: 'up' | 'down' | 'left' | 'right';
 }
 
 // Configuração padrão de ataques quando ativados
@@ -268,6 +269,19 @@ export const getAngleRad = (x1: number, y1: number, x2: number, y2: number): num
 
 export const clamp = (val: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, val));
+};
+
+export const resolveFacingDirection4Way = (
+  dx: number,
+  dy: number,
+  fallback: 'up' | 'down' | 'left' | 'right' = 'down'
+): 'up' | 'down' | 'left' | 'right' => {
+  if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return fallback;
+  // Usa histerese suave para que movimientos diagonais respeitem o eixo predominante (Cima/Baixo vs Esq/Dir)
+  if (Math.abs(dx) >= Math.abs(dy) * 0.92) {
+    return dx >= 0 ? 'right' : 'left';
+  }
+  return dy >= 0 ? 'down' : 'up';
 };
 
 // Classe Principal do Motor Procedural de Ações, Emoções e Combate dos NPCs
@@ -724,7 +738,8 @@ export class NpcActionEngine {
 
       let moveVx = 0;
       let moveVy = 0;
-      let facingDir = 'down';
+      const defaultDir = marker.facingDirection || actionCfg?.facingDirection || 'down';
+      let facingDir: 'up' | 'down' | 'left' | 'right' = state.lastFacingDir || defaultDir;
       let isMoving = false;
 
       // Reset transformação corporal para interpolação suave
@@ -745,7 +760,7 @@ export class NpcActionEngine {
         updatedPositions.set(marker.id, {
           x: state.currentX,
           y: state.currentY,
-          dir: 'down',
+          dir: facingDir,
           isMoving: false,
         });
         continue;
@@ -876,10 +891,8 @@ export class NpcActionEngine {
             state.bodyTransform.rotationDeg = 0;
             state.bodyTransform.jumpHeight = 0;
 
-            // Mantém orientação facial para o alvo
-            if (atk.targetX > state.currentX + 5) facingDir = 'right';
-            else if (atk.targetX < state.currentX - 5) facingDir = 'left';
-            else facingDir = atk.targetY > state.currentY ? 'down' : 'up';
+            // Mantém orientação facial 4 direções para o alvo
+            facingDir = resolveFacingDirection4Way(atk.targetX - state.currentX, atk.targetY - state.currentY, facingDir);
 
             if (prog >= 0.45 && !atk.hasImpacted) {
               atk.hasImpacted = true;
@@ -1139,9 +1152,7 @@ export class NpcActionEngine {
                 moveVx = Math.cos(ang) * (baseMoveSpeed * 1.3);
                 moveVy = Math.sin(ang) * (baseMoveSpeed * 1.3);
               }
-              if (targetX > state.currentX + 5) facingDir = 'right';
-              else if (targetX < state.currentX - 5) facingDir = 'left';
-              else facingDir = targetY > state.currentY ? 'down' : 'up';
+              facingDir = resolveFacingDirection4Way(targetX - state.currentX, targetY - state.currentY, facingDir);
               isMoving = true;
             }
           } else {
@@ -1252,10 +1263,8 @@ export class NpcActionEngine {
                 moveVy = Math.sin(ang) * (baseMoveSpeed * 1.3);
               }
 
-              // Mira estável com histerese no alvo (sem tremor de direção)
-              if (targetX > state.currentX + 5) facingDir = 'right';
-              else if (targetX < state.currentX - 5) facingDir = 'left';
-              else facingDir = targetY > state.currentY ? 'down' : 'up';
+              // Mira 4 direções estável no alvo ou direção de movimento
+              facingDir = resolveFacingDirection4Way(targetX - state.currentX, targetY - state.currentY, facingDir);
 
               isMoving = true;
             }
@@ -1272,7 +1281,7 @@ export class NpcActionEngine {
 
         moveVx = Math.cos(fleeAngle) * (baseMoveSpeed * 1.6); // Fuga rápida!
         moveVy = Math.sin(fleeAngle) * (baseMoveSpeed * 1.6);
-        facingDir = moveVx > 0 ? 'right' : 'left';
+        facingDir = resolveFacingDirection4Way(moveVx, moveVy, facingDir);
         isMoving = true;
 
         // Tremor cômico de susto no corpo do PNG
@@ -1287,10 +1296,11 @@ export class NpcActionEngine {
           const ang = getAngleRad(state.currentX, state.currentY, playerPos.x, playerPos.y);
           moveVx = Math.cos(ang) * (baseMoveSpeed * 0.8);
           moveVy = Math.sin(ang) * (baseMoveSpeed * 0.8);
-          facingDir = Math.abs(moveVx) > Math.abs(moveVy) ? (moveVx > 0 ? 'right' : 'left') : (moveVy > 0 ? 'down' : 'up');
+          facingDir = resolveFacingDirection4Way(moveVx, moveVy, facingDir);
           isMoving = true;
         } else {
-          // Chegou perto: fala uma frase personalizada dos balões!
+          // Chegou perto: olha para o jogador e fala uma frase personalizada dos balões!
+          facingDir = resolveFacingDirection4Way(playerPos.x - state.currentX, playerPos.y - state.currentY, facingDir);
           if (now >= state.nextSpeechAllowedAt && actionCfg?.speechPhrases?.length) {
             const phrases = actionCfg.speechPhrases.filter(Boolean) as string[];
             if (phrases.length > 0) {
@@ -1307,7 +1317,7 @@ export class NpcActionEngine {
         const ang = getAngleRad(state.currentX, state.currentY, state.originX, state.originY);
         moveVx = Math.cos(ang) * baseMoveSpeed;
         moveVy = Math.sin(ang) * baseMoveSpeed;
-        facingDir = moveVx > 0 ? 'right' : 'left';
+        facingDir = resolveFacingDirection4Way(moveVx, moveVy, facingDir);
         isMoving = true;
 
         if (distToSpawn <= 30) {
@@ -1330,7 +1340,7 @@ export class NpcActionEngine {
 
         moveVx = Math.cos(state.wanderAngle) * (baseMoveSpeed * 0.45);
         moveVy = Math.sin(state.wanderAngle) * (baseMoveSpeed * 0.45);
-        facingDir = moveVx > 0 ? 'right' : 'left';
+        facingDir = resolveFacingDirection4Way(moveVx, moveVy, facingDir);
         isMoving = true;
       }
 
@@ -1410,6 +1420,8 @@ export class NpcActionEngine {
           state.currentY += repulseVy * dt;
         }
       }
+
+      state.lastFacingDir = facingDir;
 
       updatedPositions.set(marker.id, {
         x: state.currentX,

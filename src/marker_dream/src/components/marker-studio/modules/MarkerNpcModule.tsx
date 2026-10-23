@@ -3,6 +3,7 @@ import { MarkerModuleCommonProps } from '../types';
 import { MessageSquare, Swords, Footprints } from 'lucide-react';
 import { MarkerActionNpcModule } from './MarkerActionNpcModule';
 import { NpcMatrixCardLinkPanel } from './NpcMatrixCardLinkPanel';
+import { NpcDirectionalSpritesPanel } from './NpcDirectionalSpritesPanel';
 
 export const MarkerNpcModule: React.FC<MarkerModuleCommonProps> = (props) => {
   const { marker, onUpdateMarker } = props;
@@ -43,6 +44,17 @@ export const MarkerNpcModule: React.FC<MarkerModuleCommonProps> = (props) => {
           )}
         </button>
       </div>
+
+      {/* Painel Unificado de 4 Direções (NPC & Action NPC) com Importação Rápida de Pasta */}
+      <NpcDirectionalSpritesPanel
+        marker={marker}
+        onUpdateMarker={onUpdateMarker}
+        galleryAssets={props.galleryAssets}
+        galleryCategories={props.galleryCategories}
+        onUploadNewAsset={props.onUploadNewAsset}
+        project={props.project}
+        savedLevels={props.savedLevels}
+      />
 
       {subTab === 'action_npc' ? (
         <MarkerActionNpcModule {...props} />

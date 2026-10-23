@@ -7,8 +7,6 @@ import { TabConfig } from './tabs/TabConfig';
 import { TabArtefatos } from './tabs/TabArtefatos';
 import { TabStore, normalizeStoreData } from './tabs/TabStore';
 import { TabPacks } from './tabs/TabPacks';
-import { TabQuestMaker } from './tabs/TabQuestMaker';
-import { QuestMakerHub } from './tabs/quest_maker/QuestMakerHub';
 import { SoundCentralScreen } from './tabs/SoundCentralScreen';
 import { TabMobbys } from './tabs/TabMobbys';
 import { TabMatrix } from './tabs/TabMatrix';
@@ -18,7 +16,7 @@ import { ForgeCore } from './core/ForgeCore';
 
 export class ForgeApp {
   private container: HTMLElement;
-  private currentMode: 'cardengine' | 'arsenal' | 'comercial' | 'decks' | 'matrix' | 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'questmaker' | 'mobbys' | 'markerdream' = 'cardengine';
+  private currentMode: 'cardengine' | 'arsenal' | 'comercial' | 'decks' | 'matrix' | 'cards' | 'habilidades' | 'artefatos' | 'assets' | 'scenarios' | 'store' | 'packs' | 'config' | 'sounds' | 'mobbys' | 'markerdream' = 'cardengine';
   private cardEngineSubMode: 'decks' | 'matrix' = 'decks';
   private arsenalSubMode: 'passivas' | 'ativas' = 'passivas';
   private comercialSubMode: 'store' | 'config' = 'store';
@@ -35,15 +33,10 @@ export class ForgeApp {
   private assetsSelectedCategory: string = 'all';
   private assetsSelectedAssets: Set<string> = new Set();
   private soundSubMode: 'library' | 'actions' | 'screens' = 'library';
-  private questsSelectedIndex: number = 0;
   private packsSelectedIndex: number = 0;
 
   private cardSubMode: 'quick' | 'avancado' | 'aparencia' | 'estetica' | 'efeitos' | 'verso' = 'quick';
   private previewMode: 'static' | 'video' = 'static';
-  private questSubMode: 'worldmap' | 'creator' | 'assets' | 'scenes' = 'worldmap';
-  private questAssets: string[] = [];
-  private worldMapCurrentTabIdx: number = 0;
-  private questAssetsMode: 'quest' | 'general' = 'quest';
   private isAssetsPopupOpen: boolean = false;
 
   private templates: any[] = [];
@@ -66,7 +59,6 @@ export class ForgeApp {
   private boardRenderer: BoardScreen;
   private onExit: () => void;
   private soundCentral: SoundCentralScreen | null = null;
-  private tabQuestMaker: TabQuestMaker | null = null;
   private scenarioClipboard: any = null;
 
   constructor(container: HTMLElement, initialState: any, callbacks: any) {
@@ -123,16 +115,13 @@ export class ForgeApp {
             this.currentMode = 'comercial';
             this.comercialSubMode = data.currentMode === 'config' ? 'config' : 'store';
           } else if (data.currentMode === 'questmaker') {
-            this.currentMode = 'cardengine';
-            this.cardEngineSubMode = 'matrix';
+            this.currentMode = 'markerdream';
           } else {
             this.currentMode = data.currentMode;
           }
         }
         if (data.cardSubMode) this.cardSubMode = data.cardSubMode;
-        if (data.questSubMode) this.questSubMode = data.questSubMode;
         if (data.selectedIndex !== undefined) this.selectedIndex = data.selectedIndex;
-        if (data.questsSelectedIndex !== undefined) this.questsSelectedIndex = data.questsSelectedIndex;
         if (data.packsSelectedIndex !== undefined) this.packsSelectedIndex = data.packsSelectedIndex;
       } catch(e) { console.warn('Failed to restore forge persistence', e); }
     }
@@ -164,9 +153,7 @@ export class ForgeApp {
         arsenalSubMode: this.arsenalSubMode,
         comercialSubMode: this.comercialSubMode,
         cardSubMode: this.cardSubMode,
-        questSubMode: this.questSubMode,
         selectedIndex: this.selectedIndex,
-        questsSelectedIndex: this.questsSelectedIndex,
         packsSelectedIndex: this.packsSelectedIndex
      };
      localStorage.setItem('forge_v2_persistence', JSON.stringify(data));
@@ -232,10 +219,6 @@ export class ForgeApp {
         classes: this.classes,
         selectedClassIds: this.selectedClassIds,
         quickFilter: this.quickFilter,
-        questSubMode: this.questSubMode,
-        questAssets: this.questAssets,
-        worldMapCurrentTabIdx: this.worldMapCurrentTabIdx,
-        questAssetsMode: this.questAssetsMode,
         isAssetsPopupOpen: this.isAssetsPopupOpen,
         customSpritePacks: this.customSpritePacks,
         customGallerySprites: this.customGallerySprites
@@ -306,9 +289,6 @@ export class ForgeApp {
         },
         clearAssetSelection: () => { this.assetsSelectedAssets.clear(); this.savePersistence(); this.renderTab(); },
         setSoundSubMode: (mode: string) => { this.soundSubMode = mode as any; this.savePersistence(); this.renderTab(); },
-        setQuestSubMode: (mode: string) => { this.questSubMode = mode as any; this.savePersistence(); this.renderTab(); },
-        setWorldMapTabIdx: (idx: number) => { this.worldMapCurrentTabIdx = idx; this.savePersistence(); this.renderTab(); },
-        setQuestAssetsMode: (mode: 'quest' | 'general') => { this.questAssetsMode = mode; this.renderTab(); },
         setAssetsPopupOpen: (open: boolean) => { this.isAssetsPopupOpen = open; this.renderTab(); },
         saveClasses: () => this.saveClasses()
      };
@@ -482,19 +462,12 @@ export class ForgeApp {
         (this.soundCentral as any).subMode = this.soundSubMode;
         main.innerHTML = `<div style="width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;">${this.soundCentral.render()}</div>`;
         this.soundCentral.bind(main, () => callbacks.setSoundSubMode((this.soundCentral as any).subMode), (m, c) => this.showToast(m, c));
-     } else if (this.currentMode === 'packs') {
+      } else if (this.currentMode === 'packs') {
         state.selectedIndex = this.packsSelectedIndex;
         if (!this.tabPacks) this.tabPacks = new TabPacks(state, callbacks, this.core);
         else this.tabPacks.updateContext(state, callbacks, this.core);
         main.innerHTML = this.tabPacks.render();
         this.tabPacks.bind(main);
-      } else if (this.currentMode === 'questmaker') {
-         // Clear skip flag to force one-time re-appearance for the user after this fix
-         localStorage.removeItem('qm_hub_skipped');
-         state.selectedIndex = this.questsSelectedIndex;
-         const tab = new TabQuestMaker(state, this.core, callbacks);
-         main.innerHTML = tab.render();
-         tab.bind(main);
       } else if (this.currentMode === 'mobbys') {
          const tab = new TabMobbys(state, callbacks);
          main.innerHTML = tab.render();

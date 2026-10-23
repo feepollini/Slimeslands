@@ -44,7 +44,9 @@ import { ScreensStudio } from '../screens/ScreensStudio';
 import { MotionAssetCanvas } from '../MotionAssetCanvas';
 import { PortraitEmulator } from '../PortraitEmulator';
 import { CharacterGrowthStudio } from './CharacterGrowthStudio';
-import { TrendingUp } from 'lucide-react';
+import { CharacterGalleryStudio } from './CharacterGalleryStudio';
+import { MotionSoloScreen } from '../motion/MotionSoloScreen';
+import { TrendingUp, FolderPlus } from 'lucide-react';
 import {
   loadCharactersRoster,
   saveCharactersRosterToStorage,
@@ -63,7 +65,17 @@ interface CharactersSoloScreenProps {
   showToast: (msg: string) => void;
 }
 
-type CharacterTab = 'visual' | 'pets' | 'inventario' | 'atributos' | 'crescimento' | 'assets' | 'telas' | 'emulador';
+type CharacterTab =
+  | 'galeria_personagens'
+  | 'visual'
+  | 'motion_rig'
+  | 'pets'
+  | 'inventario'
+  | 'atributos'
+  | 'crescimento'
+  | 'assets'
+  | 'telas'
+  | 'emulador';
 
 export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
   project,
@@ -87,7 +99,7 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
     return characters[0]?.id || 'char_hero_legendary';
   });
 
-  const [activeTab, setActiveTab] = useState<CharacterTab>('visual');
+  const [activeTab, setActiveTab] = useState<CharacterTab>('galeria_personagens');
   const [previewDirection, setPreviewDirection] = useState<'default' | 'up' | 'down' | 'left' | 'right'>('default');
   const [isPreviewWalking, setIsPreviewWalking] = useState<boolean>(true);
   const [sidePanelView, setSidePanelView] = useState<'emulator' | 'sprite_preview'>('emulator');
@@ -239,48 +251,63 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
 
             <div className="h-4 w-[1px] bg-zinc-800" />
 
-            {/* Carrossel Compacto de Personagens do Roster */}
+            {/* Carrossel Compacto de Personagens do Roster (limitado aos principais para não poluir com 100+ itens) */}
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
               <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider shrink-0 hidden md:inline">
-                Herói:
+                Recentes:
               </span>
-              {characters.map((char) => {
-                const isSelected = char.id === selectedCharacter.id;
-                const isCharApplied =
-                  project.activeCharacterId === char.id ||
-                  project.player?.id === char.id ||
-                  project.player?.name === char.name;
+              {(() => {
+                const topSlice = characters.slice(0, 5);
+                const visibleChars = topSlice.some((c) => c.id === selectedCharacter.id)
+                  ? topSlice
+                  : [selectedCharacter, ...topSlice.slice(0, 4)];
+                return visibleChars.map((char) => {
+                  const isSelected = char.id === selectedCharacter.id;
+                  const isCharApplied =
+                    project.activeCharacterId === char.id ||
+                    project.player?.id === char.id ||
+                    project.player?.name === char.name;
 
-                return (
-                  <button
-                    key={char.id}
-                    type="button"
-                    onClick={() => setSelectedCharacterId(char.id)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'bg-zinc-900 border-orange-500 text-white shadow-sm shadow-orange-500/10'
-                        : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    <div
-                      className="w-4 h-4 rounded flex items-center justify-center shrink-0 text-white text-[9px] font-bold overflow-hidden"
-                      style={{ backgroundColor: char.color || '#3b82f6' }}
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => setSelectedCharacterId(char.id)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                        isSelected
+                          ? 'bg-zinc-900 border-orange-500 text-white shadow-sm shadow-orange-500/10'
+                          : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      }`}
                     >
-                      {char.avatarPng ? (
-                        <img src={char.avatarPng} alt={char.name} className="w-full h-full object-contain" />
-                      ) : (
-                        char.name.charAt(0)
+                      <div
+                        className="w-4 h-4 rounded flex items-center justify-center shrink-0 text-white text-[9px] font-bold overflow-hidden"
+                        style={{ backgroundColor: char.color || '#3b82f6' }}
+                      >
+                        {char.avatarPng ? (
+                          <img src={char.avatarPng} alt={char.name} className="w-full h-full object-contain" />
+                        ) : (
+                          char.name.charAt(0)
+                        )}
+                      </div>
+                      <span className="max-w-[110px] truncate">{char.name}</span>
+                      {isCharApplied && (
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded px-1.5">
+                          Ativo
+                        </span>
                       )}
-                    </div>
-                    <span>{char.name}</span>
-                    {isCharApplied && (
-                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded px-1.5">
-                        Ativo
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                });
+              })()}
+              {characters.length > 5 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('galeria_personagens')}
+                  className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-[11px] text-zinc-400 hover:text-white shrink-0 cursor-pointer"
+                >
+                  +{characters.length - 5} na Galeria
+                </button>
+              )}
             </div>
           </div>
 
@@ -307,6 +334,16 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
                   <span>Usar na Fase</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('galeria_personagens')}
+              className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-black flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+              title="Abrir Galeria de Personagens e Importador de Pasta Mestra (Subpastas ➔ Action NPCs)"
+            >
+              <FolderPlus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span className="hidden sm:inline">Importar Pasta Mestra</span>
             </button>
 
             <button
@@ -348,6 +385,19 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
             <button
               type="button"
+              onClick={() => setActiveTab('galeria_personagens')}
+              className={`px-3 py-1 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                activeTab === 'galeria_personagens'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                  : 'bg-zinc-900 hover:bg-zinc-850 text-emerald-300 hover:text-emerald-200 border border-emerald-500/40'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>🗂️ Galeria de Personagens & Pasta Mestra ({characters.length})</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('visual')}
               className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                 activeTab === 'visual'
@@ -357,6 +407,19 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
             >
               <User className="w-3.5 h-3.5" />
               <span>Visual & Sprites</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('motion_rig')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                activeTab === 'motion_rig'
+                  ? 'bg-fuchsia-600 text-white font-extrabold shadow-sm shadow-fuchsia-500/30'
+                  : 'bg-zinc-900 hover:bg-zinc-850 text-fuchsia-300 hover:text-fuchsia-200 border border-fuchsia-500/40'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>🎬 Motion & Roupas Equipáveis ({selectedCharacter.motionLayers?.length || 1} camadas)</span>
             </button>
 
             <button
@@ -478,9 +541,27 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
       {/* 4. Área Principal: Formulário de Edição do Personagem vs Preview */}
       <div className="flex-1 flex overflow-hidden">
         {/* Painel Esquerdo: Conteúdo da Sub-Aba Ativa */}
-        <div className="flex-1 overflow-y-auto p-5 border-r border-zinc-850 bg-black/70">
-          <div className="max-w-3xl mx-auto space-y-5">
-            {/* Cabeçalho do Personagem em Edição */}
+        <div
+          className={`flex-1 ${
+            activeTab === 'motion_rig' ? 'overflow-hidden p-0' : 'overflow-y-auto p-5'
+          } border-r border-zinc-850 bg-black/70`}
+        >
+          {activeTab === 'motion_rig' ? (
+            <MotionSoloScreen
+              project={project}
+              onUpdateProject={setProject}
+              embeddedMode={true}
+              externalCharacter={selectedCharacter}
+              onUpdateExternalCharacter={(updater) => {
+                const nextChar = updater(selectedCharacter);
+                handleUpdateCurrentCharacter(nextChar);
+              }}
+              onOpenInventoryEditor={() => setActiveTab('inventario')}
+            />
+          ) : (
+          <div className={`${activeTab === 'galeria_personagens' ? 'w-full' : 'max-w-3xl mx-auto'} space-y-4`}>
+            {/* Cabeçalho do Personagem em Edição (oculto na Galeria, pois a Galeria já possui barra própria) */}
+            {activeTab !== 'galeria_personagens' && (
             <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-850 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div
@@ -511,13 +592,44 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
                 </div>
               </div>
 
-              <div className="text-right">
-                <span className="text-[10px] font-mono text-zinc-400 block uppercase">Capacidade da Mochila</span>
-                <span className="text-sm font-bold text-amber-400 font-mono">
-                  {selectedCharacter.defaultInventorySlots || 30} slots
-                </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('motion_rig')}
+                  className="px-3 py-1.5 rounded-xl bg-fuchsia-600/20 hover:bg-fuchsia-600/35 text-fuchsia-200 border border-fuchsia-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Abrir Motion Canvas espelhado para recortar camadas e criar Roupas/Skins/Cintos equipáveis"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+                  <span>🎬 Abrir Motion & Roupas</span>
+                </button>
+                <div className="text-right">
+                  <span className="text-[10px] font-mono text-zinc-400 block uppercase">Capacidade da Mochila</span>
+                  <span className="text-sm font-bold text-amber-400 font-mono">
+                    {selectedCharacter.defaultInventorySlots || 30} slots
+                  </span>
+                </div>
               </div>
             </div>
+            )}
+
+            {/* ABA 0: GALERIA UNIVERSAL DE PERSONAGENS & IMPORTADOR DE PASTA MESTRA */}
+            {activeTab === 'galeria_personagens' && (
+              <CharacterGalleryStudio
+                characters={characters}
+                selectedCharacterId={selectedCharacter.id}
+                project={project}
+                onSelectCharacter={(charId, targetTab) => {
+                  setSelectedCharacterId(charId);
+                  if (targetTab) {
+                    setActiveTab(targetTab);
+                  }
+                }}
+                onSaveCharactersRoster={handleSaveCharactersRoster}
+                onApplyAsPlayer={handleApplyToActivePhase}
+                onUpdateProject={setProject}
+                showToast={showToast}
+              />
+            )}
 
             {/* ABA 1: VISUAL & SPRITES */}
             {activeTab === 'visual' && (
@@ -939,6 +1051,7 @@ export const CharactersSoloScreen: React.FC<CharactersSoloScreenProps> = ({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Painel Direito: Menu Lateral com Emulador do Jogo e Preview do Sprite */}

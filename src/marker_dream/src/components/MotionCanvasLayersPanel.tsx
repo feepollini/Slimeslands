@@ -35,6 +35,15 @@ interface Props {
   onSavePieceToGallery?: (piece: { name: string; dataUrl: string }) => void;
   onSelectStudioTab?: (tab: 'layers' | 'draw' | 'physics') => void;
   onTriggerSave?: () => void;
+  onSyncMotionItemToCatalog?: (params: {
+    tag: string;
+    displayName: string;
+    equipSlot?: MarkerMotionLayer['equipSlot'];
+    iconPng?: string;
+    buyPrice?: number;
+  }) => void;
+  equippedMotionTags?: string[];
+  onToggleEquipMotionTag?: (tag: string) => void;
 }
 
 export const MotionCanvasLayersPanel: React.FC<Props> = ({
@@ -48,6 +57,9 @@ export const MotionCanvasLayersPanel: React.FC<Props> = ({
   onSavePieceToGallery,
   onSelectStudioTab,
   onTriggerSave,
+  onSyncMotionItemToCatalog,
+  equippedMotionTags = [],
+  onToggleEquipMotionTag,
 }) => {
   const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
   const [galleryTarget, setGalleryTarget] = useState<'replace_base' | 'add_piece'>('add_piece');
@@ -620,6 +632,127 @@ export const MotionCanvasLayersPanel: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* 4.5 PAINEL DE CONJUNTOS / MOTION ITEMS AGRUPADOS POR TAG (ROUPINHAS, SKINS, CINTO, ARMA) */}
+      {(() => {
+        const tagGroups = new Map<
+          string,
+          { tag: string; count: number; slot?: MarkerMotionLayer['equipSlot']; allVisible: boolean; samplePng?: string; sampleName: string }
+        >();
+        for (const l of layers) {
+          if (l.isBaseAsset) continue;
+          const t = (l.inventoryItemTag || '').trim();
+          if (!t) continue;
+          const prev = tagGroups.get(t);
+          if (!prev) {
+            tagGroups.set(t, {
+              tag: t,
+              count: 1,
+              slot: l.equipSlot,
+              allVisible: l.visible !== false,
+              samplePng: l.pngUrl,
+              sampleName: l.name,
+            });
+          } else {
+            prev.count += 1;
+            prev.allVisible = prev.allVisible && l.visible !== false;
+            if (!prev.samplePng && l.pngUrl) prev.samplePng = l.pngUrl;
+          }
+        }
+        const groupsList = Array.from(tagGroups.values());
+        if (groupsList.length === 0) return null;
+
+        return (
+          <div className="px-3 pb-2.5 shrink-0">
+            <div className="p-2.5 rounded-2xl bg-fuchsia-950/25 border border-fuchsia-500/35 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-fuchsia-300 flex items-center gap-1.5">
+                  <span>🎒 Conjuntos & Motion Items ({groupsList.length})</span>
+                </span>
+                <span className="text-[9px] text-fuchsia-300/70 font-mono">
+                  Agrupamento por Tag
+                </span>
+              </div>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto pr-0.5">
+                {groupsList.map((grp) => {
+                  const isEquippedInHero = equippedMotionTags
+                    .map((x) => x.toLowerCase())
+                    .includes(grp.tag.toLowerCase());
+                  return (
+                    <div
+                      key={grp.tag}
+                      className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-xl bg-slate-950/90 border border-fuchsia-500/30 text-[10px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-black text-fuchsia-200 truncate flex items-center gap-1">
+                          <span>#{grp.tag}</span>
+                          <span className="px-1.5 py-0.2 rounded bg-fuchsia-500/20 text-fuchsia-300 text-[8px] font-mono">
+                            {grp.count} {grp.count === 1 ? 'camada' : 'camadas'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVis = !grp.allVisible;
+                            onUpdateLayers(
+                              layers.map((l) =>
+                                (l.inventoryItemTag || '').trim() === grp.tag
+                                  ? { ...l, visible: nextVis }
+                                  : l
+                              )
+                            );
+                            if (onToggleEquipMotionTag) {
+                              onToggleEquipMotionTag(grp.tag);
+                            }
+                            showNotification(
+                              nextVis
+                                ? `👕 Conjunto "#${grp.tag}" vestido/visível (${grp.count} peça(s))!`
+                                : `🙈 Conjunto "#${grp.tag}" oculto como não-equipado!`
+                            );
+                          }}
+                          className={`px-1.5 py-0.5 rounded-lg font-bold border transition-all cursor-pointer ${
+                            grp.allVisible || isEquippedInHero
+                              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                              : 'bg-slate-900 border-slate-700 text-slate-400'
+                          }`}
+                          title="Testar vestir / tirar todas as camadas deste item de uma só vez"
+                        >
+                          {grp.allVisible ? '👕 Vestido' : '🙈 Oculto'}
+                        </button>
+                        {onSyncMotionItemToCatalog && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSyncMotionItemToCatalog({
+                                tag: grp.tag,
+                                displayName: grp.tag
+                                  .replace(/^skin_|^item_|^traje_/i, '')
+                                  .replace(/_/g, ' ')
+                                  .replace(/\b\w/g, (c) => c.toUpperCase()),
+                                equipSlot: grp.slot || 'skin',
+                                iconPng: grp.samplePng,
+                              });
+                              showNotification(
+                                `✨ Motion Item "#${grp.tag}" enviado para o Inventário, Lojas e Quests!`
+                              );
+                            }}
+                            className="px-1.5 py-0.5 rounded-lg bg-fuchsia-500/25 hover:bg-fuchsia-500/40 text-fuchsia-200 border border-fuchsia-400/40 font-bold transition-all cursor-pointer"
+                            title="Sincronizar este grupo como Item Equipável no Inventário, Lojas e Quests"
+                          >
+                            +Loja/Mochila
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 5. LISTA DE CAMADAS ESPAÇOSA, AMPLA E COM ROLAGEM VERTICAL LIVRE (SEM MAX-H CONSTRITIVO) */}
       <div className="px-3 pb-2 flex items-center justify-between text-xs font-bold text-slate-400 shrink-0">
         <span>Ordem de Profundidade (Z-Index)</span>
@@ -809,6 +942,15 @@ export const MotionCanvasLayersPanel: React.FC<Props> = ({
                       <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 text-[9px] font-mono">
                         {getPhysicsLabel(layer.physicsMode)}
                       </span>
+
+                      {layer.inventoryItemTag && (
+                        <span
+                          className="px-1.5 py-0.2 rounded bg-fuchsia-500/25 text-fuchsia-200 border border-fuchsia-400/40 text-[9px] font-black truncate max-w-[110px]"
+                          title={`Motion Item Equipável: #${layer.inventoryItemTag}`}
+                        >
+                          🎒 #{layer.inventoryItemTag}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1045,6 +1187,231 @@ export const MotionCanvasLayersPanel: React.FC<Props> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* 🎒 VÍNCULO MOTION ITEM (ROUPA / SKIN / CINTO / ARMA EQUIPÁVEL EM JOGO) */}
+                  {!isBase && (
+                    <div
+                      className="pt-2.5 border-t border-fuchsia-500/30 space-y-2 bg-fuchsia-950/15 -mx-1 px-2 py-2 rounded-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-fuchsia-300 flex items-center gap-1">
+                          <span>🎒 Motion Item (Roupa / Cinto / Equipável)</span>
+                        </span>
+                        {layer.inventoryItemTag && (
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/40">
+                            {
+                              layers.filter(
+                                (l) =>
+                                  !l.isBaseAsset &&
+                                  (l.inventoryItemTag || '').trim() ===
+                                    (layer.inventoryItemTag || '').trim()
+                              ).length
+                            }{' '}
+                            peça(s) no grupo
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-[9px] text-slate-400 leading-relaxed">
+                        Coloque a mesma <strong>Tag de Item</strong> em várias camadas (ex: peitoral + mangas ={' '}
+                        <code className="text-fuchsia-300">skin_real</code>) ou crie peças avulsas (<code className="text-fuchsia-300">cinto_ouro</code>). Em jogo, elas ficam ocultas até o jogador adquirir/equipar o item!
+                      </p>
+
+                      <div className="space-y-1.5">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-300 mb-0.5">
+                            Tag do Item / Conjunto (Agrupador)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={layer.inventoryItemTag || ''}
+                              placeholder="Ex: skin_armadura_solar, cinto_couro, espada_fogo..."
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/\s+/g, '_');
+                                const updated = layers.map((l) =>
+                                  l.id === layer.id
+                                    ? {
+                                        ...l,
+                                        inventoryItemTag: val || undefined,
+                                        equipSlot: l.equipSlot || 'skin',
+                                        gameVisibilityRule: l.gameVisibilityRule || 'when_equipped',
+                                      }
+                                    : l
+                                );
+                                onUpdateLayers(updated);
+                              }}
+                              className="flex-1 bg-slate-950 border border-fuchsia-500/40 rounded-lg px-2 py-1 text-[10px] text-white font-mono focus:outline-hidden focus:border-fuchsia-400"
+                            />
+                            {layer.inventoryItemTag && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = layers.map((l) =>
+                                    l.id === layer.id
+                                      ? { ...l, inventoryItemTag: undefined }
+                                      : l
+                                  );
+                                  onUpdateLayers(updated);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-slate-800 text-[9px] font-bold"
+                                title="Remover tag de item desta camada"
+                              >
+                                Limpar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Atalhos rápidos de tags existentes em outras camadas ou sugestões */}
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {Array.from(
+                            new Set<string>([
+                              ...layers
+                                .map((l) => (l.inventoryItemTag || '').trim())
+                                .filter(Boolean),
+                              'skin_traje_real',
+                              'cinto_alquimista',
+                              'capa_vento',
+                              'espada_solar',
+                              'asas_celestiais',
+                            ])
+                          )
+                            .slice(0, 6)
+                            .map((presetTag) => {
+                              const isActiveTag =
+                                (layer.inventoryItemTag || '').trim() === presetTag;
+                              return (
+                                <button
+                                  key={presetTag}
+                                  type="button"
+                                  onClick={() => {
+                                    const autoSlot: MarkerMotionLayer['equipSlot'] =
+                                      presetTag.includes('cinto')
+                                        ? 'belt'
+                                        : presetTag.includes('capa')
+                                        ? 'cape'
+                                        : presetTag.includes('espada') || presetTag.includes('arma')
+                                        ? 'weapon'
+                                        : presetTag.includes('asa')
+                                        ? 'wings'
+                                        : 'skin';
+                                    const updated = layers.map((l) =>
+                                      l.id === layer.id
+                                        ? {
+                                            ...l,
+                                            inventoryItemTag: presetTag,
+                                            equipSlot: l.equipSlot || autoSlot,
+                                            gameVisibilityRule:
+                                              l.gameVisibilityRule || 'when_equipped',
+                                          }
+                                        : l
+                                    );
+                                    onUpdateLayers(updated);
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border transition-all cursor-pointer ${
+                                    isActiveTag
+                                      ? 'bg-fuchsia-500/30 border-fuchsia-400 text-fuchsia-100'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-fuchsia-300'
+                                  }`}
+                                >
+                                  #{presetTag}
+                                </button>
+                              );
+                            })}
+                        </div>
+
+                        {layer.inventoryItemTag && (
+                          <div className="grid grid-cols-2 gap-1.5 pt-1">
+                            <div>
+                              <label className="block text-[9px] text-slate-400 mb-0.5">
+                                Categoria / Slot Visual
+                              </label>
+                              <select
+                                value={layer.equipSlot || 'skin'}
+                                onChange={(e) => {
+                                  const slot = e.target.value as MarkerMotionLayer['equipSlot'];
+                                  const tag = (layer.inventoryItemTag || '').trim();
+                                  // Sincroniza o slot em todas as camadas do mesmo grupo
+                                  const updated = layers.map((l) =>
+                                    l.id === layer.id || (tag && (l.inventoryItemTag || '').trim() === tag)
+                                      ? { ...l, equipSlot: slot }
+                                      : l
+                                  );
+                                  onUpdateLayers(updated);
+                                }}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 text-[10px] text-white"
+                              >
+                                <option value="skin">🥋 Roupa / Skin Completa</option>
+                                <option value="armor">🛡️ Peitoral / Armadura</option>
+                                <option value="belt">🎗️ Cinto / Faixa</option>
+                                <option value="weapon">⚔️ Arma / Espada</option>
+                                <option value="cape">🧣 Capa / Manto</option>
+                                <option value="wings">🪽 Asas</option>
+                                <option value="head">🪖 Cabeça / Chapéu</option>
+                                <option value="boots">👢 Botas / Calçado</option>
+                                <option value="accessory">💍 Acessório / Amuleto</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[9px] text-slate-400 mb-0.5">
+                                Regra de Revelação em Jogo
+                              </label>
+                              <select
+                                value={layer.gameVisibilityRule || 'when_equipped'}
+                                onChange={(e) => {
+                                  const rule = e.target.value as MarkerMotionLayer['gameVisibilityRule'];
+                                  const tag = (layer.inventoryItemTag || '').trim();
+                                  const updated = layers.map((l) =>
+                                    l.id === layer.id || (tag && (l.inventoryItemTag || '').trim() === tag)
+                                      ? { ...l, gameVisibilityRule: rule }
+                                      : l
+                                  );
+                                  onUpdateLayers(updated);
+                                }}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 text-[10px] text-white"
+                              >
+                                <option value="when_equipped">🎒 Ao Equipar na Mochila</option>
+                                <option value="when_acquired">🛍️ Ao Adquirir (Loja/Quest)</option>
+                                <option value="always">👁️ Sempre Visível</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {layer.inventoryItemTag && onSyncMotionItemToCatalog && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cleanTag = (layer.inventoryItemTag || '').trim();
+                              if (!cleanTag) return;
+                              onSyncMotionItemToCatalog({
+                                tag: cleanTag,
+                                displayName:
+                                  layer.name && !layer.name.toLowerCase().startsWith('peça')
+                                    ? layer.name
+                                    : cleanTag
+                                        .replace(/^skin_|^item_|^traje_/i, '')
+                                        .replace(/_/g, ' ')
+                                        .replace(/\b\w/g, (c) => c.toUpperCase()),
+                                equipSlot: layer.equipSlot || 'skin',
+                                iconPng: layer.pngUrl,
+                              });
+                              showNotification(
+                                `✨ Item "#${cleanTag}" criado/sincronizado no Inventário com a tag Motion Item! Disponível em Lojas, Quests e Mochila.`
+                              );
+                            }}
+                            className="w-full mt-1 py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white text-[10px] font-black uppercase tracking-wider shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Gerar / Sincronizar Motion Item no Inventário & Lojas</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

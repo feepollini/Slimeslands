@@ -34,6 +34,7 @@ import { getOrCreateScreensConfig } from '../screens/ScreensStudio';
 import { loadCharactersRoster } from '../../utils/characterHelpers';
 import { loadInventoryProjects } from '../../utils/inventoryHelpers';
 import { ensureProjectQuestsConfig } from '../../utils/questEngine';
+import { createStandaloneInterceptTestLevel } from '../../utils/interceptTestPhaseGenerator';
 
 interface Props {
   project?: MapProject;
@@ -64,6 +65,7 @@ interface Props {
   onOpenQuests?: () => void;
   onOpenHudUniversal?: (screenId?: string) => void;
   onOpenMindMap?: () => void;
+  onOpenMotionStudio?: () => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
 }
 
@@ -87,6 +89,7 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
   onOpenQuests,
   onOpenHudUniversal,
   onOpenMindMap,
+  onOpenMotionStudio,
   onUpdateProject,
 }) => {
   const currentProjectMap = project ? getOrCreateWorldMapConfig(project) : null;
@@ -369,9 +372,33 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] font-mono tracking-widest text-zinc-400 uppercase flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-500" />
-              <span>Marker Dream • Estúdios e Editores da Engine (7 Editores Integrados)</span>
+              <span>Marker Dream • Estúdios e Editores da Engine (8 Editores Integrados)</span>
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const testLvl = createStandaloneInterceptTestLevel();
+                  onPlayLevel(testLvl);
+                }}
+                className="px-3 py-1 rounded-md bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 border border-rose-300/40"
+                title="Jogar imediatamente a Fase Teste do novo evento Interceptação & Escolta Guiada"
+              >
+                <span>🚨</span>
+                <span>Jogar Fase Teste: Intercept & Escolta</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const testLvl = createStandaloneInterceptTestLevel();
+                  onOpenLevelInEditor(testLvl);
+                }}
+                className="px-2.5 py-1 rounded-md bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-[11px] text-rose-200 font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                title="Abrir a Fase Teste de Interceptação & Escolta no Editor de Fase"
+              >
+                <Edit3 className="w-3 h-3 text-rose-400" />
+                <span>Abrir Teste no Editor</span>
+              </button>
               {activeLevel && (
                 <button
                   type="button"
@@ -395,7 +422,7 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-2.5">
             {/* 1. EDITOR DE FASE */}
             <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-orange-500/50 transition-all group shadow-sm">
               <div className="space-y-1.5">
@@ -617,6 +644,37 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
                 >
                   <Brain className="w-3 h-3 shrink-0" />
                   <span className="truncate">Mapa Mental</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 8. ESTÚDIO MOTION CANVAS 2D & ROUPAS EQUIPÁVEIS (SOLO) */}
+            <div className="rounded-xl bg-gradient-to-b from-fuchsia-950/45 via-zinc-900/90 to-zinc-950 border border-fuchsia-500/45 p-3 flex flex-col justify-between hover:border-fuchsia-400 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-fuchsia-500/20 border border-fuchsia-500/40 flex items-center justify-center text-fuchsia-300 shrink-0">
+                    <Film className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/30 font-bold truncate">
+                    Paper-Doll 2D
+                  </span>
+                </div>
+                <h3 className="text-xs font-bold text-white group-hover:text-fuchsia-300 transition-colors leading-tight">
+                  8. Motion &amp; Skins
+                </h3>
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Rigging 2D, física, roupas, cintos e itens equipáveis por Tag.
+                </p>
+              </div>
+
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
+                <button
+                  type="button"
+                  onClick={() => (onOpenMotionStudio ? onOpenMotionStudio() : onGoToEditor())}
+                  className="w-full py-1.5 px-2 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-fuchsia-600/20 truncate"
+                >
+                  <Film className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Motion Studio</span>
                 </button>
               </div>
             </div>

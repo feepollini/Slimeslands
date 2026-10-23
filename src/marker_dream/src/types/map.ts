@@ -240,6 +240,16 @@ export interface ActionNpcConfig {
   rarityDropRule?: 'auto' | 'common' | 'rare' | 'epic' | 'legendary'; // Regra de raridade p/ drop de variação da Carta Matriz
   scanDialogueText?: string; // Fala exibida ao entrar na Fase de Escaneamento / Desafio Boss Battle
   linkedMobbyId?: string; // Vínculo opcional com Mobby do MobbyManager
+  passiveAbilityId?: string; // Habilidade Passiva da Forja V2 vinculada ao NPC / Carta
+  activeArtifactId?: string; // Artefato / Habilidade Ativa da Forja V2 usada pelo NPC e dropável na vitória
+  battleScenarioKey?: string; // Cenário da Forja V2 para o fundo da batalha contra este NPC
+  battleBgmUrl?: string; // Trilha sonora da Central de Sons da Forja V2 para a batalha
+  // Sprites Direcionais Opcionais (4 Direções - Igual ao Player)
+  avatarUpPng?: string; // Cima / Costas (Up)
+  avatarDownPng?: string; // Baixo / Frente (Down)
+  avatarLeftPng?: string; // Esquerda (Left)
+  avatarRightPng?: string; // Direita (Right)
+  facingDirection?: 'up' | 'down' | 'left' | 'right'; // Direção inicial / padrão
 }
 
 export interface QuestResource {
@@ -306,6 +316,11 @@ export interface MarkerMotionLayer {
   pins?: { x: number; y: number; label?: string }[]; // Pinos rígidos de fixação cravando a peça na malha pai
   linkedLayerId?: string; // ID da camada vinculada/sincronizada (ex: Asa Esquerda <-> Asa Direita)
   syncWingMirror?: boolean; // Se true, espelha o ângulo de rotação para simetria perfeita em asas opostas
+  // Sistema de Motion Items (Camadas Agrupáveis por Tag de Item de Inventário — Roupas, Skins, Cintos, Armas, Asas)
+  inventoryItemTag?: string; // Tag de agrupamento vinculada ao Inventário (ex: 'skin_armadura_solar', 'cinto_real')
+  linkedItemId?: string; // ID opcional do InventoryItemDefinition vinculado
+  equipSlot?: 'skin' | 'head' | 'armor' | 'belt' | 'boots' | 'weapon' | 'cape' | 'wings' | 'accessory';
+  gameVisibilityRule?: 'always' | 'when_acquired' | 'when_equipped'; // Em jogo: sempre visível, ao adquirir ou ao equipar
 }
 
 export interface StationSubAssetSlot {
@@ -422,7 +437,8 @@ export interface MapMarker {
   // Eventos Múltiplos e Modulares (Simultâneos ou Sequenciais)
   events?: MarkerEventItem[];
   // Eventos (marcador tipo 'event' ou disparados): UM evento por marcador, disparado ao chegar/tocar ou gatilho
-  eventKind?: 'weather' | 'zoom' | 'dialogue' | 'popup' | 'video' | 'duel' | 'cutscene' | 'vfx' | 'teleport' | 'sound' | 'cinematic' | 'sound_area' | 'quest';
+  eventKind?: 'weather' | 'zoom' | 'dialogue' | 'popup' | 'video' | 'duel' | 'cutscene' | 'vfx' | 'teleport' | 'sound' | 'cinematic' | 'sound_area' | 'quest' | 'intercept';
+  interceptConfig?: InterceptEventConfig; // Configuração completa do evento de Interceptação & Escolta Guiada
   eventWeather?: 'none' | 'night' | 'rain' | 'dawn' | 'leaves'; // clima vigente enquanto o herói está no raio
   eventZoom?: number; // zoom da câmera durante o evento
   eventDuration?: number; // segundos de duração (0 = manual: até fechar / fim do vídeo)
@@ -478,6 +494,13 @@ export interface MapMarker {
   npcPatrol?: NpcPatrolConfig; // Auto-caminhe / patrulha com presets e caminhos personalizados
   actionNpc?: ActionNpcConfig; // Modalidade Action NPC com combate, raio sensorial e inteligência autônoma
   emotionState?: NpcEmotionState; // Estado procedural atual de emoção (ira, medo, curiosidade, etc.)
+  // Sprites Direcionais Opcionais para NPC e Action NPC (4 Direções - Igual ao Player)
+  avatarUpPng?: string; // Cima / Costas (Up)
+  avatarDownPng?: string; // Baixo / Frente (Down)
+  avatarLeftPng?: string; // Esquerda (Left)
+  avatarRightPng?: string; // Direita (Right)
+  facingDirection?: 'up' | 'down' | 'left' | 'right'; // Direção inicial / padrão no mapa
+  npcBattleMode?: 'boss' | 'duel';
   // Quest dada pelo NPC (UMA por NPC, simples): coletar / falar / descobrir / duelar
   quest?: {
     kind: 'collect' | 'deliver' | 'reach' | 'interact' | 'talk' | 'discover' | 'duel';
@@ -565,7 +588,103 @@ export interface MapMarker {
   shopId?: string;
   shopName?: string;
   mobSpecies?: string;
+  passiveAbilityId?: string;
+  activeArtifactId?: string;
+  battleScenarioKey?: string;
+  battleBgmUrl?: string;
 }
+
+export type InterceptSpawnOrigin =
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'top_left'
+  | 'top_right'
+  | 'bottom_left'
+  | 'bottom_right'
+  | 'marker_pos';
+
+export type InterceptActorSource =
+  | 'custom_inline' // NPC criado na hora com nome, PNG e 4 direções
+  | 'existing_npc'  // Usa um marcador NPC já presente no mapa
+  | 'character_roster'; // Usa um personagem salvo do Editor de Personagens
+
+export type InterceptPostBehavior =
+  | 'stay_at_destination' // Permanece no destino como NPC interagível
+  | 'return_and_vanish'   // Caminha para fora da tela e some
+  | 'follow_player';      // Continua acompanhando o jogador como aliado
+
+export interface InterceptEventConfig {
+  // 1. Quem Intercepta (Ator)
+  actorSource: InterceptActorSource;
+  existingNpcMarkerId?: string; // Se actorSource === 'existing_npc'
+  characterRosterId?: string;   // Se actorSource === 'character_roster'
+  inlineNpcName?: string;       // Nome do NPC feito na hora (ex: "Capitã Lyra")
+  inlineNpcColor?: string;
+  inlineNpcSize?: number;       // Tamanho em px (padrão 64)
+  inlineNpcPng?: string;        // Sprite base / Frente
+  inlineAvatarUpPng?: string;
+  inlineAvatarDownPng?: string;
+  inlineAvatarLeftPng?: string;
+  inlineAvatarRightPng?: string;
+
+  // 2. De Onde Surge e Como se Aproxima
+  spawnOrigin: InterceptSpawnOrigin; // Canto da tela de onde surge
+  approachSpeed?: number;            // Velocidade ao correr até o player (padrão 3.8)
+  stopDistanceFromPlayer?: number;   // Distância que para na frente do player (padrão 52px)
+  showExclamationEmote?: boolean;    // Exibe balão '❗' ao surgir e correr até o player
+  cameraFocusOnInterceptor?: boolean;// Foca/dá zoom suave na abordagem
+  interceptCameraZoom?: number;      // Zoom durante a abordagem (ex: 1.25)
+
+  // 3. Fala Inicial ao Abordar o Jogador
+  greetingDialogues: string[];       // Frases ditas assim que chega até o player
+
+  // 4. Escolta / Guiar Locomoção do Jogador ("Levar a algum lugar")
+  escortEnabled: boolean;            // Se após falar, leva o player até um destino controlando a locomoção dele
+  destinationType?: 'marker' | 'coordinates';
+  destinationMarkerId?: string;      // Marcador de destino para onde o NPC leva o player
+  destinationX?: number;             // Coordenada X caso destinationType === 'coordinates'
+  destinationY?: number;             // Coordenada Y caso destinationType === 'coordinates'
+  escortSpeed?: number;              // Velocidade da caminhada guiada (padrão 3.0)
+  playerFollowOffset?: number;       // Distância que o player caminha atrás/ao lado do guia (padrão 44px)
+  escortBannerText?: string;         // Frase exibida no topo/balão durante o trajeto (ex: "Seguindo Capitã Lyra...")
+
+  // 5. Chegada no Destino (Mais Diálogos, Quests ou Outros Eventos)
+  arrivalDialogues?: string[];       // Frases ditas ao chegar no local de destino
+  onArrivalEventMarkerId?: string;   // Dispara outro marcador de evento ao chegar no destino
+  onArrivalQuestId?: string;         // Inicia ou avança uma Quest ao chegar
+  onArrivalRewardCoins?: number;     // Ouro concedido ao concluir a escolta
+  actorPostBehavior?: InterceptPostBehavior;
+}
+
+export const DEFAULT_INTERCEPT_CONFIG: InterceptEventConfig = {
+  actorSource: 'custom_inline',
+  inlineNpcName: 'Capitã Lyra (Guia Real)',
+  inlineNpcColor: '#f59e0b',
+  inlineNpcSize: 64,
+  spawnOrigin: 'top_right',
+  approachSpeed: 3.8,
+  stopDistanceFromPlayer: 52,
+  showExclamationEmote: true,
+  cameraFocusOnInterceptor: true,
+  interceptCameraZoom: 1.25,
+  greetingDialogues: [
+    'Alto lá, viajante! Esta área está repleta de perigos à frente.',
+    'Venha comigo! Vou guiar você em segurança até o nosso ponto de encontro.',
+  ],
+  escortEnabled: true,
+  destinationType: 'marker',
+  escortSpeed: 3.1,
+  playerFollowOffset: 44,
+  escortBannerText: 'Seguindo até o destino...',
+  arrivalDialogues: [
+    'Chegamos em segurança! Aqui você encontrará abrigo e suprimentos.',
+    'Boa sorte na sua jornada, herói!',
+  ],
+  onArrivalRewardCoins: 100,
+  actorPostBehavior: 'stay_at_destination',
+};
 
 export type MarkerEventActionType =
   | 'quest'
@@ -574,7 +693,8 @@ export type MarkerEventActionType =
   | 'sound_area'
   | 'cinematic'
   | 'weather'
-  | 'reward';
+  | 'reward'
+  | 'intercept';
 
 export interface MarkerEventItem {
   id: string;
@@ -635,6 +755,9 @@ export interface MarkerEventItem {
 
   // 7. Config de Recompensas
   rewardSlots?: (string | null)[];
+
+  // 8. Config de Interceptação & Escolta Guiada ("Intercept")
+  interceptConfig?: InterceptEventConfig;
 }
 
 export type RouteStyle = 'dashed' | 'solid' | 'dotted' | 'footprints' | 'glowing';
@@ -669,6 +792,8 @@ export interface PlayerConfig {
   color?: string; // Cor do marcador do jogador
   speed?: number; // Velocidade de movimento
   motionLayers?: MarkerMotionLayer[]; // Composição de peças e física do Motion Canvas herdada
+  equippedMotionTags?: string[]; // Tags de Motion Items (roupas/skins/cintos/armas) atualmente equipadas no personagem
+  unlockedMotionTags?: string[]; // Tags de Motion Items já adquiridas/desbloqueadas pelo jogador
   inventory?: PlayerInventoryConfig; // Inventário global do jogador vinculado
   // Propriedades do Editor de Personagens (Multi-personagens, classes, inventário pré-definido)
   characterId?: string; // ID único do personagem na biblioteca
@@ -696,6 +821,11 @@ export interface PlayerConfig {
   // Sistema de Pet Companheiro & Dash do Jogador
   petConfig?: PlayerPetConfig;
   dashConfig?: PlayerDashConfig;
+  // Configuração padrão para uso como NPC Action / Patrulha Procedural no Editor de Fases e Eventos
+  npcPresetMode?: 'passive_action_procedural' | 'curious_action_procedural' | 'hostile_action' | 'patrol_procedural';
+  defaultActionNpc?: Partial<ActionNpcConfig>;
+  defaultNpcPatrol?: MapMarker['npcPatrol'];
+  sourceSubfolder?: string;
 }
 
 export type PetAttackStyle =
@@ -737,6 +867,7 @@ export interface PlayerPetCatalogItem {
   curiousSpeed?: number;
   color?: string;
   scannedFromMarkerId?: string;
+  motionLayers?: MarkerMotionLayer[]; // Camadas e Rigging 2D do Pet no Motion Canvas
 }
 
 export interface PlayerPetConfig {
@@ -766,6 +897,7 @@ export interface PlayerPetConfig {
   attackRange?: number; // Alcance em px para o pet atacar inimigos (padrão 200)
   color?: string;
   petGallery?: PlayerPetCatalogItem[];
+  motionLayers?: MarkerMotionLayer[];
 }
 
 export interface PlayerDashConfig {
@@ -1054,6 +1186,7 @@ export function getResolvedPlayerPetConfig(player?: PlayerConfig): {
           attackDamage,
           attackRange,
           color: foundPet.color || cfg?.color || '#f59e0b',
+          motionLayers: foundPet.motionLayers || cfg?.motionLayers,
         }
       : null;
 
@@ -1121,7 +1254,8 @@ export type ItemStateTag =
   | 'consumable' // Consumível (poção, comida, elixir)
   | 'tradable' // Vendável / Trocável com mercadores
   | 'buyable' // Comprável em lojas / NPCs
-  | 'natural_biome_spawn'; // Spawn Natural por Bioma
+  | 'natural_biome_spawn' // Spawn Natural por Bioma
+  | 'motion_item'; // Camada / Roupa / Equipamento animado do Motion Canvas
 
 export type ItemCurrencyType =
   | 'gold' // Moedas de Ouro (🪙)
@@ -1193,11 +1327,15 @@ export interface InventoryItemDefinition {
 
   // Atributos de Equipamento
   equipmentStats?: {
-    slot: 'weapon' | 'armor' | 'accessory' | 'helmet' | 'boots';
+    slot: 'weapon' | 'armor' | 'accessory' | 'helmet' | 'boots' | 'belt' | 'skin' | 'cape' | 'wings';
     attack?: number;
     defense?: number;
     speed?: number;
   };
+
+  // Vínculo com Camadas do Motion Canvas (Paper-Doll / Roupas / Skins / Cinto / Arma com Física)
+  motionLayerTag?: string; // Tag que revela/equipa todas as camadas com este inventoryItemTag no personagem
+  motionEquipSlot?: 'skin' | 'head' | 'armor' | 'belt' | 'boots' | 'weapon' | 'cape' | 'wings' | 'accessory';
 
   // Conteúdo de Leitura (Livros, Cartas, Pergaminhos)
   readableContent?: ItemReadableContent;
@@ -1251,6 +1389,8 @@ export interface PlayerInventoryItem {
     healthRestore?: number;
   };
   sourceLevelId?: string; // Fase ou local de onde veio o item
+  motionLayerTag?: string; // Tag vinculada às camadas do Motion Canvas do personagem
+  motionEquipSlot?: 'skin' | 'head' | 'armor' | 'belt' | 'boots' | 'weapon' | 'cape' | 'wings' | 'accessory';
 }
 
 export interface PlayerInventoryConfig {
@@ -1971,3 +2111,50 @@ export type TabId =
   | 'terrain_pen'
   | 'quests'
   | 'pets';
+
+/**
+ * Resolve de forma inteligente o PNG direcional ativo de um Marcador (NPC / Action NPC),
+ * com fallback para o asset base (`customIconPng`) e espelhamento automático caso apenas
+ * um dos lados (Esquerda ou Direita) tenha sido preenchido.
+ */
+export function pickMarkerDirectionalPng(
+  marker: MapMarker,
+  dir?: string
+): { png: string | undefined; hasDedicatedDirectional: boolean; autoMirrorX: boolean } {
+  const effectiveDir = dir || marker.facingDirection || marker.actionNpc?.facingDirection || 'down';
+  const up = marker.avatarUpPng || marker.actionNpc?.avatarUpPng;
+  const down = marker.avatarDownPng || marker.actionNpc?.avatarDownPng;
+  const left = marker.avatarLeftPng || marker.actionNpc?.avatarLeftPng;
+  const right = marker.avatarRightPng || marker.actionNpc?.avatarRightPng;
+  const base = marker.customIconPng || down || up || right || left;
+
+  if (effectiveDir === 'up' && up) {
+    return { png: up, hasDedicatedDirectional: true, autoMirrorX: false };
+  }
+  if (effectiveDir === 'down' && down) {
+    return { png: down, hasDedicatedDirectional: true, autoMirrorX: false };
+  }
+  if (effectiveDir === 'left') {
+    if (left) {
+      return { png: left, hasDedicatedDirectional: true, autoMirrorX: false };
+    }
+    if (right) {
+      // Se só preencheu Direita, espelha automaticamente para a Esquerda!
+      return { png: right, hasDedicatedDirectional: true, autoMirrorX: true };
+    }
+    return { png: base, hasDedicatedDirectional: false, autoMirrorX: true };
+  }
+  if (effectiveDir === 'right') {
+    if (right) {
+      return { png: right, hasDedicatedDirectional: true, autoMirrorX: false };
+    }
+    if (left) {
+      // Se só preencheu Esquerda, espelha automaticamente para a Direita!
+      return { png: left, hasDedicatedDirectional: true, autoMirrorX: true };
+    }
+    return { png: base, hasDedicatedDirectional: false, autoMirrorX: false };
+  }
+
+  return { png: base, hasDedicatedDirectional: false, autoMirrorX: false };
+}
+

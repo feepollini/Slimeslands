@@ -6,9 +6,14 @@ import {
   resolveNpcBattleMode,
   resolveNpcDeckCards,
   getRarityRules,
+  getAvailablePassiveAbilities,
+  getAvailableActiveArtifacts,
+  getAvailableBattleScenarios,
+  getAvailableForgeSounds,
   RarityKey,
 } from '../../../../../core/NpcCardBattleBridge';
-import { Sparkles, Swords, Shield, Layers, Plus, X, Shuffle } from 'lucide-react';
+import { SoundManager } from '../../../../../ui/utils/SoundManager';
+import { Sparkles, Layers, X, Shuffle, Volume2, Zap, Shield, Image, Music } from 'lucide-react';
 
 interface NpcMatrixCardLinkPanelProps {
   marker: MapMarker;
@@ -23,6 +28,11 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
 }) => {
   const allMatrixCards = useMemo(() => getAvailableMatrixCards(), []);
   const rarityRules = useMemo(() => getRarityRules(), []);
+  const allPassives = useMemo(() => getAvailablePassiveAbilities(), []);
+  const allArtifacts = useMemo(() => getAvailableActiveArtifacts(), []);
+  const allScenarios = useMemo(() => getAvailableBattleScenarios(), []);
+  const allSounds = useMemo(() => getAvailableForgeSounds(), []);
+
   const linkedCard = useMemo(() => resolveNpcMatrixCard(marker), [marker, allMatrixCards]);
   const currentBattleMode = resolveNpcBattleMode(marker);
   const currentDeckCards = useMemo(() => resolveNpcDeckCards(marker), [marker, allMatrixCards]);
@@ -30,6 +40,14 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
 
   const currentRarityRule =
     marker.actionNpc?.rarityDropRule || marker.rarityDropRule || 'auto';
+  const currentPassiveId =
+    marker.actionNpc?.passiveAbilityId || marker.passiveAbilityId || '';
+  const currentArtifactId =
+    marker.actionNpc?.activeArtifactId || marker.activeArtifactId || '';
+  const currentScenarioKey =
+    marker.actionNpc?.battleScenarioKey || marker.battleScenarioKey || '';
+  const currentBgmUrl =
+    marker.actionNpc?.battleBgmUrl || marker.battleBgmUrl || '';
 
   const updateLinkFields = (patch: {
     matrixCardId?: string;
@@ -37,6 +55,10 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
     deckCardIds?: string[];
     rarityDropRule?: 'auto' | RarityKey;
     scanDialogueText?: string;
+    passiveAbilityId?: string;
+    activeArtifactId?: string;
+    battleScenarioKey?: string;
+    battleBgmUrl?: string;
   }) => {
     const nextActionNpc = marker.actionNpc
       ? {
@@ -46,6 +68,10 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
           ...(patch.deckCardIds !== undefined ? { deckCardIds: patch.deckCardIds } : {}),
           ...(patch.rarityDropRule !== undefined ? { rarityDropRule: patch.rarityDropRule } : {}),
           ...(patch.scanDialogueText !== undefined ? { scanDialogueText: patch.scanDialogueText } : {}),
+          ...(patch.passiveAbilityId !== undefined ? { passiveAbilityId: patch.passiveAbilityId } : {}),
+          ...(patch.activeArtifactId !== undefined ? { activeArtifactId: patch.activeArtifactId } : {}),
+          ...(patch.battleScenarioKey !== undefined ? { battleScenarioKey: patch.battleScenarioKey } : {}),
+          ...(patch.battleBgmUrl !== undefined ? { battleBgmUrl: patch.battleBgmUrl } : {}),
         }
       : undefined;
 
@@ -54,6 +80,10 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
       ...(patch.battleMode !== undefined ? { battleMode: patch.battleMode } : {}),
       ...(patch.deckCardIds !== undefined ? { deckCardIds: patch.deckCardIds } : {}),
       ...(patch.rarityDropRule !== undefined ? { rarityDropRule: patch.rarityDropRule } : {}),
+      ...(patch.passiveAbilityId !== undefined ? { passiveAbilityId: patch.passiveAbilityId } : {}),
+      ...(patch.activeArtifactId !== undefined ? { activeArtifactId: patch.activeArtifactId } : {}),
+      ...(patch.battleScenarioKey !== undefined ? { battleScenarioKey: patch.battleScenarioKey } : {}),
+      ...(patch.battleBgmUrl !== undefined ? { battleBgmUrl: patch.battleBgmUrl } : {}),
       ...(nextActionNpc ? { actionNpc: nextActionNpc } : {}),
     });
   };
@@ -68,10 +98,10 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
           </span>
           <div className="min-w-0">
             <div className="text-xs font-black text-amber-200 uppercase tracking-wide truncate">
-              🃏 Vínculo na Matriz de Cartas &amp; Modo de Batalha
+              🃏 Matriz de Cartas, Artefatos, Cenários &amp; Sons
             </div>
             <div className="text-[10px] text-slate-400 truncate">
-              Ao escanear ou derrotar este NPC, dropa uma variação da Carta Matriz
+              Conecta este NPC à Forja V2 (Carta Matriz, Passiva, Ativa, Cenário e Trilha)
             </div>
           </div>
         </div>
@@ -344,7 +374,120 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
         </div>
       </div>
 
-      {/* 4. Fala de Desafio ao Entrar na Fase de Escaneamento */}
+      {/* 4. Artefatos (Ativas) & Passivas da Forja V2 */}
+      <div className="p-2.5 bg-slate-900/90 border border-indigo-500/35 rounded-xl space-y-2">
+        <div className="text-[10.5px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5 text-amber-400" />
+          <span>4. Artefatos (Ativas) &amp; Passivas da Forja V2:</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* Passiva */}
+          <div className="space-y-1">
+            <label className="text-[9.5px] font-bold text-slate-300 flex items-center gap-1">
+              <Shield className="w-3 h-3 text-emerald-400" />
+              <span>Passiva da Carta / Boss:</span>
+            </label>
+            <select
+              value={currentPassiveId}
+              onChange={(e) => updateLinkFields({ passiveAbilityId: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[10.5px] font-bold text-emerald-200 focus:outline-none focus:border-emerald-400"
+            >
+              <option value="">🎲 Sorteio Automático (Rara+)</option>
+              {allPassives.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.icon} {p.name} — {p.description}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Artefato Ativo (usado pelo NPC e dropado para o Arsenal) */}
+          <div className="space-y-1">
+            <label className="text-[9.5px] font-bold text-slate-300 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>Artefato Ativo (Usa &amp; Dropa):</span>
+            </label>
+            <select
+              value={currentArtifactId}
+              onChange={(e) => updateLinkFields({ activeArtifactId: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[10.5px] font-bold text-amber-200 focus:outline-none focus:border-amber-400"
+            >
+              <option value="">— Nenhum Artefato Fixo —</option>
+              {allArtifacts.map((art) => (
+                <option key={art.id} value={art.id}>
+                  {art.icon} {art.name} ({art.description})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Cenário de Batalha & Trilha Sonora da Forja V2 */}
+      {!compact && (
+        <div className="p-2.5 bg-slate-900/90 border border-amber-500/30 rounded-xl space-y-2">
+          <div className="text-[10.5px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Image className="w-3.5 h-3.5 text-cyan-400" />
+            <span>5. Cenário &amp; Som de Batalha (Forja V2):</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Cenário da Forja V2 */}
+            <div className="space-y-1">
+              <label className="text-[9.5px] font-bold text-slate-300 block">
+                🌌 Cenário de Fundo do Tabuleiro:
+              </label>
+              <select
+                value={currentScenarioKey}
+                onChange={(e) => updateLinkFields({ battleScenarioKey: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[10.5px] font-bold text-cyan-200 focus:outline-none focus:border-cyan-400"
+              >
+                <option value="">✨ Padrão do Modo (Battle / Boss)</option>
+                {allScenarios.map((scn) => (
+                  <option key={scn.key} value={scn.key}>
+                    {scn.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Trilha Sonora da Central de Sons */}
+            <div className="space-y-1">
+              <label className="text-[9.5px] font-bold text-slate-300 flex items-center gap-1">
+                <Music className="w-3 h-3 text-pink-400" />
+                <span>Trilha Sonora (Central de Sons):</span>
+              </label>
+              <div className="flex items-center gap-1">
+                <select
+                  value={currentBgmUrl}
+                  onChange={(e) => updateLinkFields({ battleBgmUrl: e.target.value })}
+                  className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[10.5px] font-bold text-pink-200 focus:outline-none focus:border-pink-400"
+                >
+                  <option value="">🎵 Trilha Padrão de Batalha</option>
+                  {allSounds.map((snd, i) => (
+                    <option key={`${snd.url}-${i}`} value={snd.url}>
+                      🔊 {snd.name}
+                    </option>
+                  ))}
+                </select>
+                {currentBgmUrl && (
+                  <button
+                    type="button"
+                    onClick={() => SoundManager.preview(currentBgmUrl)}
+                    className="p-1.5 rounded-lg bg-pink-500/20 hover:bg-pink-500/35 border border-pink-400/50 text-pink-200 cursor-pointer shrink-0"
+                    title="Ouvir prévia da trilha"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Fala de Desafio ao Entrar na Fase de Escaneamento */}
       {!compact && (
         <div className="space-y-1">
           <label className="text-[10px] font-bold text-slate-300 block">
@@ -362,3 +505,4 @@ export const NpcMatrixCardLinkPanel: React.FC<NpcMatrixCardLinkPanelProps> = ({
     </div>
   );
 };
+

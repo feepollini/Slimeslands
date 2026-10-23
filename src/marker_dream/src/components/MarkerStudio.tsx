@@ -42,6 +42,7 @@ import {
   MarkerEventsTab,
 } from './marker-studio';
 import { createDefaultStationConfig } from '../data/defaultStationAssets';
+import { loadCharactersRoster, buildCharacterNpcBehavior } from '../utils/characterHelpers';
 
 interface Props {
   markers: MapMarker[];
@@ -588,6 +589,15 @@ export const MarkerStudio: React.FC<Props> = ({
     return matchesSearch && matchesCategory;
   });
 
+  const rosterCharacters = loadCharactersRoster().filter((char) => {
+    const matchesSearch =
+      !gallerySearch ||
+      char.name.toLowerCase().includes(gallerySearch.toLowerCase()) ||
+      (char.role || '').toLowerCase().includes(gallerySearch.toLowerCase());
+    const matchesCategory = galleryCategory === 'all' || galleryCategory === 'Personagens';
+    return matchesSearch && matchesCategory;
+  });
+
   return (
     <div className="space-y-4">
       <input
@@ -722,6 +732,91 @@ export const MarkerStudio: React.FC<Props> = ({
               </span>
             </div>
           </div>
+
+          {/* 0. Personagens da Galeria Universal (4 Direções + Action NPC Passivo Procedural) */}
+          {rosterCharacters.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-bold text-emerald-300 uppercase tracking-wide">
+                <span>Personagens ({rosterCharacters.length})</span>
+                <span className="text-[10px] text-slate-400 font-normal">Arraste ou clique para inserir</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 max-h-80 overflow-y-auto pr-1">
+                {rosterCharacters.map((char) => {
+                  const mainPng =
+                    char.avatarDownPng ||
+                    char.avatarPng ||
+                    char.avatarRightPng ||
+                    char.avatarLeftPng ||
+                    char.avatarUpPng;
+                  const { actionNpc, npcPatrol } = buildCharacterNpcBehavior(char, 384, 220);
+
+                  const characterMarkerAssetPayload = {
+                    name: char.name,
+                    dataUrl: mainPng,
+                    type: 'npc' as MarkerType,
+                    targetMarkerType: 'npc',
+                    size: Math.round(140 * (char.scale || 1.0)),
+                    solidCollision: true,
+                    hasShadow: true,
+                    npcBounce: true,
+                    effect: 'jelly',
+                    avatarDownPng: char.avatarDownPng || mainPng,
+                    avatarUpPng: char.avatarUpPng || mainPng,
+                    avatarLeftPng: char.avatarLeftPng || mainPng,
+                    avatarRightPng: char.avatarRightPng || mainPng,
+                    facingDirection: 'down',
+                    actionNpc,
+                    npcPatrol,
+                    dialogueEnabled: true,
+                    dialogueCharacterName: char.name,
+                    dialogueCharacterPng: mainPng,
+                    dialogueText: `Olá! Eu sou ${char.name}.`,
+                    motionLayers: char.motionLayers,
+                  };
+
+                  return (
+                    <div
+                      key={char.id}
+                      draggable={true}
+                      onClick={() => {
+                        onAddMarkerWithAsset?.(characterMarkerAssetPayload as any);
+                      }}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData(
+                          'application/json',
+                          JSON.stringify({
+                            type: 'marker_asset',
+                            asset: characterMarkerAssetPayload,
+                          })
+                        );
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      title={`${char.name} — Clique ou arraste para inserir como NPC Action 4 direções`}
+                      className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400 rounded-xl flex flex-col items-center gap-1 transition-all group cursor-grab active:cursor-grabbing"
+                    >
+                      <div className="w-full aspect-square rounded-lg bg-slate-950 flex items-center justify-center p-1.5 overflow-hidden">
+                        {mainPng ? (
+                          <img
+                            src={mainPng}
+                            alt={char.name}
+                            className="w-full h-full object-contain pointer-events-none group-hover:scale-110 transition-transform"
+                          />
+                        ) : (
+                          <span className="text-lg font-bold text-slate-500">
+                            {char.name.charAt(0)}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-medium text-slate-200 w-full text-center truncate">
+                        {char.name}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 1. Assets do Usuário / Projeto */}
           {galleryAssets.length > 0 && (
@@ -974,6 +1069,10 @@ export const MarkerStudio: React.FC<Props> = ({
                   onClick={() =>
                     onUpdateMarker(selectedMarker.id, {
                       customIconPng: undefined,
+                      avatarDownPng: undefined,
+                      avatarUpPng: undefined,
+                      avatarLeftPng: undefined,
+                      avatarRightPng: undefined,
                       mediaType: undefined,
                       videoUrl: undefined,
                       videoChromaKey: undefined,
@@ -1252,7 +1351,15 @@ export const MarkerStudio: React.FC<Props> = ({
 
                 {/* --- 1. PROPRIEDADES DO MODO NPC --- */}
                 {(markerMode === 'npc' || selectedMarker.type === 'npc') && (
-                  <MarkerNpcModule marker={selectedMarker} markers={markers} savedLevels={savedLevels} onUpdateMarker={onUpdateMarker} />
+                  <MarkerNpcModule
+                    marker={selectedMarker}
+                    markers={markers}
+                    savedLevels={savedLevels}
+                    galleryAssets={galleryAssets}
+                    galleryCategories={galleryCategories}
+                    onUploadNewAsset={onUploadNewAsset}
+                    onUpdateMarker={onUpdateMarker}
+                  />
                 )}
 
                 {/* --- 2. PROPRIEDADES DO MODO VIAGEM / TRAVEL --- */}

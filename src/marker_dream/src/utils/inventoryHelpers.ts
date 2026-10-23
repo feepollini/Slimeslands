@@ -6,6 +6,8 @@ import type {
   InventoryProject,
   ItemStateTag,
   ItemCurrencyType,
+  MarkerMotionLayer,
+  PlayerConfig,
 } from '../types/map';
 
 export const INVENTORY_PROJECTS_STORAGE_KEY = 'marker_dream_inventory_projects_v1';
@@ -92,6 +94,15 @@ export const ITEM_STATE_TAGS_METADATA: ItemStateTagMeta[] = [
     description: 'Gera automaticamente nas faixas dos biomas selecionados na fase.',
     badgeClass: 'bg-lime-500/15 text-lime-300 border-lime-500/40',
     activeBtnClass: 'bg-lime-500/25 text-lime-200 border-lime-400',
+  },
+  {
+    id: 'motion_item',
+    label: 'Motion Item (Roupa/Peça Animada)',
+    shortLabel: 'Motion Item',
+    emoji: '🎬',
+    description: 'Vincula este item a camadas do Motion Canvas (roupas, skins, cintos, armas, asas) que são reveladas no herói ao adquirir ou equipar.',
+    badgeClass: 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/50',
+    activeBtnClass: 'bg-fuchsia-500/30 text-fuchsia-200 border-fuchsia-400',
   },
 ];
 
@@ -821,6 +832,8 @@ export function addItemToPlayerInventory(
       speed: def.equipmentStats?.speed,
       healthRestore: def.consumableEffect?.hpRestore,
     },
+    motionLayerTag: def.motionLayerTag,
+    motionEquipSlot: def.motionEquipSlot,
   };
 
   return {
@@ -831,3 +844,216 @@ export function addItemToPlayerInventory(
     added: true,
   };
 }
+
+/**
+ * Filtra as camadas do Motion Canvas do personagem em tempo real durante o jogo:
+ * - Camadas sem `inventoryItemTag` ou com `gameVisibilityRule === 'always'` permanecem visíveis (desde que `layer.visible !== false`).
+ * - Camadas agrupadas por `inventoryItemTag` ficam ocultas em jogo até que o item correspondente seja adquirido (`when_acquired`) ou equipado (`when_equipped`).
+ * - Múltiplas camadas com a mesma `inventoryItemTag` (ex: Peitoral + Ombreira Esq + Ombreira Dir = 'skin_cavaleiro_solar') são reveladas/equipadas juntas!
+ */
+export function resolveVisibleMotionLayersForPlayer(
+  layers: MarkerMotionLayer[] | undefined,
+  player?: PlayerConfig,
+  playerInventory?: PlayerInventoryConfig,
+  mapCollectedItems?: { id: string; name: string; count: number; iconPng?: string }[],
+  itemCatalog?: InventoryItemDefinition[]
+): MarkerMotionLayer[] {
+  if (!layers || layers.length === 0) return [];
+
+  const equippedTags = new Set<string>(
+    (player?.equippedMotionTags || []).map((t) => t.trim().toLowerCase()).filter(Boolean)
+  );
+  const unlockedTags = new Set<string>(
+    (player?.unlockedMotionTags || []).map((t) => t.trim().toLowerCase()).filter(Boolean)
+  );
+
+  const invItems = playerInventory?.items || player?.inventory?.items || [];
+  const catalog = itemCatalog || [];
+
+  // Mapear itens da mochila do jogador e itens coletados na fase
+  for (const item of invItems) {
+    if ((item.quantity ?? 1) <= 0) continue;
+    const def = catalog.find(
+      (c) => c.id === item.definitionId || c.id === item.id || c.name.toLowerCase() === item.name.toLowerCase()
+    );
+    const tag = (item.motionLayerTag || def?.motionLayerTag || '').trim().toLowerCase();
+    const idNorm = (item.id || '').trim().toLowerCase();
+    const nameNorm = (item.name || '').trim().toLowerCase();
+
+    if (tag) unlockedTags.add(tag);
+    if (idNorm) unlockedTags.add(idNorm);
+    if (nameNorm) unlockedTags.add(nameNorm);
+
+    const isEquipped =
+      Boolean(item.equipped) ||
+      playerInventory?.equippedWeaponId === item.id ||
+      playerInventory?.equippedArmorId === item.id ||
+      playerInventory?.equippedAccessoryId === item.id;
+
+    if (isEquipped) {
+      if (tag) equippedTags.add(tag);
+      if (idNorm) equippedTags.add(idNorm);
+      if (nameNorm) equippedTags.add(nameNorm);
+    }
+  }
+
+  // Também considerar itens coletados diretamente na sessão da fase (mapCollectedItems)
+  if (mapCollectedItems && mapCollectedItems.length > 0) {
+    for (const col of mapCollectedItems) {
+      if ((col.count ?? 1) <= 0) continue;
+      const def = catalog.find(
+        (c) => c.id === col.id || c.name.toLowerCase() === col.name.toLowerCase()
+      );
+      const tag = (def?.motionLayerTag || '').trim().toLowerCase();
+      const idNorm = (col.id || '').trim().toLowerCase();
+      const nameNorm = (col.name || '').trim().toLowerCase();
+      if (tag) unlockedTags.add(tag);
+      if (idNorm) unlockedTags.add(idNorm);
+      if (nameNorm) unlockedTags.add(nameNorm);
+    }
+  }
+
+  return layers.filter((layer) => {
+    if (layer.visible === false) return false;
+    if (layer.isBaseAsset) return true;
+
+    const rawTag = (layer.inventoryItemTag || '').trim();
+    if (!rawTag) return true;
+
+    const rule = layer.gameVisibilityRule || 'when_equipped';
+    if (rule === 'always') return true;
+
+    const normTag = rawTag.toLowerCase();
+    const linkedId = (layer.linkedItemId || '').trim().toLowerCase();
+
+    if (rule === 'when_acquired') {
+      return (
+        unlockedTags.has(normTag) ||
+        equippedTags.has(normTag) ||
+        (Boolean(linkedId) && (unlockedTags.has(linkedId) || equippedTags.has(linkedId)))
+      );
+    }
+
+    // Default: 'when_equipped'
+    return (
+      equippedTags.has(normTag) ||
+      (Boolean(linkedId) && equippedTags.has(linkedId))
+    );
+  });
+}
+
+/**
+ * Cria ou sincroniza automaticamente um Item no Catálogo Global (`project.itemCatalog`)
+ * a partir de uma Tag de Motion Item (agrupamento de camadas do Motion Canvas).
+ */
+export function buildOrUpdateMotionCatalogItem(
+  existingCatalog: InventoryItemDefinition[],
+  params: {
+    tag: string;
+    displayName: string;
+    equipSlot?: MarkerMotionLayer['equipSlot'];
+    iconPng?: string;
+    buyPrice?: number;
+    rarity?: InventoryItemDefinition['rarity'];
+    attackBonus?: number;
+    defenseBonus?: number;
+  }
+): { updatedCatalog: InventoryItemDefinition[]; itemDef: InventoryItemDefinition } {
+  const cleanTag = params.tag.trim();
+  const itemId = `motion-item-${cleanTag.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+  const existingIdx = existingCatalog.findIndex(
+    (it) => it.motionLayerTag === cleanTag || it.id === itemId
+  );
+
+  const slotMap: Record<string, NonNullable<InventoryItemDefinition['equipmentStats']>['slot']> = {
+    skin: 'skin',
+    head: 'helmet',
+    armor: 'armor',
+    belt: 'belt',
+    boots: 'boots',
+    weapon: 'weapon',
+    cape: 'cape',
+    wings: 'wings',
+    accessory: 'accessory',
+  };
+
+  const categoryMap: Record<string, InventoryItemDefinition['category']> = {
+    weapon: 'weapon',
+    skin: 'armor',
+    head: 'armor',
+    armor: 'armor',
+    belt: 'accessory',
+    boots: 'armor',
+    cape: 'accessory',
+    wings: 'accessory',
+    accessory: 'accessory',
+  };
+
+  const resolvedSlot = params.equipSlot || 'skin';
+  const prev = existingIdx >= 0 ? existingCatalog[existingIdx] : undefined;
+
+  const stateTags = Array.from(
+    new Set<ItemStateTag>([
+      ...(prev?.stateTags || []),
+      'motion_item',
+      'equipable',
+      'storable',
+      'buyable',
+      'collectible',
+      'deliverable',
+      'tradable',
+    ])
+  );
+
+  const itemDef: InventoryItemDefinition = {
+    id: prev?.id || itemId,
+    name: params.displayName || prev?.name || `Traje: ${cleanTag}`,
+    iconPng: params.iconPng || prev?.iconPng,
+    iconEmoji:
+      resolvedSlot === 'weapon'
+        ? '⚔️'
+        : resolvedSlot === 'belt'
+        ? 'ベルト'
+        : resolvedSlot === 'wings'
+        ? '🪽'
+        : resolvedSlot === 'cape'
+        ? '🧣'
+        : resolvedSlot === 'head'
+        ? '🪖'
+        : '🥋',
+    shortDescription:
+      prev?.shortDescription ||
+      `Equipamento visual animado (Motion Item: #${cleanTag}). Revela as camadas correspondentes no personagem ao equipar.`,
+    detailedDescription:
+      prev?.detailedDescription ||
+      `Item conectado diretamente ao Motion Canvas 2D pela tag "${cleanTag}". Pode ser vendido em lojas, entregue em Quests ou equipado na Mochila para ativar a roupa/peça com física em tempo real no herói.`,
+    category: categoryMap[resolvedSlot] || 'armor',
+    subCategory: resolvedSlot,
+    rarity: params.rarity || prev?.rarity || 'epic',
+    stackable: false,
+    maxStack: 1,
+    buyPrice: params.buyPrice ?? prev?.buyPrice ?? 120,
+    sellPrice: Math.round((params.buyPrice ?? prev?.buyPrice ?? 120) * 0.5),
+    currencyType: prev?.currencyType || 'gold',
+    stateTags,
+    usableActions: ['equip', 'inspect', 'drop'],
+    equipmentStats: {
+      slot: slotMap[resolvedSlot] || 'armor',
+      attack: params.attackBonus ?? prev?.equipmentStats?.attack ?? (resolvedSlot === 'weapon' ? 15 : 4),
+      defense: params.defenseBonus ?? prev?.equipmentStats?.defense ?? (resolvedSlot === 'weapon' ? 2 : 12),
+      speed: prev?.equipmentStats?.speed ?? (resolvedSlot === 'wings' || resolvedSlot === 'boots' ? 5 : 0),
+    },
+    motionLayerTag: cleanTag,
+    motionEquipSlot: resolvedSlot,
+  };
+
+  const updatedCatalog = [...existingCatalog];
+  if (existingIdx >= 0) {
+    updatedCatalog[existingIdx] = itemDef;
+  } else {
+    updatedCatalog.unshift(itemDef);
+  }
+
+  return { updatedCatalog, itemDef };
+}
+

@@ -34,11 +34,12 @@ import { InventorySoloScreen } from './components/inventory/InventorySoloScreen'
 import { QuestSoloScreen } from './components/quests/QuestSoloScreen';
 import { HudUniversalSoloScreen } from './components/screens/HudUniversalSoloScreen';
 import { MindMapSoloScreen } from './components/mindmap/MindMapSoloScreen';
+import { MotionSoloScreen } from './components/motion/MotionSoloScreen';
 import { saveSingleLevelSlot } from './utils/storage';
 
 export default function App() {
-  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap'
-  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap'>(() => {
+  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio'
+  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio'>(() => {
     if (typeof window !== 'undefined') {
       const skip = localStorage.getItem('marker_dream_skip_intro');
       if (skip === 'true') {
@@ -370,11 +371,25 @@ export default function App() {
           setHubView('hud_universal');
         }}
         onOpenMindMap={() => setHubView('mindmap')}
+        onOpenMotionStudio={() => setHubView('motion_studio')}
         onUpdateProject={(updates) => {
           if (updates && typeof updates === 'object' && !(updates instanceof Event)) {
             setProject((prev) => ({ ...prev, ...updates }));
           }
         }}
+      />
+    );
+  }
+
+  // Screen 2.75: Dedicated Standalone Motion Canvas & Paper-Doll Studio (Modo Independente de Motion)
+  if (hubView === 'motion_studio') {
+    return (
+      <MotionSoloScreen
+        project={project}
+        onUpdateProject={setProject}
+        onBack={() => setHubView('dashboard')}
+        onOpenInventoryEditor={() => setHubView('inventory')}
+        onOpenCharactersEditor={() => setHubView('characters')}
       />
     );
   }
@@ -615,6 +630,7 @@ export default function App() {
         onOpenQuests={() => setHubView('quests')}
         onOpenHudUniversal={() => setHubView('hud_universal')}
         onOpenMindMap={() => setHubView('mindmap')}
+        onOpenMotionStudio={() => setHubView('motion_studio')}
       />
 
       {/* Régua de TELAS (canvas tabs) */}

@@ -16,6 +16,7 @@ import {
   Shield,
   FileCheck,
 } from 'lucide-react';
+import { createStandaloneInterceptTestLevel } from '../utils/interceptTestPhaseGenerator';
 
 interface Props {
   currentProject: MapProject;
@@ -104,6 +105,31 @@ export const LevelGalleryStudio: React.FC<Props> = ({
         >
           <FolderPlus className="w-3.5 h-3.5 text-sky-400" />
           <span>Do Zero</span>
+        </button>
+      </div>
+
+      {/* Card 1-Clique: Carregar Fase Teste de Interceptação & Escolta */}
+      <div className="p-3 rounded-xl bg-gradient-to-r from-rose-950/85 via-slate-900 to-amber-950/60 border border-rose-500/50 flex items-center justify-between gap-3 shadow-md">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">🚨</span>
+            <span className="text-xs font-black text-rose-200 truncate">
+              Fase Teste: Interceptação & Escolta (Capitã Lyra)
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-300 leading-tight mt-0.5">
+            Cenário completo pronto para jogar: pise na zona de alerta, veja a Capitã Lyra surgir do canto da tela, conversar e guiar seu herói até o Santuário!
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const testLvl = createStandaloneInterceptTestLevel();
+            onLoadLevel(testLvl);
+          }}
+          className="px-3 py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 font-black text-[11px] shrink-0 shadow-md active:scale-95 transition-all cursor-pointer"
+        >
+          🎬 Carregar Teste
         </button>
       </div>
 

@@ -1,6 +1,15 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { MapMarker, MarkerEventItem } from '../../../types/map';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import {
+  MapMarker,
+  MarkerEventItem,
+  InterceptEventConfig,
+  InterceptSpawnOrigin,
+  DEFAULT_INTERCEPT_CONFIG,
+} from '../../../types/map';
 import { readUploadedImage } from '../../../utils/tileGenerator';
+import { parseDirectionalFolderFiles, SpriteDirection4Way } from '../../../utils/directionalSpriteImporter';
+import { loadCharactersRoster } from '../../../utils/characterHelpers';
+import { getCapitaLyraDirectionalSprites } from '../../../utils/interceptTestPhaseGenerator';
 import {
   Sparkles,
   Trash2,
@@ -13,6 +22,10 @@ import {
   Square,
   Gift,
   X,
+  FolderOpen,
+  Navigation,
+  User,
+  Plus,
 } from 'lucide-react';
 import { getAvailableMatrixCards } from '../../../../../core/NpcCardBattleBridge';
 
@@ -39,6 +52,13 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const rewardSlotFileInputRef = useRef<HTMLInputElement>(null);
   const activeRewardSlotIdxRef = useRef<number | null>(null);
+  const interceptFolderInputRef = useRef<HTMLInputElement>(null);
+  const interceptSingleInputRef = useRef<HTMLInputElement>(null);
+  const activeInterceptEventIdRef = useRef<string | null>(null);
+  const activeInterceptDirSlotRef = useRef<SpriteDirection4Way | 'base'>('base');
+  const [interceptImportMsg, setInterceptImportMsg] = useState<string | null>(null);
+
+  const charactersRoster = useMemo(() => loadCharactersRoster(), []);
 
   // Limpa áudio ao desmontar
   useEffect(() => {
@@ -129,6 +149,16 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
         cinematicFreezePlayer: marker.cinematicFreezePlayer !== false,
       });
     }
+    if (marker.eventKind === 'intercept' || marker.interceptConfig) {
+      legacy.push({
+        id: `legacy-intercept-${marker.id}`,
+        type: 'intercept',
+        title: marker.eventTitle || 'Interceptação & Escolta',
+        timing: 'simultaneous',
+        trigger: 'contact',
+        interceptConfig: marker.interceptConfig || { ...DEFAULT_INTERCEPT_CONFIG },
+      });
+    }
     return legacy;
   };
 
@@ -141,9 +171,20 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
     const firstCinematic = newEvents.find((e) => e.type === 'cinematic');
     const firstWeather = newEvents.find((e) => e.type === 'weather');
     const firstReward = newEvents.find((e) => e.type === 'reward');
+    const firstIntercept = newEvents.find((e) => e.type === 'intercept');
 
     onUpdateMarker(selectedMarker.id, {
       events: newEvents,
+      ...(firstIntercept
+        ? {
+            eventKind: 'intercept',
+            interceptConfig: firstIntercept.interceptConfig,
+            eventTrigger: selectedMarker.eventTrigger || 'proximity',
+            eventTriggerRadius: selectedMarker.eventTriggerRadius || 110,
+          }
+        : selectedMarker.eventKind === 'intercept'
+        ? { eventKind: undefined, interceptConfig: undefined }
+        : {}),
       quest: firstQuest ? {
         kind: firstQuest.kind || 'collect',
         title: firstQuest.title,
@@ -239,11 +280,78 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
     e.target.value = '';
   };
 
+  const handleUploadInterceptSinglePng = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const eventId = activeInterceptEventIdRef.current;
+    const slot = activeInterceptDirSlotRef.current;
+    if (!file || !selectedMarker || !eventId) return;
+    try {
+      const res = await readUploadedImage(file);
+      const currentEvents = getMarkerEvents(selectedMarker);
+      const updated = currentEvents.map((ev) => {
+        if (ev.id !== eventId) return ev;
+        const curCfg = ev.interceptConfig || { ...DEFAULT_INTERCEPT_CONFIG };
+        const patch: Partial<InterceptEventConfig> =
+          slot === 'down'
+            ? { inlineAvatarDownPng: res.dataUrl, inlineNpcPng: curCfg.inlineNpcPng || res.dataUrl }
+            : slot === 'up'
+            ? { inlineAvatarUpPng: res.dataUrl }
+            : slot === 'left'
+            ? { inlineAvatarLeftPng: res.dataUrl }
+            : slot === 'right'
+            ? { inlineAvatarRightPng: res.dataUrl }
+            : { inlineNpcPng: res.dataUrl, inlineAvatarDownPng: curCfg.inlineAvatarDownPng || res.dataUrl };
+        return {
+          ...ev,
+          interceptConfig: { ...curCfg, ...patch },
+        };
+      });
+      updateMarkerEvents(updated);
+      setInterceptImportMsg('✅ Sprite carregado com sucesso!');
+      setTimeout(() => setInterceptImportMsg(null), 2600);
+    } catch (err) {
+      console.error(err);
+    }
+    e.target.value = '';
+  };
+
+  const handleUploadInterceptFolder = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    const eventId = activeInterceptEventIdRef.current;
+    if (!files || files.length === 0 || !selectedMarker || !eventId) return;
+    try {
+      const result = await parseDirectionalFolderFiles(files);
+      const currentEvents = getMarkerEvents(selectedMarker);
+      const updated = currentEvents.map((ev) => {
+        if (ev.id !== eventId) return ev;
+        const curCfg = ev.interceptConfig || { ...DEFAULT_INTERCEPT_CONFIG };
+        return {
+          ...ev,
+          interceptConfig: {
+            ...curCfg,
+            inlineNpcName: result.folderName || curCfg.inlineNpcName,
+            inlineNpcPng: result.down || result.right || result.left || result.up || curCfg.inlineNpcPng,
+            inlineAvatarDownPng: result.down || curCfg.inlineAvatarDownPng,
+            inlineAvatarUpPng: result.up || curCfg.inlineAvatarUpPng,
+            inlineAvatarLeftPng: result.left || curCfg.inlineAvatarLeftPng,
+            inlineAvatarRightPng: result.right || curCfg.inlineAvatarRightPng,
+          },
+        };
+      });
+      updateMarkerEvents(updated);
+      setInterceptImportMsg(`📂 ${result.matchedCount} direções importadas da pasta!`);
+      setTimeout(() => setInterceptImportMsg(null), 3000);
+    } catch (err) {
+      console.error(err);
+    }
+    e.target.value = '';
+  };
+
   const currentEvents = getMarkerEvents(selectedMarker);
 
   return (
     <div className="space-y-3">
-      {/* Hidden inputs para áudio e itens */}
+      {/* Hidden inputs para áudio, itens e sprites do NPC de Interceptação */}
       <input
         type="file"
         ref={audioFileInputRef}
@@ -256,6 +364,22 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
         ref={rewardSlotFileInputRef}
         onChange={handleUploadRewardSlot}
         accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={interceptSingleInputRef}
+        onChange={handleUploadInterceptSinglePng}
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={interceptFolderInputRef}
+        onChange={handleUploadInterceptFolder}
+        accept="image/png,image/jpeg,image/webp"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
         className="hidden"
       />
 
@@ -287,8 +411,9 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
             + Adicionar Evento ao Marcador:
           </span>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             {[
+              { type: 'intercept' as const, label: 'Interceptar & Escoltar', icon: '🚨', desc: 'NPC aborda e guia o herói', color: 'border-orange-500/60 bg-orange-950/20 hover:bg-orange-500/25 text-orange-300 col-span-2' },
               { type: 'quest' as const, label: 'Quest / Missão', icon: '🎯', desc: 'Objetivo de jogo', color: 'border-teal-500/40 hover:bg-teal-500/20 text-teal-300' },
               { type: 'dialogue' as const, label: 'Diálogo', icon: '💬', desc: 'Falas de NPC', color: 'border-amber-500/40 hover:bg-amber-500/20 text-amber-300' },
               { type: 'sound_area' as const, label: 'Som por Área', icon: '🔊', desc: 'Áudio espacial', color: 'border-emerald-500/40 hover:bg-emerald-500/20 text-emerald-300' },
@@ -302,6 +427,9 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                 type="button"
                 onClick={() => {
                   const newId = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+                  const lyraSprites = getCapitaLyraDirectionalSprites();
+                  const otherMarkers = markers.filter((m) => m.id !== selectedMarker.id);
+                  const defaultDestMarker = otherMarkers[0];
                   const newEvent: MarkerEventItem = {
                     id: newId,
                     type: btn.type,
@@ -309,6 +437,20 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                     timing: 'simultaneous',
                     trigger: 'contact',
                     delay: 0,
+                    ...(btn.type === 'intercept' ? {
+                      interceptConfig: {
+                        ...DEFAULT_INTERCEPT_CONFIG,
+                        inlineNpcPng: lyraSprites.down,
+                        inlineAvatarDownPng: lyraSprites.down,
+                        inlineAvatarUpPng: lyraSprites.up,
+                        inlineAvatarLeftPng: lyraSprites.left,
+                        inlineAvatarRightPng: lyraSprites.right,
+                        destinationType: defaultDestMarker ? 'marker' : 'coordinates',
+                        destinationMarkerId: defaultDestMarker?.id,
+                        destinationX: defaultDestMarker ? defaultDestMarker.x : Math.min(680, selectedMarker.x + 120),
+                        destinationY: defaultDestMarker ? defaultDestMarker.y : selectedMarker.y + 260,
+                      },
+                    } : {}),
                     ...(btn.type === 'quest' ? {
                       quest: {
                         kind: 'collect',
@@ -369,7 +511,7 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
           </div>
           <h5 className="text-xs font-bold text-slate-300">Nenhum evento configurado</h5>
           <p className="text-[11px] text-slate-400 max-w-xs mx-auto leading-relaxed">
-            Este marcador funciona apenas como elemento do mapa. Clique em um dos botões acima (Quest, Diálogo, Som, Cinemática...) para adicionar ações e comportamento a ele!
+            Este marcador funciona apenas como elemento do mapa. Clique em um dos botões acima (Interceptar & Escoltar, Quest, Diálogo...) para adicionar ações e comportamento a ele!
           </p>
         </div>
       )}
@@ -383,6 +525,7 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
               <div
                 key={event.id}
                 className={`p-3 bg-slate-950 rounded-xl border transition-all ${
+                  event.type === 'intercept' ? 'border-orange-500/50 shadow-[0_0_16px_rgba(249,115,22,0.2)]' :
                   event.type === 'quest' ? 'border-teal-500/40 shadow-[0_0_12px_rgba(20,184,166,0.15)]' :
                   event.type === 'dialogue' ? 'border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.15)]' :
                   event.type === 'sound_area' ? 'border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.15)]' :
@@ -396,6 +539,7 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-base select-none">
+                      {event.type === 'intercept' && '🚨'}
                       {event.type === 'quest' && '🎯'}
                       {event.type === 'dialogue' && '💬'}
                       {event.type === 'sound_area' && '🔊'}
@@ -407,6 +551,7 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-black text-slate-200 truncate">
+                          {event.type === 'intercept' && 'Interceptar & Escoltar Player'}
                           {event.type === 'quest' && 'Quest (Missão)'}
                           {event.type === 'dialogue' && 'Diálogo & Falas'}
                           {event.type === 'sound_area' && 'Som por Área'}
@@ -1308,6 +1453,616 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
                         </div>
                       </div>
                     )}
+
+                    {/* ==========================================
+                        8. CONFIGURAÇÃO DE INTERCEPTAÇÃO & ESCOLTA ("INTERCEPT")
+                       ========================================== */}
+                    {event.type === 'intercept' && (() => {
+                      const cfg: InterceptEventConfig = {
+                        ...DEFAULT_INTERCEPT_CONFIG,
+                        ...(event.interceptConfig || {}),
+                      };
+
+                      const updateIntercept = (patch: Partial<InterceptEventConfig>) => {
+                        const nextCfg: InterceptEventConfig = { ...cfg, ...patch };
+                        const updated = currentEvents.map((ev, i) =>
+                          i === index ? { ...ev, interceptConfig: nextCfg } : ev
+                        );
+                        updateMarkerEvents(updated);
+                      };
+
+                      const npcMarkers = markers.filter(
+                        (m) => m.id !== selectedMarker.id && (m.type === 'npc' || m.type === 'neutral' || Boolean(m.customIconPng))
+                      );
+                      const destinationMarkers = markers.filter((m) => m.id !== selectedMarker.id);
+
+                      const spawnOrigins: { id: InterceptSpawnOrigin; label: string; icon: string }[] = [
+                        { id: 'top_left', label: 'Sup. Esq', icon: '↖️' },
+                        { id: 'top', label: 'Topo', icon: '⬆️' },
+                        { id: 'top_right', label: 'Sup. Dir', icon: '↗️' },
+                        { id: 'left', label: 'Esquerda', icon: '⬅️' },
+                        { id: 'marker_pos', label: 'Do Mapa', icon: '📍' },
+                        { id: 'right', label: 'Direita', icon: '➡️' },
+                        { id: 'bottom_left', label: 'Inf. Esq', icon: '↙️' },
+                        { id: 'bottom', label: 'Base', icon: '⬇️' },
+                        { id: 'bottom_right', label: 'Inf. Dir', icon: '↘️' },
+                      ];
+
+                      return (
+                        <div className="space-y-3 bg-orange-950/15 border border-orange-500/35 rounded-xl p-2.5">
+                          <div className="flex items-center justify-between border-b border-orange-500/20 pb-2">
+                            <span className="text-[10px] font-black text-orange-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <span>🚨</span>
+                              <span>Fluxo de Interceptação & Escolta Guiada</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const lyra = getCapitaLyraDirectionalSprites();
+                                const firstTarget = destinationMarkers[0];
+                                updateIntercept({
+                                  actorSource: 'custom_inline',
+                                  inlineNpcName: 'Capitã Lyra',
+                                  inlineNpcPng: lyra.down,
+                                  inlineAvatarDownPng: lyra.down,
+                                  inlineAvatarUpPng: lyra.up,
+                                  inlineAvatarLeftPng: lyra.left,
+                                  inlineAvatarRightPng: lyra.right,
+                                  spawnOrigin: 'top_right',
+                                  showExclamationEmote: true,
+                                  cameraFocusOnInterceptor: true,
+                                  escortEnabled: true,
+                                  destinationType: firstTarget ? 'marker' : 'coordinates',
+                                  destinationMarkerId: firstTarget?.id,
+                                  destinationX: firstTarget ? firstTarget.x : Math.min(680, selectedMarker.x + 120),
+                                  destinationY: firstTarget ? firstTarget.y : selectedMarker.y + 260,
+                                });
+                                setInterceptImportMsg('✨ Preset da Capitã Lyra (4 Direções + Escolta) aplicado!');
+                                setTimeout(() => setInterceptImportMsg(null), 2800);
+                              }}
+                              className="px-2 py-0.5 rounded-md bg-orange-500/20 hover:bg-orange-500/30 border border-orange-400/50 text-[9px] font-bold text-orange-200 cursor-pointer transition-colors"
+                              title="Carregar preset pronto com NPC 4 direções e escolta"
+                            >
+                              ⚡ Preset Rápido (Capitã Lyra)
+                            </button>
+                          </div>
+
+                          {interceptImportMsg && (
+                            <div className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-[10px] font-bold text-emerald-300">
+                              {interceptImportMsg}
+                            </div>
+                          )}
+
+                          {/* PASSO 1: QUEM INTERCEPTA? */}
+                          <div className="space-y-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                            <span className="text-[10px] font-bold text-orange-200 uppercase tracking-wider block">
+                              1. Quem surge para falar com o jogador?
+                            </span>
+                            <div className="grid grid-cols-3 gap-1">
+                              {[
+                                { id: 'custom_inline' as const, label: '✨ Criar na Hora', desc: 'Novo NPC + 4 PNGs' },
+                                { id: 'existing_npc' as const, label: '🧙 NPC do Mapa', desc: 'Marcador existente' },
+                                { id: 'character_roster' as const, label: '🦸 Do Elenco', desc: 'Menu Personagens' },
+                              ].map((opt) => (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => updateIntercept({ actorSource: opt.id })}
+                                  className={`p-1.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                    cfg.actorSource === opt.id
+                                      ? 'bg-orange-600/25 border-orange-400 text-orange-200 font-bold'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                  }`}
+                                >
+                                  <div className="text-[10px] leading-tight">{opt.label}</div>
+                                  <div className="text-[8px] text-slate-400 font-normal">{opt.desc}</div>
+                                </button>
+                              ))}
+                            </div>
+
+                            {cfg.actorSource === 'custom_inline' && (
+                              <div className="space-y-2 pt-1.5 border-t border-slate-800/80">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="col-span-2">
+                                    <label className="text-[9px] text-slate-400 block mb-0.5">Nome do NPC / Guia:</label>
+                                    <input
+                                      type="text"
+                                      value={cfg.inlineNpcName || ''}
+                                      onChange={(e) => updateIntercept({ inlineNpcName: e.target.value })}
+                                      placeholder="Ex: Capitã Lyra"
+                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-orange-400"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 block mb-0.5">Tamanho (px):</label>
+                                    <input
+                                      type="number"
+                                      min={32}
+                                      max={180}
+                                      value={cfg.inlineNpcSize ?? 64}
+                                      onChange={(e) => updateIntercept({ inlineNpcSize: Number(e.target.value) || 64 })}
+                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-amber-300 font-mono focus:outline-none focus:border-orange-400"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Botão Importar Pasta Rápida 4 Direções para o NPC Inline */}
+                                <div className="flex items-center justify-between gap-1.5 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      activeInterceptEventIdRef.current = event.id;
+                                      interceptFolderInputRef.current?.click();
+                                    }}
+                                    className="flex-1 py-1.5 px-2 rounded-lg bg-indigo-600/25 hover:bg-indigo-600/35 border border-indigo-400/50 text-indigo-200 text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                                  >
+                                    <FolderOpen className="w-3.5 h-3.5 text-indigo-300" />
+                                    <span>📂 Importar Pasta (4 Direções)</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      activeInterceptEventIdRef.current = event.id;
+                                      activeInterceptDirSlotRef.current = 'base';
+                                      interceptSingleInputRef.current?.click();
+                                    }}
+                                    className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Upload className="w-3 h-3" />
+                                    <span>1 PNG</span>
+                                  </button>
+                                </div>
+
+                                {/* 4 Slots Direcionais Visuais do NPC Feito na Hora */}
+                                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                                  {([
+                                    { dir: 'down' as const, label: '⬇️ Frente', src: cfg.inlineAvatarDownPng || cfg.inlineNpcPng },
+                                    { dir: 'up' as const, label: '⬆️ Costas', src: cfg.inlineAvatarUpPng },
+                                    { dir: 'left' as const, label: '⬅️ Esq.', src: cfg.inlineAvatarLeftPng },
+                                    { dir: 'right' as const, label: '➡️ Dir.', src: cfg.inlineAvatarRightPng },
+                                  ]).map((slot) => (
+                                    <button
+                                      key={slot.dir}
+                                      type="button"
+                                      onClick={() => {
+                                        activeInterceptEventIdRef.current = event.id;
+                                        activeInterceptDirSlotRef.current = slot.dir;
+                                        interceptSingleInputRef.current?.click();
+                                      }}
+                                      className="p-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-orange-400/60 flex flex-col items-center gap-1 cursor-pointer group"
+                                      title={`Trocar PNG da direção ${slot.label}`}
+                                    >
+                                      <div className="w-10 h-10 rounded bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800">
+                                        {slot.src ? (
+                                          <img src={slot.src} alt={slot.label} className="w-full h-full object-contain" />
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 group-hover:text-orange-300">+PNG</span>
+                                        )}
+                                      </div>
+                                      <span className="text-[8px] font-bold text-slate-400 group-hover:text-orange-200">
+                                        {slot.label}
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {cfg.actorSource === 'existing_npc' && (
+                              <div className="pt-1.5 border-t border-slate-800/80 space-y-1">
+                                <label className="text-[9px] text-slate-400 block">Escolha o NPC do Mapa:</label>
+                                <select
+                                  value={cfg.existingNpcMarkerId || ''}
+                                  onChange={(e) => updateIntercept({ existingNpcMarkerId: e.target.value })}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 focus:outline-none focus:border-orange-400"
+                                >
+                                  <option value="">-- Selecione um NPC da fase --</option>
+                                  {npcMarkers.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({Math.round(m.x)}, {Math.round(m.y)})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
+                            {cfg.actorSource === 'character_roster' && (
+                              <div className="pt-1.5 border-t border-slate-800/80 space-y-1">
+                                <label className="text-[9px] text-slate-400 block">Escolha o Personagem do Elenco:</label>
+                                <select
+                                  value={cfg.characterRosterId || ''}
+                                  onChange={(e) => {
+                                    const charId = e.target.value;
+                                    const found = charactersRoster.find((c) => c.id === charId);
+                                    updateIntercept({
+                                      characterRosterId: charId,
+                                      ...(found
+                                        ? {
+                                            inlineNpcName: found.name,
+                                            inlineNpcPng: found.avatarPng || found.avatarDownPng,
+                                            inlineAvatarDownPng: found.avatarDownPng || found.avatarPng,
+                                            inlineAvatarUpPng: found.avatarUpPng,
+                                            inlineAvatarLeftPng: found.avatarLeftPng,
+                                            inlineAvatarRightPng: found.avatarRightPng,
+                                          }
+                                        : {}),
+                                    });
+                                  }}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 focus:outline-none focus:border-orange-400"
+                                >
+                                  <option value="">-- Selecione um Personagem Salvo --</option>
+                                  {charactersRoster.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name} ({c.role || 'Herói'})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* PASSO 2: DE ONDE SURGE NA TELA? */}
+                          <div className="space-y-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-orange-200 uppercase tracking-wider">
+                                2. De qual canto da tela ele surge?
+                              </span>
+                              <span className="text-[9px] font-mono text-orange-300 bg-orange-950/60 px-1.5 py-0.5 rounded border border-orange-500/30">
+                                {spawnOrigins.find((o) => o.id === cfg.spawnOrigin)?.label || 'Sup. Dir'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-1">
+                              {spawnOrigins.map((orig) => (
+                                <button
+                                  key={orig.id}
+                                  type="button"
+                                  onClick={() => updateIntercept({ spawnOrigin: orig.id })}
+                                  className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                    cfg.spawnOrigin === orig.id
+                                      ? 'bg-orange-500/30 border-orange-400 text-orange-100 shadow-sm'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                  }`}
+                                >
+                                  <span>{orig.icon}</span>
+                                  <span>{orig.label}</span>
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => updateIntercept({ showExclamationEmote: cfg.showExclamationEmote === false })}
+                                className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer ${
+                                  cfg.showExclamationEmote !== false
+                                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <span>❗</span>
+                                <span>Balão de Alerta: {cfg.showExclamationEmote !== false ? 'SIM' : 'NÃO'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateIntercept({ cameraFocusOnInterceptor: cfg.cameraFocusOnInterceptor === false })}
+                                className={`py-1.5 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer ${
+                                  cfg.cameraFocusOnInterceptor !== false
+                                    ? 'bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-200'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <span>🎥</span>
+                                <span>Zoom Abordagem: {cfg.cameraFocusOnInterceptor !== false ? 'SIM' : 'NÃO'}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* PASSO 3: DIÁLOGO AO ABORDAR O PLAYER */}
+                          <div className="space-y-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-orange-200 uppercase tracking-wider">
+                                3. O que ele fala ao abordar o player?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateIntercept({
+                                    greetingDialogues: [
+                                      ...(cfg.greetingDialogues || []),
+                                      'Siga-me, vou mostrar o caminho!',
+                                    ],
+                                  })
+                                }
+                                className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[9px] font-bold text-amber-200 cursor-pointer"
+                              >
+                                + Frase
+                              </button>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {(cfg.greetingDialogues && cfg.greetingDialogues.length > 0
+                                ? cfg.greetingDialogues
+                                : ['Olá! Venha comigo até o nosso acampamento!']
+                              ).map((line, lineIdx) => (
+                                <div key={lineIdx} className="flex items-center gap-1">
+                                  <span className="text-[9px] font-mono text-amber-400 w-4 shrink-0">
+                                    #{lineIdx + 1}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={line}
+                                    onChange={(e) => {
+                                      const nextLines = [...(cfg.greetingDialogues || [''])];
+                                      nextLines[lineIdx] = e.target.value;
+                                      updateIntercept({ greetingDialogues: nextLines });
+                                    }}
+                                    placeholder="Digite a fala de abordagem..."
+                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-amber-400"
+                                  />
+                                  {(cfg.greetingDialogues?.length || 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextLines = (cfg.greetingDialogues || []).filter((_, idx) => idx !== lineIdx);
+                                        updateIntercept({ greetingDialogues: nextLines });
+                                      }}
+                                      className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
+                                      title="Remover fala"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* PASSO 4: ESCOLTA GUIADA ("LEVAR A ALGUM LUGAR CONTROLANDO A LOCOMOÇÃO") */}
+                          <div className="space-y-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wider block">
+                                  4. Levar o Player a algum lugar (Escolta)
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  Controla a locomoção do herói fazendo-o caminhar junto com o NPC
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => updateIntercept({ escortEnabled: !cfg.escortEnabled })}
+                                className={`px-2.5 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition-all ${
+                                  cfg.escortEnabled
+                                    ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-sm'
+                                    : 'bg-slate-950 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {cfg.escortEnabled ? '🚶 ESCOLTA ATIVA' : 'Desativada'}
+                              </button>
+                            </div>
+
+                            {cfg.escortEnabled && (
+                              <div className="space-y-2 pt-1.5 border-t border-slate-800/80">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateIntercept({ destinationType: 'marker' })}
+                                    className={`py-1 px-2 rounded-lg border text-[10px] font-bold cursor-pointer ${
+                                      (cfg.destinationType || 'marker') === 'marker'
+                                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                                    }`}
+                                  >
+                                    📍 Até um Marcador
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateIntercept({ destinationType: 'coordinates' })}
+                                    className={`py-1 px-2 rounded-lg border text-[10px] font-bold cursor-pointer ${
+                                      cfg.destinationType === 'coordinates'
+                                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
+                                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                                    }`}
+                                  >
+                                    🎯 Coordenadas (X, Y)
+                                  </button>
+                                </div>
+
+                                {(cfg.destinationType || 'marker') === 'marker' ? (
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 block mb-1">
+                                      Marcador de Destino (Para onde o NPC leva o jogador):
+                                    </label>
+                                    <select
+                                      value={cfg.destinationMarkerId || ''}
+                                      onChange={(e) => {
+                                        const mId = e.target.value;
+                                        const targetM = markers.find((m) => m.id === mId);
+                                        updateIntercept({
+                                          destinationMarkerId: mId,
+                                          ...(targetM ? { destinationX: targetM.x, destinationY: targetM.y } : {}),
+                                        });
+                                      }}
+                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-100 focus:outline-none focus:border-cyan-400"
+                                    >
+                                      <option value="">-- Selecione o Marcador de Destino --</option>
+                                      {destinationMarkers.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          📍 {m.name} ({Math.round(m.x)}, {Math.round(m.y)})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 block mb-0.5">Destino X (px):</label>
+                                      <input
+                                        type="number"
+                                        value={cfg.destinationX ?? Math.round(selectedMarker.x + 120)}
+                                        onChange={(e) => updateIntercept({ destinationX: Number(e.target.value) })}
+                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-cyan-300 font-mono"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[9px] text-slate-400 block mb-0.5">Destino Y (px):</label>
+                                      <input
+                                        type="number"
+                                        value={cfg.destinationY ?? Math.round(selectedMarker.y + 260)}
+                                        onChange={(e) => updateIntercept({ destinationY: Number(e.target.value) })}
+                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-cyan-300 font-mono"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <div className="flex items-center justify-between text-[9px] text-slate-400 mb-0.5">
+                                      <span>Velocidade da Escolta:</span>
+                                      <span className="font-mono text-cyan-300 font-bold">{(cfg.escortSpeed ?? 3.1).toFixed(1)}</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min={1.5}
+                                      max={6.0}
+                                      step={0.2}
+                                      value={cfg.escortSpeed ?? 3.1}
+                                      onChange={(e) => updateIntercept({ escortSpeed: parseFloat(e.target.value) })}
+                                      className="w-full accent-cyan-400 cursor-pointer h-1.5"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 block mb-0.5">Aviso durante o Trajeto:</label>
+                                    <input
+                                      type="text"
+                                      value={cfg.escortBannerText || ''}
+                                      onChange={(e) => updateIntercept({ escortBannerText: e.target.value })}
+                                      placeholder="Ex: Seguindo Capitã Lyra..."
+                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[10px] text-slate-200"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* PASSO 5: CHEGADA NO DESTINO (MAIS DIÁLOGOS, EVENTOS E COMPORTAMENTO FINAL) */}
+                          <div className="space-y-2 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider">
+                                5. Ao Chegar no Destino (Diálogos & Eventos)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateIntercept({
+                                    arrivalDialogues: [
+                                      ...(cfg.arrivalDialogues || []),
+                                      'Chegamos! Fale comigo quando precisar.',
+                                    ],
+                                  })
+                                }
+                                className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[9px] font-bold text-emerald-200 cursor-pointer"
+                              >
+                                + Fala de Chegada
+                              </button>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {(cfg.arrivalDialogues || []).map((line, lineIdx) => (
+                                <div key={lineIdx} className="flex items-center gap-1">
+                                  <span className="text-[9px] font-mono text-emerald-400 w-4 shrink-0">
+                                    #{lineIdx + 1}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={line}
+                                    onChange={(e) => {
+                                      const nextLines = [...(cfg.arrivalDialogues || [])];
+                                      nextLines[lineIdx] = e.target.value;
+                                      updateIntercept({ arrivalDialogues: nextLines });
+                                    }}
+                                    placeholder="Fala ao chegar no destino..."
+                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-100 focus:outline-none focus:border-emerald-400"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextLines = (cfg.arrivalDialogues || []).filter((_, idx) => idx !== lineIdx);
+                                      updateIntercept({ arrivalDialogues: nextLines });
+                                    }}
+                                    className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-800/80">
+                              <div>
+                                <label className="text-[9px] text-slate-400 block mb-0.5">
+                                  Encadear Outro Evento ao Chegar:
+                                </label>
+                                <select
+                                  value={cfg.onArrivalEventMarkerId || ''}
+                                  onChange={(e) => updateIntercept({ onArrivalEventMarkerId: e.target.value || undefined })}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[10px] text-slate-200"
+                                >
+                                  <option value="">(Nenhum evento extra)</option>
+                                  {destinationMarkers.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      ⚡ {m.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-slate-400 block mb-0.5">
+                                  Recompensa em Ouro (🪙):
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={10}
+                                  value={cfg.onArrivalRewardCoins ?? 0}
+                                  onChange={(e) => updateIntercept({ onArrivalRewardCoins: Math.max(0, Number(e.target.value) || 0) })}
+                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-amber-300 font-mono"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-1">
+                              <label className="text-[9px] text-slate-400 block mb-1">
+                                O que acontece com o NPC após terminar a escolta?
+                              </label>
+                              <div className="grid grid-cols-3 gap-1">
+                                {[
+                                  { id: 'stay_at_destination' as const, label: '📍 Fica no Destino' },
+                                  { id: 'follow_player' as const, label: '🤝 Segue o Herói' },
+                                  { id: 'return_and_vanish' as const, label: '💨 Volta e Some' },
+                                ].map((post) => (
+                                  <button
+                                    key={post.id}
+                                    type="button"
+                                    onClick={() => updateIntercept({ actorPostBehavior: post.id })}
+                                    className={`py-1 px-1.5 rounded-lg border text-[9px] font-bold cursor-pointer transition-all ${
+                                      (cfg.actorPostBehavior || 'stay_at_destination') === post.id
+                                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+                                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    {post.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

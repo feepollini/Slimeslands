@@ -15,6 +15,8 @@ import {
   summarizeRewardItems,
   saveProjectQuestsConfigToStorage,
 } from '../../utils/questEngine';
+import { resolveVisibleMotionLayersForPlayer } from '../../utils/inventoryHelpers';
+import { MotionAssetCanvas } from '../MotionAssetCanvas';
 
 export interface UnifiedHudQuestEntry {
   id: string;
@@ -1710,6 +1712,7 @@ export interface UnifiedBackpackSlotItem {
   petHealAmount?: number;
   petXpAmount?: number;
   petAttackBonus?: number;
+  motionLayerTag?: string;
 }
 
 export const DEFAULT_PET_CARE_ITEMS: UnifiedBackpackSlotItem[] = [
@@ -2218,11 +2221,33 @@ export const GameBackpackPopupModal: React.FC<{
       let category: UnifiedBackpackSlotItem['category'] = 'outros';
       let equipSlot: EquipmentSlotKey | undefined = undefined;
 
+      const catalogDef = (project.itemCatalog || []).find(
+        (c) => c.id === pItem.definitionId || c.id === pItem.id || c.name.toLowerCase() === pItem.name.toLowerCase()
+      );
+      const motionTag = pItem.motionLayerTag || catalogDef?.motionLayerTag;
+      const isMotionItem =
+        Boolean(motionTag) ||
+        (pItem.stateTags || []).includes('motion_item') ||
+        (catalogDef?.stateTags || []).includes('motion_item');
+
       if (catRaw.includes('item_pet') || catRaw.includes('pet')) {
         category = 'item_pet';
-      } else if (catRaw.includes('equip') || catRaw.includes('weapon') || catRaw.includes('armor')) {
+      } else if (
+        isMotionItem ||
+        catRaw.includes('equip') ||
+        catRaw.includes('weapon') ||
+        catRaw.includes('armor') ||
+        catRaw.includes('accessory')
+      ) {
         category = 'equipaveis';
-        if (catRaw.includes('armor')) equipSlot = 'armor';
+        const mSlot = pItem.motionEquipSlot || catalogDef?.motionEquipSlot;
+        if (mSlot === 'head') equipSlot = 'head';
+        else if (mSlot === 'boots') equipSlot = 'boots';
+        else if (mSlot === 'weapon') equipSlot = 'weapon';
+        else if (mSlot === 'belt' || mSlot === 'accessory' || mSlot === 'cape' || mSlot === 'wings')
+          equipSlot = 'accessory';
+        else if (mSlot === 'skin' || mSlot === 'armor') equipSlot = 'armor';
+        else if (catRaw.includes('armor')) equipSlot = 'armor';
         else if (catRaw.includes('helm') || catRaw.includes('head')) equipSlot = 'head';
         else if (catRaw.includes('boot')) equipSlot = 'boots';
         else if (catRaw.includes('access') || catRaw.includes('ring')) equipSlot = 'accessory';
@@ -2240,31 +2265,39 @@ export const GameBackpackPopupModal: React.FC<{
       list.push({
         id: pItem.id,
         name: pItem.name,
-        iconEmoji: pItem.iconEmoji || (category === 'equipaveis' ? '⚔️' : category === 'livros' ? '📕' : '🧪'),
-        iconPng: pItem.iconPng,
+        iconEmoji:
+          pItem.iconEmoji ||
+          (isMotionItem ? '🎬' : category === 'equipaveis' ? '⚔️' : category === 'livros' ? '📕' : '🧪'),
+        iconPng: pItem.iconPng || catalogDef?.iconPng,
         quantity: finalQty,
         category,
         equipSlot,
-        rarity: pItem.rarity || 'rare',
-        shortDescription: pItem.description || 'Item do inventário do aventureiro.',
+        rarity: pItem.rarity || catalogDef?.rarity || 'rare',
+        shortDescription:
+          pItem.description ||
+          catalogDef?.shortDescription ||
+          (motionTag
+            ? `Motion Item Equipável (#${motionTag}). Revela camadas animadas no herói.`
+            : 'Item do inventário do aventureiro.'),
         detailedLore:
           pItem.detailedDescription ||
+          catalogDef?.detailedDescription ||
           pItem.description ||
           'Artefato catalogado na mochila do jogador durante a jornada.',
-        statsText: pItem.stats
-          ? [
-              pItem.stats.attack ? `+${pItem.stats.attack} ATQ` : '',
-              pItem.stats.defense ? `+${pItem.stats.defense} DEF` : '',
-              pItem.stats.healthRestore ? `+${pItem.stats.healthRestore} PV` : '',
-            ]
-              .filter(Boolean)
-              .join(' • ')
-          : undefined,
+        statsText: [
+          motionTag ? `🎬 MOTION #${motionTag}` : '',
+          pItem.stats?.attack ? `+${pItem.stats.attack} ATQ` : '',
+          pItem.stats?.defense ? `+${pItem.stats.defense} DEF` : '',
+          pItem.stats?.healthRestore ? `+${pItem.stats.healthRestore} PV` : '',
+        ]
+          .filter(Boolean)
+          .join(' • ') || undefined,
         pages: pItem.readableContent?.pages?.map((pg) => ({
           title: pg.title,
           text: pg.text,
         })),
         sourceKind: 'project_item',
+        motionLayerTag: motionTag,
       });
     }
 
@@ -2361,8 +2394,12 @@ export const GameBackpackPopupModal: React.FC<{
 
   const isSelectedItemEquipped = useMemo(() => {
     if (!selectedItem) return false;
+    if (selectedItem.motionLayerTag) {
+      const eqTags = (project.player?.equippedMotionTags || []).map((t) => t.toLowerCase());
+      if (eqTags.includes(selectedItem.motionLayerTag.toLowerCase())) return true;
+    }
     return Object.values(equippedBySlot).includes(selectedItem.id);
-  }, [selectedItem, equippedBySlot]);
+  }, [selectedItem, equippedBySlot, project.player?.equippedMotionTags]);
 
   // Equipar / Desequipar / Usar item selecionado (Botão Ciano Esquerdo)
   const handlePrimaryEquipOrUse = () => {
@@ -2388,12 +2425,55 @@ export const GameBackpackPopupModal: React.FC<{
     if (selectedItem.category === 'equipaveis') {
       const targetSlot: EquipmentSlotKey = selectedItem.equipSlot || 'weapon';
       const currentlyEquippedId = equippedBySlot[targetSlot];
-      if (currentlyEquippedId === selectedItem.id) {
+      const mTag = selectedItem.motionLayerTag?.trim();
+      const currentEqTags = project.player?.equippedMotionTags || [];
+      const isTagEquipped = mTag
+        ? currentEqTags.some((t) => t.toLowerCase() === mTag.toLowerCase())
+        : false;
+      const shouldUnequip = currentlyEquippedId === selectedItem.id || isTagEquipped;
+
+      if (shouldUnequip) {
         setEquippedBySlot((prev) => ({ ...prev, [targetSlot]: null }));
-        triggerToast(`Desequipado: ${selectedItem.name}`);
+        if (onUpdateProject && project.player) {
+          const nextTags = mTag
+            ? currentEqTags.filter((t) => t.toLowerCase() !== mTag.toLowerCase())
+            : currentEqTags;
+          const nextInvItems = (project.playerInventory?.items || []).map((it) =>
+            it.id === selectedItem.id ? { ...it, equipped: false } : it
+          );
+          onUpdateProject({
+            player: { ...project.player, equippedMotionTags: nextTags },
+            playerInventory: project.playerInventory
+              ? { ...project.playerInventory, items: nextInvItems }
+              : project.playerInventory,
+          });
+        }
+        triggerToast(
+          mTag
+            ? `🙈 Roupa/Peça Motion desfeita (#${mTag}): ${selectedItem.name}`
+            : `Desequipado: ${selectedItem.name}`
+        );
       } else {
         setEquippedBySlot((prev) => ({ ...prev, [targetSlot]: selectedItem.id }));
-        triggerToast(`⚔️ Equipado no slot: ${selectedItem.name}!`);
+        if (onUpdateProject && project.player) {
+          const nextTags = mTag
+            ? Array.from(new Set([...currentEqTags, mTag]))
+            : currentEqTags;
+          const nextInvItems = (project.playerInventory?.items || []).map((it) =>
+            it.id === selectedItem.id ? { ...it, equipped: true } : it
+          );
+          onUpdateProject({
+            player: { ...project.player, equippedMotionTags: nextTags },
+            playerInventory: project.playerInventory
+              ? { ...project.playerInventory, items: nextInvItems }
+              : project.playerInventory,
+          });
+        }
+        triggerToast(
+          mTag
+            ? `👕 Vestido no Herói (#${mTag}): ${selectedItem.name}!`
+            : `⚔️ Equipado no slot: ${selectedItem.name}!`
+        );
       }
       return;
     }
@@ -2696,20 +2776,45 @@ export const GameBackpackPopupModal: React.FC<{
             {renderPurpleEquipmentSlot('boots', 'Botas / Calçado')}
           </div>
 
-          {/* Personagem ao Centro: Silhueta Preta com Brilho Branco OU Asset Frontal */}
+          {/* Personagem ao Centro: Silhueta Preta com Brilho Branco OU Asset Frontal / Motion Canvas Paper-Doll */}
           <div className="col-span-6 flex flex-col items-center justify-center relative min-h-[118px]">
             {frontPlayerAssetPng && !forceSilhouette ? (
-              <img
-                src={frontPlayerAssetPng}
-                alt="Personagem Frente"
-                className={`${
-                  isLandscape ? 'w-30 h-30' : 'w-25 h-25'
-                } object-contain select-none transition-transform duration-300 hover:scale-105`}
-                style={{
-                  filter:
-                    'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.9))',
-                }}
-              />
+              (project.player?.motionLayers && project.player.motionLayers.length > 0) ||
+              (activeSavedChar?.motionLayers && activeSavedChar.motionLayers.length > 0) ? (
+                <MotionAssetCanvas
+                  src={frontPlayerAssetPng}
+                  alt="Personagem Frente"
+                  motionLayers={resolveVisibleMotionLayersForPlayer(
+                    project.player?.motionLayers || activeSavedChar?.motionLayers,
+                    project.player || activeSavedChar || undefined,
+                    project.playerInventory,
+                    undefined,
+                    project.itemCatalog
+                  )}
+                  isNpcBounce={false}
+                  width={isLandscape ? 120 : 100}
+                  height={isLandscape ? 120 : 100}
+                  className={`${
+                    isLandscape ? 'w-30 h-30' : 'w-25 h-25'
+                  } object-contain select-none transition-transform duration-300 hover:scale-105`}
+                  style={{
+                    filter:
+                      'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.9))',
+                  }}
+                />
+              ) : (
+                <img
+                  src={frontPlayerAssetPng}
+                  alt="Personagem Frente"
+                  className={`${
+                    isLandscape ? 'w-30 h-30' : 'w-25 h-25'
+                  } object-contain select-none transition-transform duration-300 hover:scale-105`}
+                  style={{
+                    filter:
+                      'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.9))',
+                  }}
+                />
+              )
             ) : (
               <HeroFrontSilhouetteSvg className={isLandscape ? 'w-30 h-30' : 'w-25 h-25'} />
             )}

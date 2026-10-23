@@ -1,4 +1,6 @@
-import { PlayerConfig, MapProject, PlayerInventoryConfig } from '../types/map';
+import { PlayerConfig, MapProject, PlayerInventoryConfig, MapMarker, ActionNpcConfig } from '../types/map';
+import { DirectionalSpritePack } from './directionalSpriteImporter';
+import { DEFAULT_ACTION_NPC_CONFIG, DEFAULT_ATTACK_CONFIGS } from './npcActionEngine';
 
 export const CHARACTERS_STORAGE_KEY = 'marker_dream_characters_roster_v2';
 
@@ -253,3 +255,272 @@ export function applyCharacterToPhase(
     savedCharacters: updatedSaved,
   };
 }
+
+export type CharacterNpcPresetMode =
+  | 'passive_action_procedural'
+  | 'curious_action_procedural'
+  | 'hostile_action'
+  | 'patrol_procedural';
+
+/**
+ * Constrói a configuração de Action NPC e Patrulha Procedural para um personagem da galeria.
+ * O modo padrão ('passive_action_procedural') configura um Action NPC Passivo ('peaceful')
+ * com caminhada procedural aleatória (wander/explore), emoções de anime e 4 direções.
+ */
+export function buildCharacterNpcBehavior(
+  character: PlayerConfig,
+  spawnX: number = 384,
+  spawnY: number = 220,
+  modeOverride?: CharacterNpcPresetMode
+): {
+  actionNpc: ActionNpcConfig;
+  npcPatrol: NonNullable<MapMarker['npcPatrol']>;
+} {
+  const mode: CharacterNpcPresetMode =
+    modeOverride || character.npcPresetMode || 'passive_action_procedural';
+
+  const isHostile = mode === 'hostile_action';
+  const isCurious = mode === 'curious_action_procedural';
+  const isActionEnabled = mode !== 'patrol_procedural';
+
+  const actionNpc: ActionNpcConfig = {
+    ...DEFAULT_ACTION_NPC_CONFIG,
+    ...(character.defaultActionNpc || {}),
+    enabled: isActionEnabled,
+    role: isHostile ? 'hostile' : isCurious ? 'curious' : 'peaceful',
+    detectionRadius: isHostile ? 120 : 95,
+    sensoryRadius: 250,
+    leashDistance: 320,
+    moveSpeed: Math.round((character.speed || 3.6) * 22),
+    spawnOrigin: { x: spawnX, y: spawnY },
+    retaliateOnHit: isHostile,
+    fleeOnWitnessCombat: !isHostile,
+    propagateFear: !isHostile,
+    showAnimeEmotes: true,
+    spontaneousPlayerApproach: isCurious || !isHostile,
+    health: character.stats?.maxHp || 100,
+    maxHealth: character.stats?.maxHp || 100,
+    attacks: {
+      jump: { ...DEFAULT_ATTACK_CONFIGS.jump, enabled: isHostile },
+      dash: { ...DEFAULT_ATTACK_CONFIGS.dash, enabled: isHostile },
+      hackSlash: { ...DEFAULT_ATTACK_CONFIGS.hackSlash, enabled: isHostile },
+      standard: { ...DEFAULT_ATTACK_CONFIGS.standard, enabled: isHostile },
+      ranged: { ...DEFAULT_ATTACK_CONFIGS.ranged, enabled: false },
+    },
+    speechPhrases:
+      character.defaultActionNpc?.speechPhrases ||
+      (isHostile
+        ? ['Alto lá, intruso!', 'Prepare-se para lutar!', 'Ninguém passa por aqui!']
+        : [
+            `Olá! Eu sou ${character.name}.`,
+            'Que dia agradável para caminhar pela região!',
+            'Cuidado com as criaturas mais adiante!',
+          ]),
+    avatarDownPng: character.avatarDownPng || character.avatarPng,
+    avatarUpPng: character.avatarUpPng || character.avatarPng,
+    avatarLeftPng: character.avatarLeftPng || character.avatarPng,
+    avatarRightPng: character.avatarRightPng || character.avatarPng,
+    facingDirection: 'down',
+  };
+
+  const npcPatrol: NonNullable<MapMarker['npcPatrol']> = {
+    enabled: true,
+    preset: 'procedural',
+    walkStyle: 'jelly',
+    speed: character.defaultNpcPatrol?.speed ?? 2.2,
+    distance: character.defaultNpcPatrol?.distance ?? 140,
+    pauseTime: character.defaultNpcPatrol?.pauseTime ?? 1.6,
+    loop: true,
+    customMode: 'points',
+    waypoints: [],
+  };
+
+  return { actionNpc, npcPatrol };
+}
+
+const CHARACTER_PALETTE_COLORS = [
+  '#10b981',
+  '#3b82f6',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+  '#06b6d4',
+  '#ef4444',
+  '#84cc16',
+];
+
+/**
+ * Transforma uma subpasta importada (DirectionalSpritePack) em um Personagem completo da Galeria,
+ * já configurado por padrão como NPC Action Passivo + Caminhada Procedural Aleatória.
+ */
+export function createCharacterFromDirectionalPack(
+  pack: DirectionalSpritePack,
+  index: number = 0,
+  presetMode: CharacterNpcPresetMode = 'passive_action_procedural'
+): PlayerConfig {
+  const cleanTitle = (pack.folderName || `Personagem ${index + 1}`)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const id = `char_folder_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`;
+  const color = CHARACTER_PALETTE_COLORS[index % CHARACTER_PALETTE_COLORS.length];
+
+  const baseChar: PlayerConfig = {
+    id,
+    characterId: id,
+    name: cleanTitle,
+    description: `Personagem importado da subpasta "${cleanTitle}" com 4 direções e caminhada procedural passiva.`,
+    role: presetMode === 'hostile_action' ? 'Action NPC Hostil' : 'NPC Action Passivo',
+    color,
+    speed: 3.8,
+    scale: 1.0,
+    autoBounce: true,
+    jellyStyle: 'step_walk',
+    jellyIntensity: 1.0,
+    jellyIdleIntensity: 0.35,
+    jellySpeed: 1.0,
+    x: 384,
+    y: 180,
+    avatarPng: pack.defaultPng,
+    avatarDownPng: pack.avatarDownPng || pack.defaultPng,
+    avatarUpPng: pack.avatarUpPng || pack.defaultPng,
+    avatarLeftPng: pack.avatarLeftPng || pack.defaultPng,
+    avatarRightPng: pack.avatarRightPng || pack.defaultPng,
+    defaultInventorySlots: 30,
+    defaultCurrencies: { gold: 150, gems: 10 },
+    stats: {
+      hp: 100,
+      maxHp: 100,
+      mp: 50,
+      maxMp: 50,
+      attack: 14,
+      defense: 10,
+    },
+    npcPresetMode: presetMode,
+    sourceSubfolder: pack.folderName,
+  };
+
+  const { actionNpc, npcPatrol } = buildCharacterNpcBehavior(baseChar, 384, 180, presetMode);
+  baseChar.defaultActionNpc = actionNpc;
+  baseChar.defaultNpcPatrol = npcPatrol;
+
+  return baseChar;
+}
+
+/**
+ * Cria um marcador NPC / Action NPC pronto para o mapa a partir de qualquer personagem da Galeria de Personagens.
+ */
+export function createNpcMarkerFromCharacter(
+  character: PlayerConfig,
+  options: {
+    x: number;
+    y: number;
+    biomeId?: string;
+    subBiomeId?: string;
+    layerId?: string;
+    size?: number;
+    presetMode?: CharacterNpcPresetMode;
+  }
+): MapMarker {
+  const { actionNpc, npcPatrol } = buildCharacterNpcBehavior(
+    character,
+    options.x,
+    options.y,
+    options.presetMode
+  );
+
+  const mainPng =
+    character.avatarDownPng ||
+    character.avatarPng ||
+    character.avatarRightPng ||
+    character.avatarLeftPng ||
+    character.avatarUpPng;
+
+  return {
+    id: `marker-npc-char-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    name: character.name,
+    description: character.description || `NPC Action (${character.role || 'Passivo Procedural'})`,
+    type: 'npc',
+    color: character.color || '#10b981',
+    status: 'active',
+    x: Math.round(options.x),
+    y: Math.round(options.y),
+    biomeId: options.biomeId,
+    subBiomeId: options.subBiomeId,
+    layerId: options.layerId || 'layer-default',
+    customIconPng: mainPng,
+    avatarDownPng: character.avatarDownPng || mainPng,
+    avatarUpPng: character.avatarUpPng || mainPng,
+    avatarLeftPng: character.avatarLeftPng || mainPng,
+    avatarRightPng: character.avatarRightPng || mainPng,
+    facingDirection: 'down',
+    size: options.size || Math.round(140 * (character.scale || 1.0)),
+    solidCollision: true,
+    hasShadow: true,
+    npcBounce: character.autoBounce !== false,
+    effect: 'jelly',
+    effectSpeed: character.jellySpeed ?? 1.0,
+    effectIntensity: character.jellyIntensity ?? 0.55,
+    jellyStyle: character.jellyStyle || 'step_walk',
+    jellySpeed: character.jellySpeed ?? 1.0,
+    jellyIntensity: character.jellyIntensity ?? 0.55,
+    dialogueEnabled: true,
+    dialogueCharacterName: character.name,
+    dialogueCharacterPng: mainPng,
+    dialogueText: `Olá, viajante! Eu sou ${character.name}.`,
+    actionNpc,
+    npcPatrol,
+    motionLayers: character.motionLayers ? JSON.parse(JSON.stringify(character.motionLayers)) : undefined,
+    motionAsset: Boolean(character.motionLayers && character.motionLayers.length > 0),
+  };
+}
+
+/**
+ * Aplica os sprites de 4 direções e o comportamento de NPC Action Passivo + Caminhada Procedural
+ * de um personagem da Galeria diretamente em um marcador existente no Editor de Fases.
+ */
+export function applyCharacterToExistingMarker(
+  character: PlayerConfig,
+  marker: MapMarker,
+  presetModeOverride?: CharacterNpcPresetMode
+): Partial<MapMarker> {
+  const { actionNpc, npcPatrol } = buildCharacterNpcBehavior(
+    character,
+    marker.x,
+    marker.y,
+    presetModeOverride
+  );
+  const mainPng =
+    character.avatarDownPng ||
+    character.avatarPng ||
+    character.avatarRightPng ||
+    character.avatarLeftPng ||
+    character.avatarUpPng ||
+    marker.customIconPng;
+
+  return {
+    name: character.name,
+    type: 'npc',
+    color: character.color || marker.color || '#10b981',
+    customIconPng: mainPng,
+    avatarDownPng: character.avatarDownPng || mainPng,
+    avatarUpPng: character.avatarUpPng || mainPng,
+    avatarLeftPng: character.avatarLeftPng || mainPng,
+    avatarRightPng: character.avatarRightPng || mainPng,
+    facingDirection: 'down',
+    npcBounce: true,
+    effect: 'jelly',
+    dialogueCharacterName: character.name,
+    dialogueCharacterPng: mainPng,
+    actionNpc,
+    npcPatrol,
+    ...(character.motionLayers && character.motionLayers.length > 0
+      ? {
+          motionLayers: JSON.parse(JSON.stringify(character.motionLayers)),
+          motionAsset: true,
+        }
+      : {}),
+  };
+}
+

@@ -1,5 +1,14 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { MapProject, MapMarker, MarkerType } from '../types/map';
+import {
+  MapProject,
+  MapMarker,
+  MarkerType,
+  pickMarkerDirectionalPng,
+  InterceptEventConfig,
+  DEFAULT_INTERCEPT_CONFIG,
+} from '../types/map';
+import { loadCharactersRoster } from '../utils/characterHelpers';
+import { getCapitaLyraDirectionalSprites } from '../utils/interceptTestPhaseGenerator';
 import { getBiomeSegmentSpans, getTotalMapHeight, generateCurvedPath, getBiomeAtY, COLLISION_CELL } from '../utils/mapMath';
 import {
   Smartphone,
@@ -92,6 +101,7 @@ import {
   getOrCreateItemCatalog,
   getOrCreatePlayerInventory,
   addItemToPlayerInventory,
+  resolveVisibleMotionLayersForPlayer,
 } from '../utils/inventoryHelpers';
 import {
   dispatchEngineEvent,
@@ -106,11 +116,14 @@ import {
   rollMatrixCardVariation,
   saveRolledVariationToCollection,
   rewardPlayerCoinsAndGems,
+  unlockActiveArtifactForPlayer,
   RolledCardVariation,
   NpcBattleOutcome,
+  UnlockedArtifactDrop,
   resolveNpcBattleMode,
   resolveNpcMatrixCard,
 } from '../../../core/NpcCardBattleBridge';
+import { SoundManager } from '../../../ui/utils/SoundManager';
 import {
   NpcScanBattleDialogueModal,
   NpcEmbeddedBattleIframeModal,
@@ -914,7 +927,8 @@ export const PortraitEmulator: React.FC<Props> = ({
     }
 
     const targetVol = Math.max(0, Math.min(1, baseVol * bgmDuckingFactorRef.current));
-    const safeUrl = targetUrl || '';
+    const safeUrl =
+      targetUrl || SoundManager.getConfig().screens?.md_fase_exploracao || '';
     // SE O ÁUDIO É O MESMO (OU REPETIÇÃO DO MESMO BIOMA): NÃO REINICIA NEM CORTA!
     if (currentBgmUrlRef.current === safeUrl) {
       if (bgmAudioRef.current && !isBgmMuted) {
@@ -1354,7 +1368,9 @@ export const PortraitEmulator: React.FC<Props> = ({
         'player',
         nowMs
       );
+      SoundManager.playAction('md_ataque_player', 0.6);
       if (res.enteredStun) {
+        SoundManager.playAction('md_scan_pronto', 0.75);
         setActionFeedback(`💫 ${nearestNpc.name} atingiu 50% PV (Fase de Scan)! Escolha Boss Battle, Duelo ou Scan!`);
         setScanBattleModalMarker(nearestNpc);
       } else {
@@ -1362,6 +1378,7 @@ export const PortraitEmulator: React.FC<Props> = ({
       }
       setTimeout(() => setActionFeedback(null), 1800);
     } else {
+      SoundManager.playAction('md_ataque_player', 0.5);
       setActionFeedback('⚔️ Golpe executado!');
       setTimeout(() => setActionFeedback(null), 1500);
     }
@@ -1375,6 +1392,7 @@ export const PortraitEmulator: React.FC<Props> = ({
   } | null>(null);
   const [droppedCardVariationShowcase, setDroppedCardVariationShowcase] = useState<{
     variation: RolledCardVariation;
+    unlockedArtifact?: UnlockedArtifactDrop;
     coinsAwarded?: number;
     gemsAwarded?: number;
     xpAwarded?: number;
@@ -1518,8 +1536,15 @@ export const PortraitEmulator: React.FC<Props> = ({
     }
 
     // 3. Abre o Modal de Drop da Variação de Carta da Matriz!
+    SoundManager.playAction('md_scan_captura', 0.75);
+    const unlockedArt =
+      outcome.unlockedArtifact ||
+      unlockActiveArtifactForPlayer(
+        marker.actionNpc?.activeArtifactId || marker.activeArtifactId
+      );
     setDroppedCardVariationShowcase({
       variation: rolledVar,
+      unlockedArtifact: unlockedArt,
       coinsAwarded: outcome.coinsAwarded || 150,
       gemsAwarded: outcome.gemsAwarded || 3,
       xpAwarded: outcome.xpAwarded || 220,
@@ -1710,9 +1735,14 @@ export const PortraitEmulator: React.FC<Props> = ({
         if (contentRef.current) {
           contentRef.current.style.transition = '';
         }
+        SoundManager.playAction('md_scan_captura', 0.75);
+        const unlockedArt = unlockActiveArtifactForPlayer(
+          marker.actionNpc?.activeArtifactId || marker.activeArtifactId
+        );
         // Abre o showcase da Carta Matriz escaneada com sua variação de raridade!
         setDroppedCardVariationShowcase({
           variation: rolledVariation,
+          unlockedArtifact: unlockedArt,
           coinsAwarded: 80,
           gemsAwarded: 2,
           xpAwarded: 120,
@@ -2297,6 +2327,7 @@ export const PortraitEmulator: React.FC<Props> = ({
     }
 
     bumpQuests();
+    SoundManager.playAction('md_coleta_item', 0.65);
     pushLootToastEntry({
       text: `${resourceName}`,
       iconUrl: markerIcon,
@@ -2317,6 +2348,7 @@ export const PortraitEmulator: React.FC<Props> = ({
 
   const handleOpenTreasureChest = (marker: MapMarker) => {
     if (collectedMarkerIdsRef.current.has(marker.id)) return;
+    SoundManager.playAction('md_bau_abrir', 0.7);
     collectedMarkerIdsRef.current.add(marker.id);
     setCollectedMarkerIds((prev) => {
       const next = new Set(prev);
@@ -3145,6 +3177,7 @@ export const PortraitEmulator: React.FC<Props> = ({
     }
     teleportingRef.current = true;
     lastTeleportAtRef.current = now;
+    SoundManager.playAction('md_viagem_portal', 0.7);
     contactedMarkerIdsRef.current.add(marker.id);
     setInspectedMarker(null);
     setFadeColor('#000000');
@@ -3276,13 +3309,613 @@ export const PortraitEmulator: React.FC<Props> = ({
     return totalSec;
   };
 
-  // Dispara o EVENTO do marcador (tipo event ou área): suporta som, clima, diálogo e fila sequencial modular
+  // =========================================================================
+  // MOTOR DE INTERCEPTAÇÃO & ESCOLTA GUIADA ("INTERCEPT") — 60 FPS
+  // =========================================================================
+  interface ActiveInterceptRuntimeState {
+    id: string;
+    sourceMarkerId: string;
+    config: InterceptEventConfig;
+    phase:
+      | 'approaching'
+      | 'greeting_dialogue'
+      | 'escorting'
+      | 'arrival_dialogue'
+      | 'stationed'
+      | 'ally_following'
+      | 'returning';
+    actorX: number;
+    actorY: number;
+    actorDir: 'up' | 'down' | 'left' | 'right';
+    isActorMoving: boolean;
+    actorName: string;
+    actorSize: number;
+    actorColor: string;
+    sprites: {
+      base?: string;
+      up?: string;
+      down?: string;
+      left?: string;
+      right?: string;
+    };
+    dialogueIndex: number;
+    destX: number;
+    destY: number;
+    destName: string;
+    spawnOriginX: number;
+    spawnOriginY: number;
+  }
+
+  const [activeIntercept, setActiveIntercept] = useState<ActiveInterceptRuntimeState | null>(null);
+  const activeInterceptRef = useRef<ActiveInterceptRuntimeState | null>(null);
+  activeInterceptRef.current = activeIntercept;
+
+  const startInterceptEvent = (rawConfig: InterceptEventConfig | undefined, sourceMarker: MapMarker) => {
+    const cfg: InterceptEventConfig = {
+      ...DEFAULT_INTERCEPT_CONFIG,
+      ...(rawConfig || {}),
+    };
+    const p = playerRef.current || { x: projectRef.current.player?.x ?? 384, y: projectRef.current.player?.y ?? 140 };
+    const lyraFallback = getCapitaLyraDirectionalSprites();
+
+    // 1. Resolve dados visuais do Ator (NPC Inline, NPC Existente no Mapa ou Personagem do Elenco)
+    let actorName = cfg.inlineNpcName || 'Capitã Lyra';
+    let actorSize = cfg.inlineNpcSize || 64;
+    let actorColor = cfg.inlineNpcColor || '#f59e0b';
+    let sprites = {
+      base: cfg.inlineNpcPng || cfg.inlineAvatarDownPng || lyraFallback.down,
+      down: cfg.inlineAvatarDownPng || cfg.inlineNpcPng || lyraFallback.down,
+      up: cfg.inlineAvatarUpPng || lyraFallback.up,
+      left: cfg.inlineAvatarLeftPng || lyraFallback.left,
+      right: cfg.inlineAvatarRightPng || lyraFallback.right,
+    };
+
+    let existingMarker: MapMarker | undefined;
+    if (cfg.actorSource === 'existing_npc' && cfg.existingNpcMarkerId) {
+      existingMarker = projectRef.current.markers.find((m) => m.id === cfg.existingNpcMarkerId);
+      if (existingMarker) {
+        actorName = existingMarker.name || actorName;
+        actorSize = existingMarker.size || 64;
+        actorColor = existingMarker.color || actorColor;
+        sprites = {
+          base: existingMarker.customIconPng || existingMarker.avatarDownPng || sprites.base,
+          down: existingMarker.avatarDownPng || existingMarker.customIconPng || sprites.down,
+          up: existingMarker.avatarUpPng || existingMarker.customIconPng || sprites.up,
+          left: existingMarker.avatarLeftPng || existingMarker.customIconPng || sprites.left,
+          right: existingMarker.avatarRightPng || existingMarker.customIconPng || sprites.right,
+        };
+      }
+    } else if (cfg.actorSource === 'character_roster' && cfg.characterRosterId) {
+      const roster = loadCharactersRoster(projectRef.current);
+      const foundChar = roster.find((c) => c.id === cfg.characterRosterId);
+      if (foundChar) {
+        actorName = foundChar.name || actorName;
+        actorColor = foundChar.color || actorColor;
+        sprites = {
+          base: foundChar.avatarPng || foundChar.avatarDownPng || sprites.base,
+          down: foundChar.avatarDownPng || foundChar.avatarPng || sprites.down,
+          up: foundChar.avatarUpPng || foundChar.avatarPng || sprites.up,
+          left: foundChar.avatarLeftPng || foundChar.avatarPng || sprites.left,
+          right: foundChar.avatarRightPng || foundChar.avatarPng || sprites.right,
+        };
+      }
+    }
+
+    // 2. Calcula ponto exato de surgimento no canto/borda da tela visível
+    const viewW = (containerSizeRef.current.w || 360) / Math.max(0.2, scale);
+    const viewH = (containerSizeRef.current.h || 640) / Math.max(0.2, scale);
+    const halfW = Math.min(200, viewW * 0.44);
+    const halfH = Math.min(240, viewH * 0.42);
+
+    let spawnX = p.x + halfW;
+    let spawnY = p.y - halfH;
+
+    switch (cfg.spawnOrigin) {
+      case 'top':
+        spawnX = p.x;
+        spawnY = p.y - halfH;
+        break;
+      case 'bottom':
+        spawnX = p.x;
+        spawnY = p.y + halfH;
+        break;
+      case 'left':
+        spawnX = p.x - halfW;
+        spawnY = p.y;
+        break;
+      case 'right':
+        spawnX = p.x + halfW;
+        spawnY = p.y;
+        break;
+      case 'top_left':
+        spawnX = p.x - halfW;
+        spawnY = p.y - halfH;
+        break;
+      case 'top_right':
+        spawnX = p.x + halfW;
+        spawnY = p.y - halfH;
+        break;
+      case 'bottom_left':
+        spawnX = p.x - halfW;
+        spawnY = p.y + halfH;
+        break;
+      case 'bottom_right':
+        spawnX = p.x + halfW;
+        spawnY = p.y + halfH;
+        break;
+      case 'marker_pos':
+        if (existingMarker) {
+          const live = npcLivePositionsRef.current.get(existingMarker.id);
+          spawnX = live ? live.x : existingMarker.x;
+          spawnY = live ? live.y : existingMarker.y;
+        } else {
+          spawnX = sourceMarker.x;
+          spawnY = sourceMarker.y - 110;
+        }
+        break;
+    }
+
+    spawnX = Math.max(36, Math.min(totalMapWidth - 36, spawnX));
+    spawnY = Math.max(36, Math.min(totalMapHeight - 36, spawnY));
+
+    // 3. Resolve o Destino da Escolta
+    const destMarker = cfg.destinationMarkerId
+      ? projectRef.current.markers.find((m) => m.id === cfg.destinationMarkerId)
+      : undefined;
+    const destX =
+      (cfg.destinationType || 'marker') === 'marker' && destMarker
+        ? destMarker.x
+        : cfg.destinationX ?? Math.min(totalMapWidth - 60, sourceMarker.x + 120);
+    const destY =
+      (cfg.destinationType || 'marker') === 'marker' && destMarker
+        ? destMarker.y
+        : cfg.destinationY ?? Math.min(totalMapHeight - 60, sourceMarker.y + 280);
+    const destName = destMarker?.name || 'Ponto de Destino';
+
+    // 4. Congela locomoção manual do player durante a abordagem
+    eventFreezeUntilRef.current = Number.MAX_SAFE_INTEGER;
+    tapTargetRef.current = null;
+    tapWayRef.current = [];
+
+    if (cfg.cameraFocusOnInterceptor !== false) {
+      const z = cfg.interceptCameraZoom || 1.22;
+      setZoomVisual(z, p.x * scale, p.y * scale);
+      camZoomValRef.current = z;
+    }
+
+    const dxToPlayer = p.x - spawnX;
+    const dyToPlayer = p.y - spawnY;
+    const initDir: 'up' | 'down' | 'left' | 'right' =
+      Math.abs(dxToPlayer) > Math.abs(dyToPlayer)
+        ? dxToPlayer >= 0
+          ? 'right'
+          : 'left'
+        : dyToPlayer >= 0
+        ? 'down'
+        : 'up';
+
+    const runtimeState: ActiveInterceptRuntimeState = {
+      id: `intercept-run-${Date.now()}`,
+      sourceMarkerId: sourceMarker.id,
+      config: cfg,
+      phase: 'approaching',
+      actorX: spawnX,
+      actorY: spawnY,
+      actorDir: initDir,
+      isActorMoving: true,
+      actorName,
+      actorSize,
+      actorColor,
+      sprites,
+      dialogueIndex: 0,
+      destX,
+      destY,
+      destName,
+      spawnOriginX: spawnX,
+      spawnOriginY: spawnY,
+    };
+
+    activeInterceptRef.current = runtimeState;
+    setActiveIntercept(runtimeState);
+  };
+
+  const completeInterceptEvent = (stateSnapshot?: ActiveInterceptRuntimeState | null) => {
+    const cur = stateSnapshot || activeInterceptRef.current;
+    if (!cur) return;
+
+    eventFreezeUntilRef.current = 0;
+    const p = playerRef.current;
+    if (p) {
+      lastZoomKeyRef.current = '';
+      applyCameraZoomFor(p.x, p.y);
+      onUpdatePlayerRef.current?.({ x: Math.round(p.x), y: Math.round(p.y) });
+    }
+
+    const coins = cur.config.onArrivalRewardCoins || 0;
+    if (coins > 0) {
+      rewardPlayerCoinsAndGems(coins, 0);
+      setActionFeedback(`🎉 Escolta concluída com ${cur.actorName}! +${coins} 🪙 Ouro!`);
+      setTimeout(() => setActionFeedback(null), 4000);
+    } else {
+      setActionFeedback(`✅ Chegada em ${cur.destName} concluída!`);
+      setTimeout(() => setActionFeedback(null), 3200);
+    }
+
+    // Se havia um NPC real do mapa, atualiza a posição viva dele para o destino
+    if (cur.config.actorSource === 'existing_npc' && cur.config.existingNpcMarkerId) {
+      npcLivePositionsRef.current.set(cur.config.existingNpcMarkerId, {
+        x: cur.destX,
+        y: cur.destY,
+        dir: 'down',
+      });
+    }
+
+    // Dispara evento encadeado no destino (se configurado)
+    if (cur.config.onArrivalEventMarkerId && cur.config.onArrivalEventMarkerId !== cur.sourceMarkerId) {
+      const arrivalMarker = projectRef.current.markers.find(
+        (m) => m.id === cur.config.onArrivalEventMarkerId
+      );
+      if (arrivalMarker) {
+        setTimeout(() => {
+          triggerEvent(arrivalMarker);
+        }, 220);
+      }
+    }
+
+    const postBehavior = cur.config.actorPostBehavior || 'stay_at_destination';
+    if (postBehavior === 'stay_at_destination') {
+      const stationed: ActiveInterceptRuntimeState = {
+        ...cur,
+        phase: 'stationed',
+        isActorMoving: false,
+        actorDir: 'down',
+      };
+      activeInterceptRef.current = stationed;
+      setActiveIntercept(stationed);
+    } else if (postBehavior === 'follow_player') {
+      const ally: ActiveInterceptRuntimeState = {
+        ...cur,
+        phase: 'ally_following',
+        isActorMoving: false,
+      };
+      activeInterceptRef.current = ally;
+      setActiveIntercept(ally);
+    } else {
+      const returning: ActiveInterceptRuntimeState = {
+        ...cur,
+        phase: 'returning',
+        isActorMoving: true,
+      };
+      activeInterceptRef.current = returning;
+      setActiveIntercept(returning);
+    }
+  };
+
+  const advanceInterceptDialogue = () => {
+    const cur = activeInterceptRef.current;
+    if (!cur) return;
+
+    if (cur.phase === 'greeting_dialogue') {
+      const lines =
+        cur.config.greetingDialogues && cur.config.greetingDialogues.length > 0
+          ? cur.config.greetingDialogues
+          : ['Venha comigo, vou guiar você!'];
+      if (cur.dialogueIndex + 1 < lines.length) {
+        const nextState = { ...cur, dialogueIndex: cur.dialogueIndex + 1 };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+        return;
+      }
+      // Terminou as falas iniciais: se escolta estiver ativa, inicia locomoção guiada!
+      if (cur.config.escortEnabled) {
+        const p = playerRef.current;
+        if (p) {
+          lastZoomKeyRef.current = '';
+          applyCameraZoomFor(p.x, p.y);
+        }
+        const nextState: ActiveInterceptRuntimeState = {
+          ...cur,
+          phase: 'escorting',
+          isActorMoving: true,
+          dialogueIndex: 0,
+        };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+      } else {
+        completeInterceptEvent(cur);
+      }
+      return;
+    }
+
+    if (cur.phase === 'arrival_dialogue') {
+      const lines = cur.config.arrivalDialogues || [];
+      if (cur.dialogueIndex + 1 < lines.length) {
+        const nextState = { ...cur, dialogueIndex: cur.dialogueIndex + 1 };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+        return;
+      }
+      completeInterceptEvent(cur);
+    }
+  };
+
+  const skipInterceptEscort = () => {
+    const cur = activeInterceptRef.current;
+    if (!cur || cur.phase !== 'escorting') return;
+    const p = playerRef.current;
+    if (p) {
+      p.x = Math.max(36, Math.min(totalMapWidth - 36, cur.destX - 38));
+      p.y = Math.max(36, Math.min(totalMapHeight - 36, cur.destY + 12));
+      if (playerDomRef.current) {
+        playerDomRef.current.style.transform = `translate3d(${p.x * scale}px, ${p.y * scale}px, 0) translate(-50%, -100%)`;
+        playerDomRef.current.style.zIndex = String(Math.round(p.y * scale));
+      }
+      if (containerRef.current) {
+        const clientH = containerSizeRef.current.h;
+        const clientW = containerSizeRef.current.w;
+        containerRef.current.scrollTop = Math.max(0, p.y * scale - clientH / 2);
+        containerRef.current.scrollLeft = Math.max(0, p.x * scale - clientW / 2);
+      }
+    }
+    const hasArrivalLines = Boolean(cur.config.arrivalDialogues && cur.config.arrivalDialogues.length > 0);
+    if (hasArrivalLines) {
+      const arrivedState: ActiveInterceptRuntimeState = {
+        ...cur,
+        actorX: cur.destX,
+        actorY: cur.destY,
+        actorDir: 'left',
+        isActorMoving: false,
+        phase: 'arrival_dialogue',
+        dialogueIndex: 0,
+      };
+      activeInterceptRef.current = arrivedState;
+      setActiveIntercept(arrivedState);
+    } else {
+      completeInterceptEvent({ ...cur, actorX: cur.destX, actorY: cur.destY });
+    }
+  };
+
+  // Loop 60 FPS para locomoção de Abordagem, Escolta Guiada do Jogador e Retorno
+  useEffect(() => {
+    if (!activeIntercept) return;
+    if (
+      activeIntercept.phase !== 'approaching' &&
+      activeIntercept.phase !== 'escorting' &&
+      activeIntercept.phase !== 'returning' &&
+      activeIntercept.phase !== 'ally_following'
+    ) {
+      return;
+    }
+
+    let rafId = 0;
+    let cancelled = false;
+
+    const tickIntercept = () => {
+      if (cancelled) return;
+      const cur = activeInterceptRef.current;
+      if (!cur) return;
+      const p = playerRef.current;
+      if (!p) return;
+
+      if (cur.phase === 'approaching') {
+        const dx = p.x - cur.actorX;
+        const dy = p.y - cur.actorY;
+        const dist = Math.hypot(dx, dy);
+        const stopDist = Math.max(34, cur.config.stopDistanceFromPlayer || 52);
+        const spd = Math.max(1.5, cur.config.approachSpeed || 3.8);
+
+        if (dist <= stopDist + spd) {
+          // Chegou no jogador! Posiciona de frente para o herói e abre o diálogo de abordagem
+          const faceDir: 'up' | 'down' | 'left' | 'right' =
+            Math.abs(dx) > Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+          const playerFace: 'up' | 'down' | 'left' | 'right' =
+            faceDir === 'right' ? 'left' : faceDir === 'left' ? 'right' : faceDir === 'down' ? 'up' : 'down';
+          lastDirectionRef.current = playerFace;
+          setPlayerDirection(playerFace);
+
+          const hasGreeting = Boolean(
+            cur.config.greetingDialogues && cur.config.greetingDialogues.some((l) => l.trim().length > 0)
+          );
+          const nextState: ActiveInterceptRuntimeState = {
+            ...cur,
+            actorDir: faceDir,
+            isActorMoving: false,
+            phase: hasGreeting ? 'greeting_dialogue' : cur.config.escortEnabled ? 'escorting' : 'arrival_dialogue',
+            dialogueIndex: 0,
+          };
+          activeInterceptRef.current = nextState;
+          setActiveIntercept(nextState);
+          return;
+        }
+
+        const nx = cur.actorX + (dx / dist) * spd;
+        const ny = cur.actorY + (dy / dist) * spd;
+        const dir: 'up' | 'down' | 'left' | 'right' =
+          Math.abs(dx) > Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+
+        const nextState: ActiveInterceptRuntimeState = {
+          ...cur,
+          actorX: nx,
+          actorY: ny,
+          actorDir: dir,
+          isActorMoving: true,
+        };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+      } else if (cur.phase === 'escorting') {
+        // Fase de Escolta: O NPC caminha até (destX, destY) e CONTROLA A LOCOMOÇÃO DO PLAYER logo atrás/ao lado!
+        const dx = cur.destX - cur.actorX;
+        const dy = cur.destY - cur.actorY;
+        const dist = Math.hypot(dx, dy);
+        const spd = Math.max(1.4, cur.config.escortSpeed || 3.2);
+
+        if (dist <= spd + 10) {
+          // Chegou no destino!
+          const finalPlayerX = Math.max(36, Math.min(totalMapWidth - 36, cur.destX - 38));
+          const finalPlayerY = Math.max(36, Math.min(totalMapHeight - 36, cur.destY + 10));
+          p.x = finalPlayerX;
+          p.y = finalPlayerY;
+          if (playerDomRef.current) {
+            playerDomRef.current.style.transform = `translate3d(${p.x * scale}px, ${p.y * scale}px, 0) translate(-50%, -100%)`;
+            playerDomRef.current.style.zIndex = String(Math.round(p.y * scale));
+          }
+          setIsJoystickActive(false);
+          lastDirectionRef.current = 'right';
+          setPlayerDirection('right');
+
+          const hasArrival = Boolean(
+            cur.config.arrivalDialogues && cur.config.arrivalDialogues.some((l) => l.trim().length > 0)
+          );
+          if (hasArrival) {
+            const arrivedState: ActiveInterceptRuntimeState = {
+              ...cur,
+              actorX: cur.destX,
+              actorY: cur.destY,
+              actorDir: 'left',
+              isActorMoving: false,
+              phase: 'arrival_dialogue',
+              dialogueIndex: 0,
+            };
+            activeInterceptRef.current = arrivedState;
+            setActiveIntercept(arrivedState);
+          } else {
+            completeInterceptEvent({ ...cur, actorX: cur.destX, actorY: cur.destY });
+          }
+          return;
+        }
+
+        const ux = dx / dist;
+        const uy = dy / dist;
+        const nextActorX = cur.actorX + ux * spd;
+        const nextActorY = cur.actorY + uy * spd;
+        const actorDir: 'up' | 'down' | 'left' | 'right' =
+          Math.abs(dx) > Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+
+        // Posição alvo do Player logo atrás do Guia (playerFollowOffset)
+        const followOffset = Math.max(28, cur.config.playerFollowOffset || 44);
+        const targetPlayerX = nextActorX - ux * followOffset;
+        const targetPlayerY = nextActorY - uy * followOffset;
+        const pdx = targetPlayerX - p.x;
+        const pdy = targetPlayerY - p.y;
+        const pdist = Math.hypot(pdx, pdy);
+
+        if (pdist > 2) {
+          const pStep = Math.min(pdist, spd * 1.04);
+          p.x = Math.max(24, Math.min(totalMapWidth - 24, p.x + (pdx / pdist) * pStep));
+          p.y = Math.max(24, Math.min(totalMapHeight - 24, p.y + (pdy / pdist) * pStep));
+          const pDir: 'up' | 'down' | 'left' | 'right' =
+            Math.abs(pdx) > Math.abs(pdy) ? (pdx >= 0 ? 'right' : 'left') : pdy >= 0 ? 'down' : 'up';
+          if (lastDirectionRef.current !== pDir) {
+            lastDirectionRef.current = pDir;
+            setPlayerDirection(pDir);
+          }
+          setIsJoystickActive(true);
+
+          if (playerDomRef.current) {
+            playerDomRef.current.style.transform = `translate3d(${p.x * scale}px, ${p.y * scale}px, 0) translate(-50%, -100%)`;
+            playerDomRef.current.style.zIndex = String(Math.round(p.y * scale));
+          }
+          // Acompanha câmera suavemente durante a escolta
+          if (containerRef.current) {
+            const clientH = containerSizeRef.current.h;
+            const clientW = containerSizeRef.current.w;
+            const maxScrollTop = Math.max(0, scaledMapHeight - clientH);
+            const maxScrollLeft = Math.max(0, scaledMapWidth - clientW);
+            const desiredTop = Math.max(0, Math.min(maxScrollTop, p.y * scale - clientH / 2));
+            const desiredLeft = Math.max(0, Math.min(maxScrollLeft, p.x * scale - clientW / 2));
+            containerRef.current.scrollTop += (desiredTop - containerRef.current.scrollTop) * 0.18;
+            containerRef.current.scrollLeft += (desiredLeft - containerRef.current.scrollLeft) * 0.18;
+          }
+        }
+
+        const nextState: ActiveInterceptRuntimeState = {
+          ...cur,
+          actorX: nextActorX,
+          actorY: nextActorY,
+          actorDir,
+          isActorMoving: true,
+        };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+      } else if (cur.phase === 'ally_following') {
+        const dx = p.x - 42 - cur.actorX;
+        const dy = p.y + 12 - cur.actorY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 18) {
+          const spd = 3.2;
+          const nx = cur.actorX + (dx / dist) * Math.min(dist, spd);
+          const ny = cur.actorY + (dy / dist) * Math.min(dist, spd);
+          const dir: 'up' | 'down' | 'left' | 'right' =
+            Math.abs(dx) > Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+          const nextState: ActiveInterceptRuntimeState = {
+            ...cur,
+            actorX: nx,
+            actorY: ny,
+            actorDir: dir,
+            isActorMoving: true,
+          };
+          activeInterceptRef.current = nextState;
+          setActiveIntercept(nextState);
+        } else if (cur.isActorMoving) {
+          const nextState = { ...cur, isActorMoving: false };
+          activeInterceptRef.current = nextState;
+          setActiveIntercept(nextState);
+        }
+      } else if (cur.phase === 'returning') {
+        const dx = cur.spawnOriginX - cur.actorX;
+        const dy = cur.spawnOriginY - cur.actorY;
+        const dist = Math.hypot(dx, dy);
+        const spd = 4.2;
+        if (dist <= spd + 8) {
+          activeInterceptRef.current = null;
+          setActiveIntercept(null);
+          return;
+        }
+        const nx = cur.actorX + (dx / dist) * spd;
+        const ny = cur.actorY + (dy / dist) * spd;
+        const dir: 'up' | 'down' | 'left' | 'right' =
+          Math.abs(dx) > Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'down' : 'up';
+        const nextState: ActiveInterceptRuntimeState = {
+          ...cur,
+          actorX: nx,
+          actorY: ny,
+          actorDir: dir,
+          isActorMoving: true,
+        };
+        activeInterceptRef.current = nextState;
+        setActiveIntercept(nextState);
+      }
+
+      rafId = requestAnimationFrame(tickIntercept);
+    };
+
+    rafId = requestAnimationFrame(tickIntercept);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [activeIntercept?.phase]);
+
+  // Dispara o EVENTO do marcador (tipo event ou área): suporta som, clima, diálogo, interceptação e fila sequencial modular
   const triggerEvent = (marker: MapMarker) => {
+    // 0. Se o marcador for diretamente do tipo 'intercept' (ou tiver interceptConfig direto sem events modulares)
+    if (
+      marker.eventKind === 'intercept' &&
+      (!marker.events || !marker.events.some((e) => e.type === 'intercept'))
+    ) {
+      startInterceptEvent(marker.interceptConfig, marker);
+      return;
+    }
+
     // 1. Suporte a Eventos Modulares encadeados ou múltiplos (marker.events) com delaySeconds e waitPrevious
     if (marker.events && marker.events.length > 0) {
       let accumulatedDelaySec = 0;
 
       const executeSingleEventItem = (ev: import('../types/map').MarkerEventItem) => {
+        if (ev.type === 'intercept') {
+          startInterceptEvent(ev.interceptConfig || marker.interceptConfig, marker);
+          return;
+        }
         if (ev.type === 'sound_area' && ev.audioUrl) {
           const a = new Audio(ev.audioUrl);
           a.volume = isBgmMuted ? 0 : Math.max(0.05, Math.min(1, ev.audioVolume ?? 0.8));
@@ -3348,6 +3981,11 @@ export const PortraitEmulator: React.FC<Props> = ({
 
     const kind = marker.eventKind || 'popup';
     const dur = Math.max(0, marker.eventDuration ?? (kind === 'zoom' ? 3 : 0));
+
+    if (kind === 'intercept' || marker.interceptConfig) {
+      startInterceptEvent(marker.interceptConfig, marker);
+      return;
+    }
 
     // 2. Suporte a Áudio / Som legado ou direto
     if (kind === 'sound' || kind === 'sound_area' || marker.audioUrl) {
@@ -4233,6 +4871,9 @@ export const PortraitEmulator: React.FC<Props> = ({
 
   // Posições ativas ao vivo de NPCs com patrulha automática
   const npcLivePositionsRef = useRef<Map<string, { x: number; y: number; dir: string; isMoving: boolean }>>(new Map());
+  // Direções ativas de NPCs que possuem sprites em 4 direções (só re-renderiza quando a direção muda)
+  const [npcDirections, setNpcDirections] = useState<Map<string, string>>(new Map());
+  const npcDirectionsRef = useRef<Map<string, string>>(new Map());
 
   // Loop contínuo de movimentação automática de NPCs (Patrulha / Auto-Caminhe)
   useEffect(() => {
@@ -4647,6 +5288,7 @@ export const PortraitEmulator: React.FC<Props> = ({
         }
       }
 
+      let directionsChanged = false;
       for (const m of mList) {
         if (m.type !== 'npc') continue;
 
@@ -4678,7 +5320,7 @@ export const PortraitEmulator: React.FC<Props> = ({
 
         let liveX = m.x;
         let liveY = m.y;
-        let dir = 'down';
+        let dir: string = m.facingDirection || m.actionNpc?.facingDirection || 'down';
         let isMoving = false;
         const rs = globalNpcActionEngine.getRuntimeState(m.id);
 
@@ -4862,6 +5504,21 @@ export const PortraitEmulator: React.FC<Props> = ({
 
         npcLivePositionsRef.current.set(m.id, { x: liveX, y: liveY, dir, isMoving });
 
+        const hasDirectionalSprites = Boolean(
+          m.avatarUpPng ||
+          m.avatarDownPng ||
+          m.avatarLeftPng ||
+          m.avatarRightPng ||
+          m.actionNpc?.avatarUpPng ||
+          m.actionNpc?.avatarDownPng ||
+          m.actionNpc?.avatarLeftPng ||
+          m.actionNpc?.avatarRightPng
+        );
+        if (hasDirectionalSprites && npcDirectionsRef.current.get(m.id) !== dir) {
+          npcDirectionsRef.current.set(m.id, dir);
+          directionsChanged = true;
+        }
+
         // Atualiza elemento DOM diretamente em 60fps sem re-renderizar o React
         const el = elMap.get(m.id);
         if (el) {
@@ -4969,7 +5626,8 @@ export const PortraitEmulator: React.FC<Props> = ({
           if (visualEl) {
             visualEl.style.transformOrigin = '50% 100%';
             const baseFlip = m.flipX ? -1 : 1;
-            const flipX = (dir === 'left' ? -1 : 1) * baseFlip;
+            const dirInfo = pickMarkerDirectionalPng(m, dir);
+            const flipX = (dirInfo.autoMirrorX ? -1 : 1) * baseFlip;
             const baseRot = m.rotation || 0;
             const sY = m.flipY ? -1 : 1;
 
@@ -4989,6 +5647,10 @@ export const PortraitEmulator: React.FC<Props> = ({
             }
           }
         }
+      }
+
+      if (directionsChanged) {
+        setNpcDirections(new Map(npcDirectionsRef.current));
       }
 
       animId = requestAnimationFrame(loopPatrol);
@@ -5492,18 +6154,38 @@ export const PortraitEmulator: React.FC<Props> = ({
             return;
           }
 
-          // --- 2. GATILHOS DE CONTATO / PROXIMIDADE (NPC, Diálogos, Eventos, Viagem, Itens, Baús) ---
+          // --- 2. GATILHOS DE CONTATO / PROXIMIDADE (NPC, Diálogos, Eventos, Viagem, Itens, Baús, Intercept) ---
           const isStationMarker = marker.type === 'interactive_screen';
           const stationRadius = isStationMarker ? (marker.stationConfig?.triggerRadius ?? Math.max(18, ((marker.size || 150) * (marker.stationConfig?.baseAssetScale || 1.0)) / 2)) : 0;
           const markerRadius = isStationMarker ? stationRadius : Math.max(22, (marker.size || 64) / 2);
+          const hasInterceptAction =
+            marker.eventKind === 'intercept' ||
+            Boolean(marker.interceptConfig) ||
+            Boolean(marker.events?.some((e) => e.type === 'intercept'));
+
           const triggerThreshold =
-            marker.type === 'npc' || marker.type === 'boss' || marker.dialogueEnabled
+            (marker.type === 'event' || marker.type === 'area' || hasInterceptAction) && marker.eventTriggerRadius
+              ? Math.max(32, marker.eventTriggerRadius)
+              : marker.type === 'npc' || marker.type === 'boss' || marker.dialogueEnabled
               ? Math.max(58, markerRadius + 30)
               : marker.type === 'collectible' || marker.type === 'treasure'
               ? Math.max(46, markerRadius + 22)
               : markerRadius + 22;
 
+          const isInsideRectArea =
+            marker.type === 'area' &&
+            marker.areaShape === 'rect' &&
+            Math.abs(nextX - marker.x) <= (marker.areaWidth || 120) / 2 + 12 &&
+            Math.abs(nextY - marker.y) <= (marker.areaHeight || 120) / 2 + 12;
+
+          const isOutOfRectArea =
+            marker.type === 'area' &&
+            marker.areaShape === 'rect' &&
+            (Math.abs(nextX - marker.x) > (marker.areaWidth || 120) / 2 + 42 ||
+              Math.abs(nextY - marker.y) > (marker.areaHeight || 120) / 2 + 42);
+
           const isNeutralAsset =
+            !hasInterceptAction &&
             (marker.type === 'neutral' ||
               marker.type === 'light' ||
               marker.motionAsset ||
@@ -5523,18 +6205,18 @@ export const PortraitEmulator: React.FC<Props> = ({
             (!marker.events || marker.events.length === 0);
           if (isNeutralAsset) return;
 
-          if (dist <= triggerThreshold) {
+          if (isInsideRectArea || dist <= triggerThreshold) {
             if (!contactedMarkerIdsRef.current.has(marker.id)) {
               contactedMarkerIdsRef.current.add(marker.id);
-              if (marker.type === 'interactive_screen') {
+              if (hasInterceptAction || marker.type === 'event' || marker.type === 'area') {
+                triggerEvent(marker);
+              } else if (marker.type === 'interactive_screen') {
                 const trigger = marker.stationConfig?.activationTrigger || 'both';
                 if (trigger === 'proximity' || trigger === 'both') {
                   handleInteractWithStation(marker);
                 }
               } else if (marker.type === 'travel' && marker.travelAuto !== false) {
                 autoTravel(marker);
-              } else if (marker.type === 'event' || marker.type === 'area') {
-                triggerEvent(marker);
               } else if (marker.type === 'collectible') {
                 // Item Interativo - Coleta automática e instantânea ao se aproximar no mapa!
                 handleCollectItem(marker);
@@ -5546,7 +6228,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                 openMarkerPopup(marker);
               }
             }
-          } else if (dist > triggerThreshold + 35) {
+          } else if (marker.type === 'area' && marker.areaShape === 'rect' ? isOutOfRectArea : dist > triggerThreshold + 35) {
             // Se o jogador se afastar do marcador, permite re-disparar se voltar no futuro
             contactedMarkerIdsRef.current.delete(marker.id);
             // Saiu do raio do clima: volta ao evento do bioma
@@ -7005,6 +7687,13 @@ export const PortraitEmulator: React.FC<Props> = ({
                   const PRELOAD_MARGIN = 800;
                   const isInViewport = mScrX >= -PRELOAD_MARGIN && mScrX <= viewW + PRELOAD_MARGIN && mScrY >= -PRELOAD_MARGIN && mScrY <= viewH + PRELOAD_MARGIN;
 
+                  const dirSpriteInfo = pickMarkerDirectionalPng(
+                    marker,
+                    npcDirections.get(marker.id) || marker.facingDirection || marker.actionNpc?.facingDirection || 'down'
+                  );
+                  const activeMarkerPng = dirSpriteInfo.png || marker.customIconPng;
+                  const effectiveFlipX = dirSpriteInfo.autoMirrorX ? !marker.flipX : Boolean(marker.flipX);
+
                   return (
                     <div
                       key={marker.id}
@@ -7033,7 +7722,7 @@ export const PortraitEmulator: React.FC<Props> = ({
 
                         // Assets PNG e marcadores neutros de cenário: ZERO interação/clique/balão no preview
                         if (
-                          (marker.customIconPng || marker.type === 'camp') &&
+                          (activeMarkerPng || marker.type === 'camp') &&
                           marker.type !== 'npc' &&
                           marker.type !== 'travel' &&
                           marker.type !== 'event' &&
@@ -7161,9 +7850,9 @@ export const PortraitEmulator: React.FC<Props> = ({
                         );
                       })()}
                       {/* Sombrinha do asset com ajuste de blur, silhueta realista e offset X e Y */}
-                      {(marker.customIconPng || marker.type === 'npc' || marker.type === 'neutral' || marker.type === 'light' || isStation) && (!marker.motionAsset || marker.hasShadow !== false) && (
+                      {(activeMarkerPng || marker.type === 'npc' || marker.type === 'neutral' || marker.type === 'light' || isStation) && (!marker.motionAsset || marker.hasShadow !== false) && (
                         <GroundShadow
-                          url={(marker.mediaType === 'video' || marker.videoUrl) ? null : marker.customIconPng}
+                          url={(marker.mediaType === 'video' || marker.videoUrl) ? null : activeMarkerPng}
                           box={effectiveMarkerSize}
                           offsetX={(marker.shadowOffsetX || 0) * scale}
                           offsetY={(marker.shadowOffsetY || 0) * scale}
@@ -7186,16 +7875,16 @@ export const PortraitEmulator: React.FC<Props> = ({
                       <div
                         data-jelly-container={marker.id}
                         className={`flex items-center justify-center transition-transform ${
-                          isSelected && !marker.customIconPng
+                          isSelected && !activeMarkerPng
                             ? 'scale-110 drop-shadow-[0_0_8px_rgba(56,189,248,0.9)]'
                             : 'hover:scale-105'
-                        } ${!marker.customIconPng ? 'rounded-full shadow-lg ring-1 ring-white/30' : ''} ${
+                        } ${!activeMarkerPng ? 'rounded-full shadow-lg ring-1 ring-white/30' : ''} ${
                           (marker.effect === 'wind' || marker.id.startsWith('terrain-grass-'))
                             ? 'animate-grass-wind'
                             : (!marker.motionAsset && marker.effect !== 'none' && (
                                 marker.effect === 'jelly' ||
                                 (marker.type === 'npc' && marker.npcBounce !== false && (!marker.effect || marker.effect === 'jelly'))
-                              ) && marker.customIconPng)
+                              ) && activeMarkerPng)
                                 ? (marker.jellyStyle === 'spring' ? 'animate-jelly-spring' :
                                    marker.jellyStyle === 'step_walk' ? 'animate-jelly-step' :
                                    marker.jellyStyle === 'squash_intense' ? 'animate-jelly-squash' :
@@ -7207,7 +7896,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                           transformOrigin: '50% 100%',
                           width: effectiveMarkerSize,
                           height: effectiveMarkerSize,
-                          backgroundColor: marker.customIconPng ? 'transparent' : marker.color || '#3b82f6',
+                          backgroundColor: activeMarkerPng ? 'transparent' : marker.color || '#3b82f6',
                           ['--wind-amp' as any]: marker.effectIntensity ?? 1.0,
                           ['--wind-dur' as any]: `${2.0 / (marker.effectSpeed ?? 1.0)}s`,
                           ['--wind-delay' as any]: `${-Number((((marker.x * 0.018 + marker.y * 0.011) % 3.2)).toFixed(2))}s`,
@@ -7221,7 +7910,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                             width: '100%',
                             height: '100%',
                             transformOrigin: `${(marker.pivotX ?? 0.5) * 100}% ${(marker.pivotY ?? (marker.type === 'npc' ? 1.0 : 0.5)) * 100}%`,
-                            transform: `rotate(${marker.rotation || 0}deg) scale(${marker.flipX ? -(marker.scaleX ?? 1) : (marker.scaleX ?? 1)}, ${marker.flipY ? -(marker.scaleY ?? 1) : (marker.scaleY ?? 1)})`,
+                            transform: `rotate(${marker.rotation || 0}deg) scale(${effectiveFlipX ? -(marker.scaleX ?? 1) : (marker.scaleX ?? 1)}, ${marker.flipY ? -(marker.scaleY ?? 1) : (marker.scaleY ?? 1)})`,
                           }}
                           className="flex items-center justify-center shrink-0"
                         >
@@ -7241,16 +7930,16 @@ export const PortraitEmulator: React.FC<Props> = ({
                               />
                             ) : (marker.mediaType === 'video' || marker.videoUrl) ? (
                               <VideoAssetCanvas
-                                key={marker.videoUrl || marker.customIconPng || marker.id}
-                                videoUrl={marker.videoUrl || marker.customIconPng || ''}
+                                key={marker.videoUrl || activeMarkerPng || marker.id}
+                                videoUrl={marker.videoUrl || activeMarkerPng || ''}
                                 chromaKey={marker.videoChromaKey}
                                 className="w-full h-full object-contain filter drop-shadow select-none pointer-events-none"
                               />
-                            ) : marker.customIconPng ? (
+                            ) : activeMarkerPng ? (
                               <>
                                 {(marker.id.startsWith('terrain-grass-') || marker.id.startsWith('terrain-flower-') || (marker.effect === 'wind' && (!marker.motionLayers || marker.motionLayers.length === 0) && (!marker.effectStrokes || marker.effectStrokes.length === 0))) ? (
                                   <img
-                                    src={getRenderableAssetUrl(marker.customIconPng)}
+                                    src={getRenderableAssetUrl(activeMarkerPng)}
                                     alt={marker.name}
                                     loading="lazy"
                                     decoding="async"
@@ -7258,7 +7947,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                                   />
                                 ) : (
                                   <MotionAssetCanvas
-                                    src={marker.customIconPng}
+                                    src={activeMarkerPng}
                                     alt={marker.name}
                                     effect={marker.effect}
                                     speed={marker.effectSpeed ?? marker.jellySpeed ?? 1.0}
@@ -7842,7 +8531,27 @@ export const PortraitEmulator: React.FC<Props> = ({
                           height: petBoxSize,
                         }}
                       >
-                        {resolvedPet.avatarPng ? (
+                        {resolvedPet.activePet?.motionLayers &&
+                        resolvedPet.activePet.motionLayers.length > 0 &&
+                        (resolvedPet.avatarPng || resolvedPet.activePet.motionLayers[0]?.pngUrl) ? (
+                          <MotionAssetCanvas
+                            src={
+                              resolvedPet.avatarPng ||
+                              resolvedPet.activePet.motionLayers[0]?.pngUrl ||
+                              ''
+                            }
+                            alt={resolvedPet.name}
+                            motionLayers={resolvedPet.activePet.motionLayers}
+                            isNpcBounce={false}
+                            width={Math.round(petBoxSize)}
+                            height={Math.round(petBoxSize)}
+                            className="w-full h-full object-contain filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.65)] select-none"
+                            style={{
+                              width: petBoxSize,
+                              height: petBoxSize,
+                            }}
+                          />
+                        ) : resolvedPet.avatarPng ? (
                           <img
                             src={resolvedPet.avatarPng}
                             alt={resolvedPet.name}
@@ -7866,6 +8575,106 @@ export const PortraitEmulator: React.FC<Props> = ({
                 );
               })()}
 
+              {/* =========================================================
+                  INTERCEPTOR & ESCORT ACTOR MARKER (4 DIREÇÕES EM TEMPO REAL)
+                 ========================================================= */}
+              {activeIntercept && (() => {
+                const actorPosX = activeIntercept.actorX * scale;
+                const actorPosY = activeIntercept.actorY * scale;
+                const actorBoxSize =
+                  (activeIntercept.actorSize || 68) *
+                  scale *
+                  biomeScaleAt(activeIntercept.actorX, activeIntercept.actorY);
+                const isActorMoving =
+                  activeIntercept.phase === 'approaching' ||
+                  activeIntercept.phase === 'escorting' ||
+                  activeIntercept.phase === 'returning' ||
+                  activeIntercept.phase === 'ally_following';
+                const currentSprite =
+                  activeIntercept.actorDir === 'up'
+                    ? activeIntercept.sprites.up || activeIntercept.sprites.base
+                    : activeIntercept.actorDir === 'down'
+                    ? activeIntercept.sprites.down || activeIntercept.sprites.base
+                    : activeIntercept.actorDir === 'left'
+                    ? activeIntercept.sprites.left || activeIntercept.sprites.base
+                    : activeIntercept.sprites.right || activeIntercept.sprites.base;
+
+                return (
+                  <div
+                    className="absolute top-0 left-0 pointer-events-none"
+                    style={{
+                      transform: `translate3d(${actorPosX}px, ${actorPosY}px, 0) translate(-50%, -100%)`,
+                      width: `${actorBoxSize}px`,
+                      height: `${actorBoxSize}px`,
+                      zIndex: Math.max(25, Math.floor(actorPosY) + 12),
+                    }}
+                  >
+                    <GroundShadow url={currentSprite} box={actorBoxSize} />
+
+                    {/* Balão de Exclamação (!) ou Indicador de Guia */}
+                    {activeIntercept.config.showExclamation !== false && activeIntercept.phase === 'approaching' && (
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center animate-bounce"
+                        style={{ bottom: `${actorBoxSize + 18 * scale}px` }}
+                      >
+                        <div className="px-2 py-0.5 rounded-full bg-rose-600 border-2 border-white text-white font-black text-xs shadow-[0_4px_12px_rgba(225,29,72,0.8)] flex items-center gap-1 whitespace-nowrap">
+                          <span>❗</span>
+                          <span className="text-[10px]">Espere!</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeIntercept.phase === 'escorting' && (
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center animate-pulse"
+                        style={{ bottom: `${actorBoxSize + 18 * scale}px` }}
+                      >
+                        <div className="px-2 py-0.5 rounded-full bg-amber-500 border-2 border-slate-950 text-slate-950 font-black text-[10px] shadow-[0_4px_12px_rgba(245,158,11,0.75)] flex items-center gap-1 whitespace-nowrap">
+                          <span>🧭</span>
+                          <span>Siga-me!</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Etiqueta de Nome do Guia */}
+                    <div
+                      className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-slate-950/90 border border-rose-500/60 text-rose-200 font-extrabold whitespace-nowrap shadow-md"
+                      style={{
+                        bottom: `${actorBoxSize + 2 * scale}px`,
+                        fontSize: `${Math.max(9, Math.round(10 * scale))}px`,
+                      }}
+                    >
+                      {activeIntercept.actorName}
+                    </div>
+
+                    {/* Sprite 4 Direções com Jelly Walk */}
+                    <div
+                      className={`w-full h-full flex items-end justify-center ${
+                        isActorMoving ? 'animate-jelly-step-moving' : 'animate-jelly'
+                      }`}
+                      style={
+                        {
+                          '--jelly-scale': isActorMoving ? 1.15 : 0.4,
+                          animationDuration: isActorMoving ? '0.52s' : '1.25s',
+                        } as React.CSSProperties
+                      }
+                    >
+                      {currentSprite ? (
+                        <img
+                          src={currentSprite}
+                          alt={activeIntercept.actorName}
+                          className="w-full h-full object-contain filter drop-shadow-[0_6px_12px_rgba(0,0,0,0.75)] select-none"
+                        />
+                      ) : (
+                        <div className="w-full h-full rounded-full bg-rose-600 border-2 border-white flex items-center justify-center text-white font-black shadow-lg">
+                          🚨
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Player Character Marker */}
               {(() => {
                 const player = project.player || { id: 'p1', name: 'Herói', x: 384, y: 100, color: '#3b82f6' };
@@ -7873,7 +8682,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                 const posY = player.y * scale;
                 const baseSize = 48 * scale * biomeScaleAt(player.x, player.y);
                 const isBounce = player.autoBounce !== false;
-                const isMoving = isJoystickActive;
+                const isMoving = isJoystickActive || activeIntercept?.phase === 'escorting';
                 const styleKey = player.jellyStyle || 'classic';
                 const speedMult = player.jellySpeed ?? 1.0;
                 const intensityMult = isMoving
@@ -7973,12 +8782,19 @@ export const PortraitEmulator: React.FC<Props> = ({
                       {/* Renderização Limpa do PNG Direcional ou Padrão */}
                       {(() => {
                         const activePng = pickAvatarPng(player, playerDirection);
+                        const visiblePlayerMotionLayers = resolveVisibleMotionLayersForPlayer(
+                          player.motionLayers,
+                          player,
+                          project.playerInventory,
+                          playerInventory,
+                          project.itemCatalog
+                        );
 
                         return activePng ? (
                           <MotionAssetCanvas
                             src={activePng}
                             alt={player.name}
-                            motionLayers={player.motionLayers}
+                            motionLayers={visiblePlayerMotionLayers}
                             isNpcBounce={false}
                             width={Math.round(baseSize)}
                             height={Math.round(baseSize)}
@@ -8837,6 +9653,139 @@ export const PortraitEmulator: React.FC<Props> = ({
             </div>
           </div>
         )}
+
+        {/* =========================================================================
+            HUD DE INTERCEPTAÇÃO & ESCOLTA GUIADA (BANNER DE LOCOMOÇÃO + DIÁLOGO CINEMÁTICO)
+           ========================================================================= */}
+        {activeIntercept && (activeIntercept.phase === 'approaching' || activeIntercept.phase === 'escorting') && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[165] w-[92%] max-w-md pointer-events-auto animate-fadeIn">
+            <div className="px-3.5 py-2.5 rounded-2xl bg-slate-950/92 border-2 border-rose-500/80 shadow-[0_10px_30px_rgba(0,0,0,0.85)] backdrop-blur-md flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-rose-950/90 border border-rose-500/60 flex items-center justify-center shrink-0 overflow-hidden">
+                  {activeIntercept.sprites.down || activeIntercept.sprites.base ? (
+                    <img
+                      src={activeIntercept.sprites.down || activeIntercept.sprites.base}
+                      alt={activeIntercept.actorName}
+                      className="w-7 h-7 object-contain"
+                    />
+                  ) : (
+                    <span className="text-base">🚨</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-rose-300 truncate">
+                      {activeIntercept.phase === 'approaching'
+                        ? 'Interceptação em Curso'
+                        : 'Escolta Guiada (Locomoção Automática)'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-white truncate">
+                    {activeIntercept.phase === 'approaching'
+                      ? `${activeIntercept.actorName} está vindo falar com você...`
+                      : `Seguindo ${activeIntercept.actorName} até o destino...`}
+                  </p>
+                </div>
+              </div>
+
+              {activeIntercept.phase === 'escorting' && (
+                <button
+                  type="button"
+                  onClick={skipInterceptEscort}
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] shrink-0 shadow-md active:scale-95 transition-all cursor-pointer"
+                  title="Pular caminhada e ir direto ao destino"
+                >
+                  ⏭️ Pular Trajeto
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeIntercept &&
+          (activeIntercept.phase === 'greeting_dialogue' || activeIntercept.phase === 'arrival_dialogue') && (() => {
+            const isGreeting = activeIntercept.phase === 'greeting_dialogue';
+            const lines = isGreeting
+              ? activeIntercept.config.greetingDialogues
+              : activeIntercept.config.arrivalDialogues;
+            const currentLine =
+              lines[activeIntercept.dialogueIndex] ||
+              (isGreeting ? 'Olá, viajante! Venha comigo.' : 'Chegamos ao nosso destino!');
+            const isLastLine = activeIntercept.dialogueIndex + 1 >= lines.length;
+            const portraitUrl =
+              activeIntercept.sprites.down ||
+              activeIntercept.sprites.right ||
+              activeIntercept.sprites.base;
+
+            return (
+              <div className="absolute inset-x-0 bottom-5 z-[185] px-3 flex justify-center pointer-events-auto animate-fadeIn">
+                <div className="w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900/98 to-slate-950/98 border-[3px] border-rose-500/90 shadow-[0_16px_45px_rgba(0,0,0,0.92)] p-4 space-y-3 backdrop-blur-xl">
+                  {/* Cabeçalho com Retrato do NPC Guia */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-rose-900/70 to-slate-950 border-2 border-rose-400 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                      {portraitUrl ? (
+                        <img
+                          src={portraitUrl}
+                          alt={activeIntercept.actorName}
+                          className="w-12 h-12 object-contain drop-shadow-[0_4px_6px_rgba(0,0,0,0.7)]"
+                        />
+                      ) : (
+                        <span className="text-2xl">🚨</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-rose-500/25 border border-rose-400/50 text-[9px] font-black uppercase tracking-wider text-rose-300">
+                          {isGreeting ? '🚨 Interceptação' : '🏛️ Destino da Escolta'}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400 font-bold">
+                          {activeIntercept.dialogueIndex + 1} / {Math.max(1, lines.length)}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-black text-white truncate mt-0.5">
+                        {activeIntercept.actorName}
+                      </h4>
+                      <p className="text-[10px] text-amber-300/90 font-semibold truncate">
+                        {isGreeting
+                          ? activeIntercept.config.escortEnabled
+                            ? '🧭 Quer guiar você até um local importante'
+                            : '💬 Veio falar com você'
+                          : '✨ Escolta concluída com sucesso'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Caixa de Fala */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 text-xs sm:text-sm text-slate-100 font-medium leading-relaxed shadow-inner min-h-[68px] flex items-center">
+                    <p>"{currentLine}"</p>
+                  </div>
+
+                  {/* Botão de Ação */}
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={advanceInterceptDialogue}
+                      className="flex-1 h-11 px-4 rounded-2xl bg-gradient-to-r from-rose-500 via-amber-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 font-black text-xs sm:text-sm shadow-[0_4px_0_rgba(159,18,57,0.8),0_8px_18px_rgba(244,63,94,0.35)] active:translate-y-0.5 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {!isLastLine ? (
+                        <span>Continuar Diálogo ➔</span>
+                      ) : isGreeting && activeIntercept.config.escortEnabled ? (
+                        <span>🧭 Acompanhar {activeIntercept.actorName} ➔</span>
+                      ) : (
+                        <span>
+                          ✨ Concluir
+                          {activeIntercept.config.onArrivalRewardCoins
+                            ? ` (+${activeIntercept.config.onArrivalRewardCoins} 🪙)`
+                            : ''}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
         {/* Modal de Tela Interativa (Chocadeira, Alquimia, etc.) */}
         {activeStationMarker && (
@@ -10132,6 +11081,7 @@ export const PortraitEmulator: React.FC<Props> = ({
         {droppedCardVariationShowcase && (
           <CardVariationDropShowcaseModal
             variation={droppedCardVariationShowcase.variation}
+            unlockedArtifact={droppedCardVariationShowcase.unlockedArtifact}
             coinsAwarded={droppedCardVariationShowcase.coinsAwarded}
             gemsAwarded={droppedCardVariationShowcase.gemsAwarded}
             xpAwarded={droppedCardVariationShowcase.xpAwarded}

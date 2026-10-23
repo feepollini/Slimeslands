@@ -8,6 +8,7 @@ import {
   createFaseMestraSavedLevel,
   createFaseMestraExtendedSavedLevel,
 } from '../data/masterTestPhase';
+import { createStandaloneInterceptTestLevel } from '../utils/interceptTestPhaseGenerator';
 import { COLLISION_CELL, migrateCollisionCells, splitMixedProject } from '../utils/mapMath';
 import {
   saveProject,
@@ -269,6 +270,16 @@ export function usePhasePersistence(options: UsePhasePersistenceOptions = {}) {
         split = [freshMasterLevel, ...split];
       }
       saveSingleLevelSlot(freshMasterLevel).catch(() => {});
+
+      // Garante que a Fase Teste de Interceptação & Escolta sempre exista na Galeria de Fases
+      const freshInterceptTestLevel = createStandaloneInterceptTestLevel();
+      const existingInterceptIdx = split.findIndex((l) => l.id === freshInterceptTestLevel.id);
+      if (existingInterceptIdx >= 0) {
+        split[existingInterceptIdx] = freshInterceptTestLevel;
+      } else {
+        split = [freshInterceptTestLevel, ...split];
+      }
+      saveSingleLevelSlot(freshInterceptTestLevel).catch(() => {});
 
       split = dedupeLevelsById(split);
       setSavedLevels(split);

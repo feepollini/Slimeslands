@@ -4,6 +4,7 @@ import {
   loadProject,
   saveProject,
   loadLevelsGallery,
+  loadSingleLevelSlot,
 } from '../../marker_dream/src/utils/storage';
 import {
   createFaseMestraProject,
@@ -23,25 +24,54 @@ export const HubWorldMapGameView: React.FC = () => {
     height: window.innerHeight - 90 || 667,
   });
 
-  // Carrega projeto salvo do Marker Dream (ou Fase Mestra padrão)
-  const [project, setProject] = useState<MapProject>(() => {
-    try {
-      const loaded = loadProject();
-      if (loaded && loaded.markers && loaded.markers.length > 0) {
-        return loaded;
-      }
-    } catch {}
-    return createFaseMestraProject();
-  });
+  // Estado inicial com Fase Mestra, hidratado imediatamente do IndexedDB da Marker Dream
+  const [project, setProject] = useState<MapProject>(() => createFaseMestraProject());
+  const [savedLevels, setSavedLevels] = useState<SavedLevel[]>(() => [
+    createFaseMestraSavedLevel(),
+  ]);
+  const [selectedMapId, setSelectedMapId] = useState<string>('map-main-default');
 
-  // Carrega fases salvas para viagem a partir dos pontos (POIs) do Mapa
-  const [savedLevels] = useState<SavedLevel[]>(() => {
-    try {
-      const gallery = loadLevelsGallery();
-      if (gallery && gallery.length > 0) return gallery;
-    } catch {}
-    return [createFaseMestraSavedLevel()];
-  });
+  // Hidratação assíncrona real do banco de dados da Engine Marker Dream (IndexedDB + AssetPool)
+  useEffect(() => {
+    let mounted = true;
+    getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
+
+    (async () => {
+      try {
+        const [loadedProj, loadedGallery] = await Promise.all([
+          loadProject(),
+          loadLevelsGallery(),
+        ]);
+
+        if (!mounted) return;
+
+        if (loadedGallery && loadedGallery.length > 0) {
+          setSavedLevels(loadedGallery);
+        }
+
+        if (loadedProj) {
+          setProject(loadedProj);
+          const activeWm = getOrCreateWorldMapConfig(loadedProj);
+          setSelectedMapId(
+            loadedProj.activeWorldMapId || activeWm.id || 'map-main-default'
+          );
+        } else if (loadedGallery && loadedGallery.length > 0 && loadedGallery[0].projectData) {
+          const fallbackProj = loadedGallery[0].projectData;
+          setProject(fallbackProj);
+          const activeWm = getOrCreateWorldMapConfig(fallbackProj);
+          setSelectedMapId(
+            fallbackProj.activeWorldMapId || activeWm.id || 'map-main-default'
+          );
+        }
+      } catch (err) {
+        console.warn('Erro ao hidratar mapas e fases da Marker Dream:', err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Lista unificada de Mapas criados no Editor de Mapas da Marker Dream
   const availableMaps = useMemo<WorldMapConfig[]>(() => {
@@ -78,21 +108,12 @@ export const HubWorldMapGameView: React.FC = () => {
     return Array.from(mapById.values());
   }, [project, savedLevels]);
 
-  const [selectedMapId, setSelectedMapId] = useState<string>(() => {
-    const active = getOrCreateWorldMapConfig(project);
-    return project.activeWorldMapId || active.id || 'map-main-default';
-  });
-
   // Estado discreto do seletor lateral de mapas (recolhido por padrão para deixar o mapa 100% limpo)
   const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
 
   // Quando o jogador clica em "VIAJAR AGORA" em um pino do mapa, entra na Fase jogável (Resultado do Emulador)
   const [activePlayingPhase, setActivePlayingPhase] = useState<MapProject | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
-
-  useEffect(() => {
-    getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
-  }, []);
 
   // Mede o container real da tela de Mapa no Hub
   useEffect(() => {
@@ -117,22 +138,18 @@ export const HubWorldMapGameView: React.FC = () => {
     };
   }, []);
 
-  // Sincroniza alterações do projeto (ex.: progresso de quests, slimes escaneados, baús abertos)
+  // Sincroniza alterações do projeto na unidade de memória da Engine
   const handleUpdateProject: React.Dispatch<React.SetStateAction<MapProject>> = (updater) => {
     setProject((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        saveProject(next);
-      } catch {}
+      saveProject(next).catch(() => {});
       return next;
     });
     if (activePlayingPhase) {
       setActivePlayingPhase((prevPhase) => {
         if (!prevPhase) return prevPhase;
         const nextPhase = typeof updater === 'function' ? updater(prevPhase) : updater;
-        try {
-          saveProject(nextPhase);
-        } catch {}
+        saveProject(nextPhase).catch(() => {});
         return nextPhase;
       });
     }
@@ -147,12 +164,27 @@ export const HubWorldMapGameView: React.FC = () => {
         worldMap: wm,
         activeWorldMapId: wm.id,
       };
-      try {
-        saveProject(next);
-      } catch {}
+      saveProject(next).catch(() => {});
       return next;
     });
     setIsSelectorOpen(false);
+  };
+
+  // Hidrata uma fase (inclusive se estiver em Cold Stub) e entra no modo de jogo
+  const handleEnterLevel = async (level: SavedLevel) => {
+    if (level?.id && level.isColdStub) {
+      const fullSlot = await loadSingleLevelSlot(level.id);
+      if (fullSlot?.projectData) {
+        setActivePlayingPhase(fullSlot.projectData);
+        return;
+      }
+    }
+    const targetProj = level?.projectData || (level as any)?.project;
+    if (targetProj) {
+      setActivePlayingPhase(targetProj);
+    } else {
+      setActivePlayingPhase(activeMapProject);
+    }
   };
 
   // Projeto com o mapa atualmente selecionado aplicado
@@ -183,10 +215,7 @@ export const HubWorldMapGameView: React.FC = () => {
           isPlayMode={true}
           savedLevels={savedLevels}
           onLoadLevel={(lvl) => {
-            const targetProj = lvl?.projectData || (lvl as any)?.project;
-            if (targetProj) {
-              setActivePlayingPhase(JSON.parse(JSON.stringify(targetProj)));
-            }
+            handleEnterLevel(lvl);
           }}
         />
 
@@ -217,12 +246,7 @@ export const HubWorldMapGameView: React.FC = () => {
         screenHeight={dimensions.height}
         isPlayMode={true}
         onLoadLevel={(level) => {
-          const targetProj = level?.projectData || (level as any)?.project;
-          if (targetProj) {
-            setActivePlayingPhase(JSON.parse(JSON.stringify(targetProj)));
-          } else {
-            setActivePlayingPhase(JSON.parse(JSON.stringify(activeMapProject)));
-          }
+          handleEnterLevel(level);
         }}
       />
 

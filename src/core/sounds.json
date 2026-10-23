@@ -99,10 +99,16 @@
     "clique_loja": "",
     "clique_deck": "",
     "clique_carta": "/sounds/mixkit-quick-zoom-impact-772.wav",
-    "clique_geral": "",
-    "moeda_coletar": "",
-    "nivel_up": "",
-    "parry_qte_start": ""
+    "clique_geral": "/sounds/mixkit-hard-pop-click-2364.wav",
+    "moeda_coletar": "/sounds/mixkit-coins-handling-1939.wav",
+    "nivel_up": "/sounds/mixkit-quick-metal-transition-sweep-2639.wav",
+    "parry_qte_start": "",
+    "md_ataque_player": "/sounds/mixkit-axe-hits-to-a-plate-2774.wav",
+    "md_scan_pronto": "/sounds/mixkit-quick-zoom-impact-772.wav",
+    "md_scan_captura": "/sounds/mixkit-quick-metal-transition-sweep-2639.wav",
+    "md_coleta_item": "/sounds/mixkit-coins-handling-1939.wav",
+    "md_bau_abrir": "/sounds/mixkit-apocalyptic-stomp-impact-3057.wav",
+    "md_viagem_portal": "/sounds/mixkit-fast-transitions-swoosh-3115.wav"
   },
   "screens": {
     "lobby": "/sounds/Cozy_RPG_Ambience__1_.mp3",
@@ -114,6 +120,8 @@
     "perfil": "",
     "configuracoes": "",
     "deck_builder": "",
+    "map": "/sounds/Cozy_RPG_Ambience__1_.mp3",
+    "md_fase_exploracao": "/sounds/Cozy_RPG_Ambience__1_.mp3",
     "vitoria": "",
     "derrota": ""
   },

@@ -5,13 +5,16 @@ import {
   resolveNpcBattleMode,
   resolveNpcDeckCards,
   getRarityRules,
+  getAvailablePassiveAbilities,
+  getAvailableActiveArtifacts,
   prepareNpcBattleContext,
   RolledCardVariation,
   NpcBattleOutcome,
+  UnlockedArtifactDrop,
   consumeLastNpcBattleOutcome,
 } from '../../../../core/NpcCardBattleBridge';
 import { renderMatrixCardSVG } from '../../../../ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
-import { Swords, Sparkles, X, Shield, Layers, CheckCircle2, Zap } from 'lucide-react';
+import { Sparkles, X } from 'lucide-react';
 
 interface NpcScanBattleDialogueModalProps {
   marker: MapMarker;
@@ -34,6 +37,21 @@ export const NpcScanBattleDialogueModal: React.FC<NpcScanBattleDialogueModalProp
   const primaryMode = useMemo(() => resolveNpcBattleMode(marker), [marker]);
   const npcDeck = useMemo(() => resolveNpcDeckCards(marker), [marker]);
   const rarityRules = useMemo(() => getRarityRules(), []);
+  const allPassives = useMemo(() => getAvailablePassiveAbilities(), []);
+  const allArtifacts = useMemo(() => getAvailableActiveArtifacts(), []);
+
+  const linkedPassive = useMemo(() => {
+    const id =
+      marker.actionNpc?.passiveAbilityId ||
+      marker.passiveAbilityId ||
+      repCard?.abilityId;
+    return allPassives.find((p) => p.id === id) || null;
+  }, [marker, repCard, allPassives]);
+
+  const linkedArtifact = useMemo(() => {
+    const id = marker.actionNpc?.activeArtifactId || marker.activeArtifactId;
+    return allArtifacts.find((a) => a.id === id) || null;
+  }, [marker, allArtifacts]);
 
   const cardSvgHtml = useMemo(() => {
     if (!repCard) return '';
@@ -127,6 +145,22 @@ export const NpcScanBattleDialogueModal: React.FC<NpcScanBattleDialogueModalProp
             <div className="w-full px-2.5 py-1.5 rounded-xl bg-indigo-950/50 border border-cyan-500/40 text-[9.5px] text-cyan-200 font-bold">
               🃏 <strong>Modo Duelo de Cartas:</strong> {marker.name} jogará com seu Deck de{' '}
               {npcDeck.length} cartas nos slots do oponente!
+            </div>
+          )}
+
+          {/* Badges de Passiva & Artefato Ativo da Forja V2 */}
+          {(linkedPassive || linkedArtifact) && (
+            <div className="w-full flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
+              {linkedPassive && (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-400/50 text-[9px] font-bold text-emerald-200">
+                  {linkedPassive.icon} Passiva: {linkedPassive.name}
+                </span>
+              )}
+              {linkedArtifact && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-400/50 text-[9px] font-bold text-amber-200">
+                  {linkedArtifact.icon} Dropa Artefato: {linkedArtifact.name}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -351,6 +385,7 @@ export const NpcEmbeddedBattleIframeModal: React.FC<NpcEmbeddedBattleIframeModal
 
 interface CardVariationDropShowcaseModalProps {
   variation: RolledCardVariation;
+  unlockedArtifact?: UnlockedArtifactDrop;
   goldEarned?: number;
   gemsEarned?: number;
   xpEarned?: number;
@@ -362,6 +397,7 @@ interface CardVariationDropShowcaseModalProps {
 
 export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseModalProps> = ({
   variation,
+  unlockedArtifact,
   goldEarned,
   gemsEarned,
   xpEarned,
@@ -450,6 +486,14 @@ export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseM
           <span>Traço Genético:</span>
           <span className="text-amber-300 font-black">{variation.variantTrait}</span>
         </div>
+        {variation.passiveAbilityName && (
+          <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
+            <span>Habilidade Passiva:</span>
+            <span className="text-emerald-300 font-black">
+              {variation.passiveAbilityIcon || '✨'} {variation.passiveAbilityName}
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800 text-xs">
           <div className="p-1.5 rounded-xl bg-slate-950 border border-emerald-500/30">
             <div className="text-[9px] text-slate-400 font-bold">❤️ VIDA (PV)</div>
@@ -470,6 +514,14 @@ export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseM
             </div>
           </div>
         </div>
+
+        {unlockedArtifact && (
+          <div className="mt-1 p-1.5 rounded-xl bg-amber-500/20 border border-amber-400/60 text-[10px] font-black text-amber-200 flex items-center justify-center gap-1.5">
+            <span>{unlockedArtifact.icon}</span>
+            <span>Artefato Ativo Desbloqueado: {unlockedArtifact.name}!</span>
+          </div>
+        )}
+
         <div className="pt-1 flex items-center justify-center gap-3 text-[10px] font-black text-amber-300">
           <span>🪙 +{effectiveGold} Ouro</span>
           <span>💎 +{effectiveGems} Gemas</span>
@@ -487,3 +539,4 @@ export const CardVariationDropShowcaseModal: React.FC<CardVariationDropShowcaseM
     </div>
   );
 };
+

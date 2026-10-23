@@ -48,6 +48,7 @@ interface Props {
   onOpenQuests?: () => void;
   onOpenHudUniversal?: () => void;
   onOpenMindMap?: () => void;
+  onOpenMotionStudio?: () => void;
 }
 
 export const TopNav: React.FC<Props> = ({
@@ -72,6 +73,7 @@ export const TopNav: React.FC<Props> = ({
   onOpenQuests,
   onOpenHudUniversal,
   onOpenMindMap,
+  onOpenMotionStudio,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -221,6 +223,18 @@ export const TopNav: React.FC<Props> = ({
           >
             <Brain className="w-3.5 h-3.5 text-pink-400" />
             <span className="hidden sm:inline">Mapa Mental</span>
+          </button>
+        )}
+
+        {onOpenMotionStudio && (
+          <button
+            type="button"
+            onClick={onOpenMotionStudio}
+            className="px-2.5 py-1 rounded-md bg-fuchsia-500/20 hover:bg-fuchsia-500/30 border border-fuchsia-500/40 text-[11px] font-bold text-fuchsia-300 hover:text-fuchsia-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-fuchsia-500/10"
+            title="Abrir o Estúdio Independente de Motion Canvas 2D & Roupas Equipáveis"
+          >
+            <Film className="w-3.5 h-3.5 text-fuchsia-400" />
+            <span className="hidden sm:inline">Motion &amp; Skins</span>
           </button>
         )}
 

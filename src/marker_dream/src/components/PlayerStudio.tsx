@@ -6,6 +6,7 @@ import { AssetGalleryModal } from './AssetGalleryModal';
 import { MotionAssetCanvas } from './MotionAssetCanvas';
 import { loadCharactersRoster, applyCharacterToPhase } from '../utils/characterHelpers';
 import { InteractiveItemGalleryStudio } from './inventory/InteractiveItemGalleryStudio';
+import { parseDirectionalFolderFiles } from '../utils/directionalSpriteImporter';
 
 interface Props {
   player: PlayerConfig;
@@ -42,6 +43,7 @@ export const PlayerStudio: React.FC<Props> = ({
   const activeChar = characters.find((c) => c.id === player.id || c.name === player.name) || characters[0];
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const petFileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadingDirection, setUploadingDirection] = useState<'default' | 'up' | 'down' | 'left' | 'right'>('default');
@@ -163,6 +165,29 @@ export const PlayerStudio: React.FC<Props> = ({
     e.target.value = '';
   };
 
+  const handleImportPlayerFolder4Directions = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      const res = await parseDirectionalFolderFiles(files);
+      if (res.assignedCount > 0) {
+        onUpdatePlayer({
+          avatarDownPng: res.down || player.avatarDownPng,
+          avatarUpPng: res.up || player.avatarUpPng,
+          avatarLeftPng: res.left || player.avatarLeftPng,
+          avatarRightPng: res.right || player.avatarRightPng,
+          avatarPng: res.down || res.up || res.left || res.right || player.avatarPng,
+        });
+        showToast?.(
+          `📂 Pasta "${res.folderName || 'Herói'}" importada: ${res.assignedCount} direção(ões) encaixada(s) automaticamente!`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    e.target.value = '';
+  };
+
   const handleSelectGalleryAsset = (dataUrl: string) => {
     const matchedAsset = galleryAssets.find((a) => a.dataUrl === dataUrl);
     const motionLayers =
@@ -221,6 +246,15 @@ export const PlayerStudio: React.FC<Props> = ({
         accept="image/png, image/jpeg, image/webp"
         className="hidden"
         onChange={handleUploadAvatar}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        accept="image/png, image/jpeg, image/webp"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        className="hidden"
+        onChange={handleImportPlayerFolder4Directions}
       />
       <input
         ref={petFileInputRef}
@@ -477,9 +511,20 @@ export const PlayerStudio: React.FC<Props> = ({
 
           {/* Assets por Direção do Joystick */}
           <div className="pt-2 border-t border-slate-800 space-y-2">
-            <span className="text-[10px] font-bold text-slate-300 block">
-              🕹️ Assets por Direção do Joystick
-            </span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-300 block">
+                🕹️ Assets por Direção do Joystick
+              </span>
+              <button
+                type="button"
+                onClick={() => folderInputRef.current?.click()}
+                className="px-2 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[9px] font-extrabold flex items-center gap-1 transition-colors cursor-pointer"
+                title="Importar pasta com os 4 PNGs direcionais de uma vez"
+              >
+                <FolderOpen className="w-3 h-3 text-cyan-400" />
+                <span>📂 Importar Pasta (4 PNGs)</span>
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {/* Cima */}
               <div className="flex items-center gap-2 p-1.5 bg-slate-900 border border-slate-800 rounded-lg">

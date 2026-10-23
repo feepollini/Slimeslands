@@ -12,7 +12,7 @@ import { BossBoardScreenLandscape } from './ui/screens_landscape/BossBoardScreen
 import { OrientationManager } from './ui/OrientationManager';
 import { Mobby, MobbyManager } from './core/MobbyManager';
 import SCENARIOS from './core/scenarios.json';
-import { applyScenarioBackground, isVideoUrl } from './ui/utils/BackgroundUtils';
+import { applyScenarioBackground, getActiveScenario, isVideoUrl } from './ui/utils/BackgroundUtils';
 import { t } from './core/i18n';
 import { animateParallaxLayers } from './ui/utils/ParallaxUtils';
 import { SoundManager } from './ui/utils/SoundManager';
@@ -30,6 +30,7 @@ import {
   getActiveNpcBattleContext,
   recordNpcBattleOutcome,
   getBestVariationForCard,
+  getAvailableActiveArtifacts,
   RARITY_META,
   NpcBattleOutcome,
 } from './core/NpcCardBattleBridge';
@@ -103,6 +104,9 @@ class BossBattleApp {
         hp: Math.max(300, npcCtx.npcHp || baseMobby.hp),
         maxHp: Math.max(300, npcCtx.npcMaxHp || baseMobby.maxHp),
         rewardCardId: npcCtx.matrixCardId || baseMobby.rewardCardId,
+        backgroundUrl: npcCtx.battleScenarioKey || baseMobby.backgroundUrl,
+        bgmUrl: npcCtx.battleBgmUrl || baseMobby.bgmUrl,
+        artifacts: npcCtx.activeArtifactId ? [npcCtx.activeArtifactId] : baseMobby.artifacts,
       };
     } else {
       this.mobby = baseMobby;
@@ -117,7 +121,9 @@ class BossBattleApp {
   }
 
   private resolveBossScenarioBackground(): string {
-    if (this.mobby.backgroundUrl) return this.mobby.backgroundUrl;
+    if (this.mobby.backgroundUrl) {
+      return getActiveScenario(this.mobby.backgroundUrl, this.mobby.backgroundUrl);
+    }
     try {
       const raw = localStorage.getItem('forge_scenarios');
       if (raw) {
@@ -168,6 +174,7 @@ class BossBattleApp {
               pv,
               maxPv: pv,
               rarity: bestVar?.rarity || resolved.preferredRarity || resolved.rarity || c.preferredRarity || c.rarity || 'common',
+              abilityId: (bestVar?.passiveAbilityId || resolved.abilityId || c.abilityId || 'none') as any,
               manaCost: resolved.manaCost ?? c.manaCost ?? 1,
               staminaCost: resolved.staminaCost ?? c.staminaCost ?? 1,
               attacks: resolved.attacks || c.attacks || [{ name: 'ATAQUE', damage: atk, cost: 1, costType: 'stamina' }],
@@ -193,6 +200,27 @@ class BossBattleApp {
       console.error("Battle Init Error:", e);
       this.engine.initBattle();
       applyScenarioBackground(this.resolveBossScenarioBackground());
+    }
+
+    // Se houver Passiva ou Artefato Ativo vinculado ao NPC Boss, aplica ao Boss!
+    const npcCtx = getActiveNpcBattleContext();
+    if (npcCtx) {
+      if (npcCtx.passiveAbilityId) {
+        this.engine.aiHand.forEach((c) => {
+          c.abilityId = npcCtx.passiveAbilityId as any;
+        });
+        this.engine.aiDeck.forEach((c) => {
+          c.abilityId = npcCtx.passiveAbilityId as any;
+        });
+      }
+      if (npcCtx.activeArtifactId) {
+        const foundArt = getAvailableActiveArtifacts().find(
+          (a) => a.id === npcCtx.activeArtifactId || a.name === npcCtx.activeArtifactId
+        );
+        if (foundArt) {
+          this.engine.aiSkills[0] = { ...(foundArt as any) };
+        }
+      }
     }
 
     // Configurar os PV do inimigo com os dados do Chefe

@@ -20,7 +20,21 @@ export const RARITY_POOL: Rarity[] = [
 // ─── CARD ABILITIES ───────────────────────────────────────────────────────────
 
 import abilitiesData from './abilities.json';
-export const CARD_ABILITIES: CardAbility[] = abilitiesData as CardAbility[];
+
+function loadInitialAbilities(): CardAbility[] {
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            const raw = window.localStorage.getItem('forge_abilities');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed as CardAbility[];
+            }
+        }
+    } catch (_) {}
+    return abilitiesData as CardAbility[];
+}
+
+export const CARD_ABILITIES: CardAbility[] = loadInitialAbilities();
 
 /** Ability pool for deck generation. None appears 2× for higher common chance. */
 export const ABILITY_POOL: CardAbilityId[] = [
@@ -94,7 +108,21 @@ export const SKILL_GROUP_META: Record<SkillGroup, { label: string; color: string
 // ─── SKILL POOL ───────────────────────────────────────────────────────────────
 
 import skillsData from './skills.json';
-export const SKILL_POOL: Skill[] = skillsData as Skill[];
+
+function loadInitialSkills(): Skill[] {
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            const raw = window.localStorage.getItem('forge_skills');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed as Skill[];
+            }
+        }
+    } catch (_) {}
+    return skillsData as Skill[];
+}
+
+export const SKILL_POOL: Skill[] = loadInitialSkills();
 
 // ─── CARD BACK GLOBAL CONFIG ──────────────────────────────────────────────────
 

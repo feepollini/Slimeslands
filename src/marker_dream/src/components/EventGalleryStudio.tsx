@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { MapMarker, MapProject, BiomeTileConfig, SubBiomeConfig } from '../types/map';
+import {
+  MapMarker,
+  MapProject,
+  BiomeTileConfig,
+  SubBiomeConfig,
+  DEFAULT_INTERCEPT_CONFIG,
+  InterceptSpawnOrigin,
+} from '../types/map';
+import {
+  injectInterceptTestScenarioIntoProject,
+  getCapitaLyraDirectionalSprites,
+} from '../utils/interceptTestPhaseGenerator';
 import {
   Calendar,
   Zap,
@@ -55,11 +66,13 @@ export const EventGalleryStudio: React.FC<Props> = ({
   // 1. Marcadores do tipo 'event'
   // 2. Marcadores que possuem configurações de evento (eventKind, eventWeather, eventZoom, eventDuration, etc.)
   // 3. Marcadores de teleporte / travel
-  // 4. Marcadores com diálogos / quests
+  // 4. Marcadores com diálogos / quests / interceptConfig
   const allEvents = (project.markers || []).filter((m) => {
     return (
       m.type === 'event' ||
       Boolean(m.eventKind) ||
+      Boolean(m.interceptConfig) ||
+      Boolean(m.events && m.events.some((e) => e.type === 'intercept')) ||
       Boolean(m.eventWeather && m.eventWeather !== 'none') ||
       Boolean(m.eventZoom) ||
       m.type === 'travel' ||
@@ -80,6 +93,12 @@ export const EventGalleryStudio: React.FC<Props> = ({
     }
 
     if (filterType === 'all') return true;
+    if (filterType === 'intercept')
+      return (
+        evt.eventKind === 'intercept' ||
+        Boolean(evt.interceptConfig) ||
+        Boolean(evt.events?.some((e) => e.type === 'intercept'))
+      );
     if (filterType === 'weather') return evt.eventKind === 'weather' || Boolean(evt.eventWeather && evt.eventWeather !== 'none');
     if (filterType === 'dialogue') return evt.eventKind === 'dialogue' || evt.eventKind === 'popup' || Boolean(evt.dialogueSteps?.length);
     if (filterType === 'duel') return evt.eventKind === 'duel' || evt.type === 'boss';
@@ -140,6 +159,18 @@ export const EventGalleryStudio: React.FC<Props> = ({
     onFocusMarker(newEvent);
   };
 
+  // Cria e posiciona o Cenário Completo de Teste de Interceptação & Escolta na fase atual
+  const handleCreateInterceptTestScenario = () => {
+    const { updatedProject, triggerMarkerId } = injectInterceptTestScenarioIntoProject(project);
+    onUpdateProject({ markers: updatedProject.markers });
+    onSelectMarker(triggerMarkerId);
+    setExpandedEventId(triggerMarkerId);
+    const createdTrigger = updatedProject.markers.find((m) => m.id === triggerMarkerId);
+    if (createdTrigger) {
+      onFocusMarker(createdTrigger);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 text-slate-200">
       {/* Header com Estatísticas e Botão de Novo Evento */}
@@ -170,6 +201,26 @@ export const EventGalleryStudio: React.FC<Props> = ({
         </button>
       </div>
 
+      {/* Card de 1 Clique: Gerar Cenário Teste de Interceptação & Escolta */}
+      <div className="p-2.5 rounded-xl bg-gradient-to-r from-orange-950/50 via-amber-950/35 to-cyan-950/40 border border-orange-500/40 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] font-black text-orange-200 flex items-center gap-1.5">
+            <span>🚨</span>
+            <span>Interceptação & Escolta Guiada</span>
+          </div>
+          <p className="text-[10px] text-slate-300 leading-tight mt-0.5">
+            Cria o gatilho de área + Capitã Lyra (4 direções) surgindo do canto da tela e guiando o herói até o Santuário!
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleCreateInterceptTestScenario}
+          className="shrink-0 px-3 py-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-slate-950 font-black text-[11px] shadow-md cursor-pointer transition-all active:scale-95"
+        >
+          🎬 Gerar Teste Agora
+        </button>
+      </div>
+
       {/* Barra de Busca e Filtros Rápidos por Tipo */}
       <div className="space-y-2">
         <div className="relative">
@@ -194,6 +245,7 @@ export const EventGalleryStudio: React.FC<Props> = ({
         <div className="flex flex-wrap gap-1.5 text-[11px]">
           {[
             { id: 'all', label: 'Todos', icon: Sparkles },
+            { id: 'intercept', label: '🚨 Interceptação & Escolta', icon: Navigation },
             { id: 'dialogue', label: 'Diálogo/Cena', icon: MessageSquare },
             { id: 'weather', label: 'Clima', icon: CloudRain },
             { id: 'duel', label: 'Batalha', icon: Swords },
@@ -477,9 +529,33 @@ export const EventGalleryStudio: React.FC<Props> = ({
                           <label className="text-[10px] text-slate-400 block mb-1">Tipo de Ação</label>
                           <select
                             value={evt.eventKind || 'dialogue'}
-                            onChange={(e) => updateEventMarker(evt.id, { eventKind: e.target.value as any })}
+                            onChange={(e) => {
+                              const nextKind = e.target.value as any;
+                              if (nextKind === 'intercept' && !evt.interceptConfig) {
+                                const lyra = getCapitaLyraDirectionalSprites();
+                                const otherM = (project.markers || []).find((m) => m.id !== evt.id);
+                                updateEventMarker(evt.id, {
+                                  eventKind: 'intercept',
+                                  interceptConfig: {
+                                    ...DEFAULT_INTERCEPT_CONFIG,
+                                    inlineNpcPng: lyra.down,
+                                    inlineAvatarDownPng: lyra.down,
+                                    inlineAvatarUpPng: lyra.up,
+                                    inlineAvatarLeftPng: lyra.left,
+                                    inlineAvatarRightPng: lyra.right,
+                                    destinationType: otherM ? 'marker' : 'coordinates',
+                                    destinationMarkerId: otherM?.id,
+                                    destinationX: otherM ? otherM.x : evt.x + 120,
+                                    destinationY: otherM ? otherM.y : evt.y + 260,
+                                  },
+                                });
+                              } else {
+                                updateEventMarker(evt.id, { eventKind: nextKind });
+                              }
+                            }}
                             className="w-full px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200"
                           >
+                            <option value="intercept">🚨 Interceptação & Escolta Guiada</option>
                             <option value="dialogue">💬 Cena de Diálogo / Fala</option>
                             <option value="weather">🌧️ Clima / Atmosfera</option>
                             <option value="duel">⚔️ Batalha / Duelo</option>
@@ -505,6 +581,96 @@ export const EventGalleryStudio: React.FC<Props> = ({
                           </div>
                         </div>
                       </div>
+
+                      {/* Se for Interceptação & Escolta */}
+                      {evt.eventKind === 'intercept' && (() => {
+                        const cfg = evt.interceptConfig || DEFAULT_INTERCEPT_CONFIG;
+                        const patchIntercept = (patch: Partial<typeof cfg>) => {
+                          const nextCfg = { ...cfg, ...patch };
+                          updateEventMarker(evt.id, {
+                            interceptConfig: nextCfg,
+                            events: (evt.events || []).some((e) => e.type === 'intercept')
+                              ? (evt.events || []).map((e) =>
+                                  e.type === 'intercept' ? { ...e, interceptConfig: nextCfg } : e
+                                )
+                              : evt.events,
+                          });
+                        };
+                        return (
+                          <div className="pt-2 border-t border-slate-800 space-y-2 text-[11px]">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-orange-300 block mb-0.5">Nome do Guia / NPC:</label>
+                                <input
+                                  type="text"
+                                  value={cfg.inlineNpcName || ''}
+                                  onChange={(e) => patchIntercept({ inlineNpcName: e.target.value })}
+                                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-100"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-orange-300 block mb-0.5">Canto de onde surge:</label>
+                                <select
+                                  value={cfg.spawnOrigin || 'top_right'}
+                                  onChange={(e) => patchIntercept({ spawnOrigin: e.target.value as InterceptSpawnOrigin })}
+                                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-100"
+                                >
+                                  <option value="top_right">↗️ Canto Superior Direito</option>
+                                  <option value="top_left">↖️ Canto Superior Esquerdo</option>
+                                  <option value="top">⬆️ Borda Superior (Topo)</option>
+                                  <option value="left">⬅️ Borda Esquerda</option>
+                                  <option value="right">➡️ Borda Direita</option>
+                                  <option value="bottom_left">↙️ Canto Inferior Esquerdo</option>
+                                  <option value="bottom_right">↘️ Canto Inferior Direito</option>
+                                  <option value="bottom">⬇️ Borda Inferior (Base)</option>
+                                  <option value="marker_pos">📍 Da Posição no Mapa</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-cyan-300 block mb-0.5">Destino da Escolta:</label>
+                                <select
+                                  value={cfg.destinationMarkerId || ''}
+                                  onChange={(e) => {
+                                    const mId = e.target.value;
+                                    const destM = (project.markers || []).find((m) => m.id === mId);
+                                    patchIntercept({
+                                      escortEnabled: true,
+                                      destinationType: 'marker',
+                                      destinationMarkerId: mId,
+                                      ...(destM ? { destinationX: destM.x, destinationY: destM.y } : {}),
+                                    });
+                                  }}
+                                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-100"
+                                >
+                                  <option value="">-- Selecione o Destino --</option>
+                                  {(project.markers || [])
+                                    .filter((m) => m.id !== evt.id)
+                                    .map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        📍 {m.name} ({Math.round(m.x)}, {Math.round(m.y)})
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-amber-300 block mb-0.5">1ª Fala ao Abordar:</label>
+                                <input
+                                  type="text"
+                                  value={cfg.greetingDialogues?.[0] || ''}
+                                  onChange={(e) => {
+                                    const nextG = [...(cfg.greetingDialogues || [''])];
+                                    nextG[0] = e.target.value;
+                                    patchIntercept({ greetingDialogues: nextG });
+                                  }}
+                                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-100"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Se for clima */}
                       {evt.eventKind === 'weather' && (

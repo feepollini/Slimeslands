@@ -7,5 +7,7 @@ export interface MarkerModuleCommonProps {
   project?: MapProject;
   savedLevels?: SavedLevel[];
   galleryAssets?: import('../../types/map').GalleryAsset[];
+  galleryCategories?: string[];
+  onUploadNewAsset?: (newAsset: import('../../types/map').GalleryAsset) => void;
   onTriggerImportPNG?: () => void;
 }

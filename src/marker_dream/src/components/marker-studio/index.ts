@@ -7,4 +7,5 @@ export * from './modules/MarkerAreaModule';
 export * from './modules/MarkerNeutralModule';
 export * from './modules/MarkerStationModule';
 export * from './modules/MarkerActionNpcModule';
+export * from './modules/NpcDirectionalSpritesPanel';
 export * from './tabs';

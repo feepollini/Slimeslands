@@ -9,6 +9,7 @@ import {
   MotionOverlayStroke,
   LimitsBrushMode,
   GroundStamp,
+  pickMarkerDirectionalPng,
 } from '../types/map';
 import { DEFAULT_TERRAIN_PEN_CONFIG } from '../types/terrainPen';
 import {
@@ -3049,9 +3050,84 @@ export const VerticalMapCanvas: React.FC<Props> = ({
             }}
           />
 
-          {/* SVG Overlay for Routes */}
+          {/* SVG Overlay for Routes & Intercept Escort Trajectories */}
           {/* Marcadores da FASE VISÍVEL: vertical mostra os do mapa; Extended mostra os de cada sub-bioma */}
           <div className="absolute inset-0 pointer-events-none z-30">
+            {/* Linhas de Trajetória Visual para Eventos de Interceptação & Escolta ("Intercept") */}
+            <svg
+              className="absolute inset-0 pointer-events-none z-10 overflow-visible"
+              style={{ width: canvasW * zoom, height: canvasH * zoom }}
+            >
+              {(project.markers || [])
+                .filter((m) => (isExtended ? Boolean(m.subBiomeId) : !m.subBiomeId))
+                .map((m) => {
+                  const interceptCfg =
+                    m.interceptConfig ||
+                    m.events?.find((ev) => ev.type === 'intercept')?.interceptConfig;
+                  if (!interceptCfg || !interceptCfg.escortEnabled) return null;
+
+                  const destMarker = interceptCfg.destinationMarkerId
+                    ? (project.markers || []).find((dm) => dm.id === interceptCfg.destinationMarkerId)
+                    : undefined;
+                  const destX =
+                    (interceptCfg.destinationType || 'marker') === 'marker' && destMarker
+                      ? destMarker.x
+                      : interceptCfg.destinationX;
+                  const destY =
+                    (interceptCfg.destinationType || 'marker') === 'marker' && destMarker
+                      ? destMarker.y
+                      : interceptCfg.destinationY;
+
+                  if (typeof destX !== 'number' || typeof destY !== 'number') return null;
+
+                  const originX = isExtended && m.subBiomeId ? (subBiomeOriginX(m.subBiomeId) ?? 0) : 0;
+                  const sx = (originX + m.x) * zoom;
+                  const sy = m.y * zoom;
+                  const gx = (originX + destX) * zoom;
+                  const gy = destY * zoom;
+                  const midX = (sx + gx) / 2;
+                  const midY = (sy + gy) / 2;
+
+                  return (
+                    <g key={`intercept-line-${m.id}`}>
+                      <line
+                        x1={sx}
+                        y1={sy}
+                        x2={gx}
+                        y2={gy}
+                        stroke="rgba(6, 182, 212, 0.35)"
+                        strokeWidth={6}
+                        strokeLinecap="round"
+                      />
+                      <line
+                        x1={sx}
+                        y1={sy}
+                        x2={gx}
+                        y2={gy}
+                        stroke="#f59e0b"
+                        strokeWidth={2.5}
+                        strokeDasharray="8 6"
+                        strokeLinecap="round"
+                      />
+                      <circle cx={gx} cy={gy} r={7} fill="#06b6d4" stroke="#ffffff" strokeWidth={2} />
+                      <foreignObject
+                        x={midX - 95}
+                        y={midY - 14}
+                        width={190}
+                        height={28}
+                        className="overflow-visible pointer-events-none"
+                      >
+                        <div className="flex items-center justify-center">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-950/90 border border-amber-400/60 text-[9px] font-bold text-amber-200 shadow-md whitespace-nowrap">
+                            🚨 Escolta: {interceptCfg.inlineNpcName || 'Guia'} ➔ {destMarker?.name || 'Destino'}
+                          </span>
+                        </div>
+                      </foreignObject>
+                    </g>
+                  );
+                })}
+            </svg>
+
             {/* 2. Marcadores Interativos da Fase (Grama é decalque instanciado na camada de terreno acima) */}
             {(liveStrokeMarkers.length > 0 ? [...project.markers, ...liveStrokeMarkers] : project.markers)
               .filter((marker) => (isExtended ? Boolean(marker.subBiomeId) : !marker.subBiomeId))
@@ -3119,6 +3195,13 @@ export const VerticalMapCanvas: React.FC<Props> = ({
               let isCanvasAbove = isPlayerBelowMarkerCanvas;
               if (markerCanvasY < 210) isCanvasAbove = false;
               else if (markerCanvasY > mapCanvasHeight - 230) isCanvasAbove = true;
+
+              const dirSpriteInfo = pickMarkerDirectionalPng(
+                marker,
+                marker.facingDirection || marker.actionNpc?.facingDirection || 'down'
+              );
+              const activeMarkerPng = dirSpriteInfo.png || marker.customIconPng;
+              const effectiveFlipX = dirSpriteInfo.autoMirrorX ? !marker.flipX : Boolean(marker.flipX);
 
               return (
                 <div
@@ -3281,9 +3364,9 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                     );
                   })()}
                   {/* Sombrinha do asset com ajuste de blur, silhueta realista e offset X e Y */}
-                  {(marker.customIconPng || marker.type === 'npc' || marker.type === 'neutral' || marker.type === 'light' || isStation) && (!marker.motionAsset || marker.hasShadow !== false) && (
+                  {(activeMarkerPng || marker.type === 'npc' || marker.type === 'neutral' || marker.type === 'light' || isStation) && (!marker.motionAsset || marker.hasShadow !== false) && (
                     <GroundShadow
-                      url={(marker.mediaType === 'video' || marker.videoUrl) ? null : marker.customIconPng}
+                      url={(marker.mediaType === 'video' || marker.videoUrl) ? null : activeMarkerPng}
                       box={effectiveMarkerPixelSize}
                       offsetX={(marker.shadowOffsetX || 0) * zoom}
                       offsetY={(marker.shadowOffsetY || 0) * zoom}
@@ -3304,7 +3387,7 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                   {/* Marcador Pin com Suporte a PNG, Redimensionamento e Giro (Gelatina isolada em wrapper dedicado para não brigar com transform) */}
                   <div
                     className={`absolute inset-0 flex items-center justify-center transition-transform ${
-                      marker.customIconPng
+                      activeMarkerPng
                         ? isSelected
                           ? 'scale-105 filter drop-shadow-[0_0_8px_rgba(56,189,248,0.95)] drop-shadow-[0_0_16px_rgba(56,189,248,0.5)]'
                           : 'hover:scale-105'
@@ -3315,7 +3398,7 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                     style={{
                       width: effectiveMarkerPixelSize,
                       height: effectiveMarkerPixelSize,
-                      backgroundColor: marker.customIconPng ? 'transparent' : marker.color || '#3b82f6',
+                      backgroundColor: activeMarkerPng ? 'transparent' : marker.color || '#3b82f6',
                     }}
                   >
                     {/* Wrapper da Gelatina e Vento Orgânico */}
@@ -3357,7 +3440,7 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                           width: '100%',
                           height: '100%',
                           transformOrigin: `${(marker.pivotX ?? 0.5) * 100}% ${(marker.pivotY ?? 0.5) * 100}%`,
-                          transform: `rotate(${markerRotation}deg) scale(${marker.flipX ? -(marker.scaleX ?? 1) : (marker.scaleX ?? 1)}, ${marker.flipY ? -(marker.scaleY ?? 1) : (marker.scaleY ?? 1)})`,
+                          transform: `rotate(${markerRotation}deg) scale(${effectiveFlipX ? -(marker.scaleX ?? 1) : (marker.scaleX ?? 1)}, ${marker.flipY ? -(marker.scaleY ?? 1) : (marker.scaleY ?? 1)})`,
                         }}
                         className="flex items-center justify-center shrink-0"
                       >
@@ -3369,15 +3452,15 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                           />
                         ) : (marker.mediaType === 'video' || marker.videoUrl) ? (
                           <VideoAssetCanvas
-                            key={marker.videoUrl || marker.customIconPng || marker.id}
-                            videoUrl={marker.videoUrl || marker.customIconPng || ''}
+                            key={marker.videoUrl || activeMarkerPng || marker.id}
+                            videoUrl={marker.videoUrl || activeMarkerPng || ''}
                             chromaKey={marker.videoChromaKey}
                             className="w-full h-full object-contain filter drop-shadow-md select-none pointer-events-none"
                           />
-                        ) : marker.customIconPng ? (
+                        ) : activeMarkerPng ? (
                           (marker.id.startsWith('terrain-grass-') || marker.id.startsWith('terrain-flower-') || (marker.effect === 'wind' && (!marker.motionLayers || marker.motionLayers.length === 0) && (!marker.effectStrokes || marker.effectStrokes.length === 0))) ? (
                             <img
-                              src={getRenderableAssetUrl(marker.customIconPng)}
+                              src={getRenderableAssetUrl(activeMarkerPng)}
                               alt={marker.name}
                               loading="lazy"
                               decoding="async"
@@ -3385,7 +3468,7 @@ export const VerticalMapCanvas: React.FC<Props> = ({
                             />
                           ) : (
                             <MotionAssetCanvas
-                              src={marker.customIconPng}
+                              src={activeMarkerPng}
                               alt={marker.name}
                               effect={marker.effect}
                               speed={marker.effectSpeed ?? marker.jellySpeed ?? 1.0}

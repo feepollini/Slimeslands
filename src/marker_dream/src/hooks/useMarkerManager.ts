@@ -222,6 +222,11 @@ export function useMarkerManager({
       biomeId,
       layerId: targetLayerId,
       customIconPng: finalDataUrl,
+      avatarDownPng: (asset as any).avatarDownPng,
+      avatarUpPng: (asset as any).avatarUpPng,
+      avatarLeftPng: (asset as any).avatarLeftPng,
+      avatarRightPng: (asset as any).avatarRightPng,
+      facingDirection: (asset as any).facingDirection || (isNpc ? 'down' : undefined),
       size: (() => {
         const rawSize = Number(asset.size || (matchedGalleryAsset as any)?.defaultSize);
         return rawSize && rawSize >= 16 && rawSize <= 3000 ? rawSize : 150;
@@ -234,15 +239,25 @@ export function useMarkerManager({
       effectIntensity: (asset as any).effectIntensity ?? (isNpc ? 0.45 : 1.0),
       jellySpeed: (asset as any).jellySpeed ?? 1.0,
       jellyIntensity: (asset as any).jellyIntensity ?? (isNpc ? 0.45 : 1.0),
+      actionNpc: (asset as any).actionNpc
+        ? {
+            ...(asset as any).actionNpc,
+            spawnOrigin: { x: finalX, y: finalY },
+          }
+        : undefined,
       npcPatrol: isNpc ? ((asset as any).npcPatrol || {
-        enabled: false,
-        preset: 'horizontal',
+        enabled: true,
+        preset: 'procedural',
         walkStyle: 'jelly',
-        speed: 2.0,
-        distance: 60,
+        speed: 2.2,
+        distance: 140,
         pauseTime: 1.5,
         loop: true,
       }) : undefined,
+      dialogueEnabled: (asset as any).dialogueEnabled ?? isNpc,
+      dialogueCharacterName: (asset as any).dialogueCharacterName || (isNpc ? asset.name : undefined),
+      dialogueCharacterPng: (asset as any).dialogueCharacterPng || (isNpc ? finalDataUrl : undefined),
+      dialogueText: (asset as any).dialogueText || (isNpc ? `Olá! Eu sou ${asset.name}.` : undefined),
       motionLayers,
       motionAsset: Boolean(motionLayers),
       mediaType: (asset as any).mediaType || ((asset as any).videoUrl ? 'video' : (matchedGalleryAsset?.mediaType || (matchedGalleryAsset?.videoUrl ? 'video' : 'image'))),

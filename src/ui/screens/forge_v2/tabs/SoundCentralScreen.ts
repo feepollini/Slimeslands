@@ -60,6 +60,13 @@ const ACTION_DEFS: { key: string; label: string; icon: string; group: string }[]
   { key: 'coin_spin', label: 'Moeda — Efeito Girando', icon: '🌪️', group: 'Estados de Tela' },
   { key: 'coin_win', label: 'Moeda — Resultado Ganho', icon: '✅', group: 'Estados de Tela' },
   { key: 'coin_lose', label: 'Moeda — Resultado Perdido', icon: '❌', group: 'Estados de Tela' },
+  // Marker Dream (Exploração de Fases & Escaneamento)
+  { key: 'md_ataque_player', label: 'Fase — Ataque do Jogador', icon: '🗡️', group: 'Marker Dream (Fases)' },
+  { key: 'md_scan_pronto', label: 'Fase — NPC em Estado de Scan (50% PV)', icon: '📡', group: 'Marker Dream (Fases)' },
+  { key: 'md_scan_captura', label: 'Fase — Captura de Variação da Carta', icon: '🃏', group: 'Marker Dream (Fases)' },
+  { key: 'md_coleta_item', label: 'Fase — Coletar Item / Moeda no Chão', icon: '🎒', group: 'Marker Dream (Fases)' },
+  { key: 'md_bau_abrir', label: 'Fase — Abrir Baú de Tesouro', icon: '🎁', group: 'Marker Dream (Fases)' },
+  { key: 'md_viagem_portal', label: 'Fase — Viagem / Teleporte / Portal', icon: '🌀', group: 'Marker Dream (Fases)' },
 ];
 
 const SCREEN_DEFS: { key: string; label: string; icon: string }[] = [
@@ -72,7 +79,8 @@ const SCREEN_DEFS: { key: string; label: string; icon: string }[] = [
   { key: 'perfil', label: 'Perfil / Conta', icon: '👤' },
   { key: 'configuracoes', label: 'Configurações', icon: '⚙️' },
   { key: 'deck_builder', label: 'Construção de Deck', icon: '📦' },
-  { key: 'map', label: 'Mapa do Mundo', icon: '🗺️' },
+  { key: 'map', label: 'Mapa do Mundo (Hub)', icon: '🗺️' },
+  { key: 'md_fase_exploracao', label: 'Marker Dream — Exploração de Fase (Padrão)', icon: '🌲' },
   { key: 'academy', label: 'Academia', icon: '🏛️' },
   { key: 'vitoria', label: 'Tela de Vitória', icon: '🏆' },
   { key: 'derrota', label: 'Tela de Derrota', icon: '💀' },

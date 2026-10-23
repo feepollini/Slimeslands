@@ -2300,6 +2300,69 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
                     </div>
                   </div>
 
+                  {/* Vínculo Direto com Camadas do Motion Canvas (Motion Item) */}
+                  <div className="p-3 rounded-xl bg-fuchsia-950/20 border border-fuchsia-500/35 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-fuchsia-300 flex items-center gap-1.5">
+                        <span>🎬 Vínculo Motion Item (Roupa / Skin / Cinto / Arma com Física 2D)</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-fuchsia-200/80">
+                        Revela camadas no Herói ao adquirir/equipar
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-zinc-300 block mb-1">
+                          Tag de Grupo no Motion Canvas (inventoryItemTag)
+                        </label>
+                        <input
+                          type="text"
+                          value={editingItem.motionLayerTag || ''}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\s+/g, '_');
+                            const nextTags = new Set(resolveItemStateTags(editingItem));
+                            if (val) {
+                              nextTags.add('motion_item');
+                              nextTags.add('equipable');
+                            }
+                            setEditingItem({
+                              ...editingItem,
+                              motionLayerTag: val || undefined,
+                              stateTags: Array.from(nextTags),
+                            });
+                          }}
+                          placeholder="Ex: skin_armadura_solar, cinto_real, espada_fogo..."
+                          className="w-full bg-zinc-950 border border-fuchsia-500/40 rounded-lg px-3 py-1.5 text-xs text-fuchsia-200 font-mono focus:outline-none focus:border-fuchsia-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-zinc-300 block mb-1">
+                          Slot Visual do Equipamento Motion
+                        </label>
+                        <select
+                          value={editingItem.motionEquipSlot || 'skin'}
+                          onChange={(e) =>
+                            setEditingItem({
+                              ...editingItem,
+                              motionEquipSlot: e.target.value as any,
+                            })
+                          }
+                          className="w-full bg-zinc-950 border border-zinc-750 rounded-lg px-3 py-1.5 text-xs text-white font-semibold"
+                        >
+                          <option value="skin">🥋 Roupa / Skin Completa</option>
+                          <option value="armor">🛡️ Peitoral / Armadura</option>
+                          <option value="belt">🎗️ Cinto / Faixa</option>
+                          <option value="weapon">⚔️ Arma / Espada</option>
+                          <option value="cape">🧣 Capa / Manto</option>
+                          <option value="wings">🪽 Asas</option>
+                          <option value="head">🪖 Cabeça / Chapéu</option>
+                          <option value="boots">👢 Botas / Calçado</option>
+                          <option value="accessory">💍 Acessório / Amuleto</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-xs font-semibold text-zinc-300 block mb-1">
                       Descrição Curta (Exibida no Tooltip da Mochila)

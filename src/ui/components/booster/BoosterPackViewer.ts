@@ -20,8 +20,8 @@ import { renderMatrixCardSVG } from '../../screens/forge_v2/utils/HestridiaMatri
 // ============================================================================
 // FLAGS MODULARES (Prontas para desfazer/desativar facilmente se necessário)
 // ============================================================================
-export const ENABLE_BOOSTER_TEAR_GLOW = false; // Removido conforme solicitado ("remover o brilho ao abrir o booster")
-export const ENABLE_BOOSTER_CAROUSEL = true;   // Ciranda / Roda 3D de 12 boosters antes de abrir
+export const ENABLE_BOOSTER_TEAR_GLOW = false; // Removido conforme solicitado
+export const ENABLE_BOOSTER_CAROUSEL = false;  // Desativa a ciranda experimental para abrir o Booster 3D diretamente na tela
 
 export interface BoosterPackViewerOptions {
   theme?: 'charizard' | 'pikachu' | 'rayquaza' | 'mewtwo' | string;
@@ -272,8 +272,12 @@ export class BoosterPackViewer {
         mapped.texture = c.texture || createPremiumCardTexture(mapped);
         return mapped;
       });
-      // Garante que a carta Mítica ou Lendária SEMPRE seja a última carta do booster
-      return mappedList.sort((a, b) => getBoosterCardSortWeight(a) - getBoosterCardSortWeight(b));
+      // Garante que as cartas mais raras (ou múltiplas raras) fiquem SEMPRE nas últimas posições (reveladas por último)
+      return mappedList.sort((a, b) => {
+        const diff = getBoosterCardSortWeight(a) - getBoosterCardSortWeight(b);
+        if (diff !== 0) return diff;
+        return (Number(a.atk || 0) + Number(a.pv || 0)) - (Number(b.atk || 0) + Number(b.pv || 0));
+      });
     };
 
     const sourceCardsInput: any = this.options.cards && this.options.cards.length > 0 ? this.options.cards : defaultNine;
@@ -743,7 +747,7 @@ export class BoosterPackViewer {
       }
 
       activeMatrixOverlayMeshIdx = meshIdx;
-      matrixRarityTimer = MATRIX_RARITY_DURATION;
+      matrixRarityTimer = 9999;
       matrixRarityOverlay.style.display = 'block';
       matrixRarityOverlay.style.opacity = '1';
 
@@ -871,6 +875,18 @@ export class BoosterPackViewer {
       isGridMode = true;
       bottomGridBar.style.display = 'flex';
       playHoloShimmerSound();
+
+      // Limpeza completa: garante que todos os frontMeshes estão visíveis e nenhum overlay de croma fica travado
+      cardMeshes.forEach((m: any) => {
+        if (m?.userData?.frontMesh) m.userData.frontMesh.visible = true;
+        if (m?.userData?.sheenMesh) {
+          m.userData.sheenMesh.visible = false;
+          m.userData.sheenMesh.material.opacity = 0;
+        }
+      });
+      matrixRarityOverlay.style.display = 'none';
+      matrixRarityOverlay.innerHTML = '';
+      activeMatrixOverlayMeshIdx = -1;
     };
 
     const finishCycle = () => {
@@ -900,13 +916,16 @@ export class BoosterPackViewer {
           const isMythicOrLegendary = rarity === 'legendary' || weight >= 4;
           const isPremium = isMythicOrLegendary || rarity === 'epic' || (newTopMesh as any).userData?.isVideo;
 
-          if (isLastCard || isMythicOrLegendary) {
-            // Dispara a animação oficial da Matriz (CardFrameSVG animateChroma=true) na última carta!
+          if (isMythicOrLegendary) {
+            // Dispara imediatamente o efeito cromado vivo da Matriz ao contemplar a carta mítica/lendária!
             triggerCardShimmer(newTopIdx);
             triggerMatrixRarityAnimation(newTopIdx);
             if (isLastCard) {
-              pendingGridTimer = 2.15;
+              pendingGridTimer = 15.0; // Dá tempo abundante para contemplar a última carta; clique avança imediatamente ao grid
             }
+          } else if (isLastCard) {
+            triggerCardShimmer(newTopIdx);
+            pendingGridTimer = 15.0;
           } else if (isPremium) {
             triggerCardShimmer(newTopIdx);
             triggerSparkleFx();
@@ -944,6 +963,7 @@ export class BoosterPackViewer {
       cardOrder.length = 0;
       cardCycleState.isCycling = false;
       videoCinematic.active = false;
+      initialFlipRevealed = false;
 
       const count = cardsList.length;
       currentCardThickness = Math.min(0.0075, MAX_STACK_DEPTH / Math.max(1, count));
@@ -1083,6 +1103,7 @@ export class BoosterPackViewer {
     let isGridMode = false;
     let gridProgress = 0;
     let revealedCount = 0;
+    let initialFlipRevealed = false;
 
     // Pointer Interaction
     let isPointerDown = false;
@@ -1170,24 +1191,23 @@ export class BoosterPackViewer {
     // Carrega o lote REAL de cartas associado ao pacote escolhido na roda (0..11)
     const materializeSlotPackCards = (slotIdx: number) => {
       if (typeof sourceCardsInput?.materializeCarouselSlot === 'function') {
-        const slotCards = sourceCardsInput.materializeCarouselSlot(slotIdx, true);
-        if (Array.isArray(slotCards) && slotCards.length > 0) {
-          cardsData = mapRawCardsList(slotCards);
+        const slotRes = sourceCardsInput.materializeCarouselSlot(slotIdx, true);
+        if (slotRes instanceof Promise) {
+          slotRes.then((slotCards: any) => {
+            if (Array.isArray(slotCards) && slotCards.length > 0) {
+              cardsData = mapRawCardsList(slotCards);
+              rebuildCardMeshes(cardsData);
+            }
+          });
+          return;
+        } else if (Array.isArray(slotRes) && slotRes.length > 0) {
+          cardsData = mapRawCardsList(slotRes);
           rebuildCardMeshes(cardsData);
           return;
         }
       }
-      // Fallback caso venha de uma lista customizada sem materializeCarouselSlot:
-      // embaralha de forma determinística por slot mantendo a Mítica/Lendária por último
-      if (Array.isArray(sourceCardsInput) && sourceCardsInput.length > 1) {
-        const cloned = [...sourceCardsInput];
-        for (let i = 0; i < cloned.length - 1; i++) {
-          const swapIdx = (i + slotIdx * 3 + 1) % (cloned.length - 1);
-          const tmp = cloned[i];
-          cloned[i] = cloned[swapIdx];
-          cloned[swapIdx] = tmp;
-        }
-        cardsData = mapRawCardsList(cloned);
+      if (Array.isArray(sourceCardsInput) && sourceCardsInput.length > 0) {
+        cardsData = mapRawCardsList(sourceCardsInput);
         rebuildCardMeshes(cardsData);
       }
     };
@@ -1681,7 +1701,7 @@ export class BoosterPackViewer {
             // Caso o booster tenha apenas 1 carta e ela já seja a última
             if (cardMeshes.length === 1) {
               triggerMatrixRarityAnimation(firstTopIdx);
-              pendingGridTimer = 2.15;
+              pendingGridTimer = 15.0;
             }
           } else if (videoCinematic.active) {
             stopVideoCinematic();
@@ -1940,6 +1960,20 @@ export class BoosterPackViewer {
       const flipSpeed = 6.5;
       cardsFlipProgress += (targetCardsFlipProgress - cardsFlipProgress) * Math.min(dt * flipSpeed, 1);
       const flipP = cardsFlipProgress;
+
+      // Dispara o efeito cromado assim que a primeira carta virar de frente se for mítica/lendária
+      if (!initialFlipRevealed && isCardsFlipped && flipP >= 0.88 && !isGridMode) {
+        initialFlipRevealed = true;
+        const firstIdx = cardOrder[0];
+        const firstMesh = cardMeshes[firstIdx];
+        if (firstMesh) {
+          const weight = (firstMesh as any).userData?.rarityWeight ?? 0;
+          const rarity = (firstMesh as any).userData?.rarity;
+          if (weight >= 4 || rarity === 'legendary') {
+            triggerMatrixRarityAnimation(firstIdx);
+          }
+        }
+      }
 
       updateFloppyTopStrip(cutP, timeSec);
 
@@ -2278,11 +2312,10 @@ export class BoosterPackViewer {
 
       renderer.render(scene, camera);
 
-      // ── Sincronização 1:1 da Animação Oficial da Matriz (SVG animateChroma=true) na Última Carta ──
-      if (activeMatrixOverlayMeshIdx >= 0 && matrixRarityTimer > 0 && !isGridMode) {
-        matrixRarityTimer = Math.max(0, matrixRarityTimer - dt);
+      // ── Sincronização 1:1 da Animação Oficial da Matriz (SVG animateChroma=true) na Carta Revelada ──
+      if (activeMatrixOverlayMeshIdx >= 0 && !isGridMode) {
         const targetMesh = cardMeshes[activeMatrixOverlayMeshIdx];
-        if (targetMesh) {
+        if (targetMesh && targetMesh.visible && cardsMasterGroup.visible) {
           targetMesh.updateWorldMatrix(true, false);
           projVecTL.set(-CW / 2, CH / 2, 0).applyMatrix4(targetMesh.matrixWorld).project(camera);
           projVecBR.set(CW / 2, -CH / 2, 0).applyMatrix4(targetMesh.matrixWorld).project(camera);
@@ -2299,16 +2332,26 @@ export class BoosterPackViewer {
           const left = Math.min(x1, x2);
           const top = Math.min(y1, y2);
 
-          matrixRarityOverlay.style.left = `${left}px`;
-          matrixRarityOverlay.style.top = `${top}px`;
-          matrixRarityOverlay.style.width = `${boxW}px`;
-          matrixRarityOverlay.style.height = `${boxH}px`;
-        }
-        if (matrixRarityTimer <= 0) {
+          const currentRotYNorm = ((cardFinalRotY % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const isFacingCamera = currentRotYNorm < 0.35 * Math.PI || currentRotYNorm > 1.65 * Math.PI;
+
+          if (isFacingCamera && boxW > 20 && boxH > 20) {
+            matrixRarityOverlay.style.display = 'block';
+            matrixRarityOverlay.style.left = `${left}px`;
+            matrixRarityOverlay.style.top = `${top}px`;
+            matrixRarityOverlay.style.width = `${boxW}px`;
+            matrixRarityOverlay.style.height = `${boxH}px`;
+          } else {
+            matrixRarityOverlay.style.display = 'none';
+          }
+        } else {
           hideMatrixRarityAnimation();
         }
-      } else if (activeMatrixOverlayMeshIdx >= 0 && isGridMode) {
-        hideMatrixRarityAnimation();
+      } else if (isGridMode || activeMatrixOverlayMeshIdx < 0) {
+        if (matrixRarityOverlay.style.display !== 'none') {
+          matrixRarityOverlay.style.display = 'none';
+          matrixRarityOverlay.innerHTML = '';
+        }
       }
     };
 

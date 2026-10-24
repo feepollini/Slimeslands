@@ -299,18 +299,62 @@ export async function resolveBoosterCards(
       }
     }
 
-    // 3. Preenche as vagas restantes usando o motor procedural oficial da Matriz
+    // 3. Preenche as vagas restantes usando as cartas da Matriz com as probabilidades oficiais (60% Comum, 20% Rara, 10% Épica, 7% Lendária [5%+2%], 3% Mítica)
     const remaining = targetCount - rawList.length;
-    if (remaining > 0) {
-      const generated = generateBoosterPack(
-        matchingBooster,
-        charsPool,
-        balanceTables,
-        'deck-inventory',
-        activeMatrixCards
-      );
-      for (let i = 0; i < remaining && i < generated.length; i++) {
-        rawList.push(generated[i]);
+    if (remaining > 0 && activeMatrixCards.length > 0) {
+      const targetDeckId = (pack as any).deckId || (pack as any).targetDeckId;
+      const deckCards = targetDeckId
+        ? activeMatrixCards.filter((c: any) => c.deckId === targetDeckId)
+        : activeMatrixCards;
+      const pool = deckCards.length >= 4 ? deckCards : activeMatrixCards;
+
+      const mythicPool = pool.filter((c: any) => c.cardClass === 'Mítica');
+      const legPool = pool.filter((c: any) => c.cardClass === 'Lendária');
+      const epicPool = pool.filter((c: any) => c.cardClass === 'Épica');
+      const rarePool = pool.filter((c: any) => c.cardClass === 'Rara');
+      const comPool = pool.filter((c: any) => c.cardClass === 'Comum');
+
+      const pickFrom = (p: any[], fb: any[]) => {
+        const src = p.length > 0 ? p : (fb.length > 0 ? fb : activeMatrixCards);
+        return src[Math.floor(Math.random() * src.length)];
+      };
+
+      for (let i = 0; i < remaining; i++) {
+        const isLastSlot = (rawList.length + i) === (targetCount - 1);
+        let chosenCard: any;
+
+        if (isLastSlot) {
+          // Último slot do booster (Slot 9): Carta de alto rank garantida (Mítica, Lendária ou Épica)
+          const rollSpecial = Math.random() * 100;
+          if (rollSpecial < 25 && mythicPool.length > 0) {
+            chosenCard = pickFrom(mythicPool, legPool);
+          } else if (rollSpecial < 70) {
+            chosenCard = pickFrom(legPool, epicPool);
+          } else {
+            chosenCard = pickFrom(epicPool, rarePool);
+          }
+        } else {
+          // Slots regulares: 60% Comum, 20% Rara, 10% Épica, 7% Lendária (5%+2%), 3% Mítica
+          const roll = Math.random() * 100;
+          if (roll < 3) {
+            chosenCard = pickFrom(mythicPool, legPool);
+          } else if (roll < 10) {
+            chosenCard = pickFrom(legPool, epicPool);
+          } else if (roll < 20) {
+            chosenCard = pickFrom(epicPool, rarePool);
+          } else if (roll < 40) {
+            chosenCard = pickFrom(rarePool, comPool);
+          } else {
+            chosenCard = pickFrom(comPool, pool);
+          }
+        }
+
+        if (chosenCard) {
+          rawList.push({
+            ...chosenCard,
+            id: `${chosenCard.id || 'card'}-env${slotIdx}-${rawList.length}-${Math.random().toString(36).slice(2, 6)}`
+          });
+        }
       }
     }
 

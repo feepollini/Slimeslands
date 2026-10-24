@@ -116,70 +116,94 @@
   ],
   "decks": [
     {
-      "id": "deck_teste_slime",
-      "name": "Deck Slime Inicial",
-      "cards": [
-        "03 toxico",
-        "Trio de Ladr es Slimes no Be",
-        "10 lava",
-        "04 obsidiana",
-        "05 gelo",
-        "06 areia",
-        "11 vento",
-        "12 relampago",
-        "07 mercurio",
-        "08 fungo",
-        "13 lunar",
-        "20 eclipse"
-      ],
-      "currency": "gold",
+      "id": "deck-divinos",
+      "name": "Panteão Divino & Celestiais",
       "price": 800,
-      "image": "",
-      "desc": "12 slimes para começar a jornada."
+      "currency": "gold",
+      "cards": [
+        "Regente da Alvorada",
+        "Tempestade de Bronze",
+        "Ancestral da Mare Perro",
+        "Guardiao das Nuvens",
+        "Arqueiro Slime da Vigia",
+        "Ciclope Slime Rompe as Correntes",
+        "Vampiro Slime Sombrio",
+        "Shogun slime carmesim sob a lua",
+        "Bardo Slime Melódico",
+        "Cupcake Slime de Framboesa",
+        "Escorpião de Pedra Ancestral",
+        "Guardião da cera na capela",
+        "Guardião âmbar das ampulhetas",
+        "5ed647d0 5a1f 4fc3 869f 8aa3d90e821a",
+        "Guerreiro Viking das Neves",
+        "Antídoto verde na velha botica",
+        "Caranguejo cromado sob a lua",
+        "Cavaleiro slime branco de Áries",
+        "Escudo rubro contra a onda serpentina",
+        "Fantasma de Slime no Cemitério Sombrio"
+      ],
+      "theme": "Divino / Celestial",
+      "desc": "Deck equilibrado com 20 cartas: 60% Comuns e Raras, 20% Épicas, 15% Lendárias e 5% Míticas (Deus Celestial)."
     },
     {
-      "id": "deck_teste_fogo",
-      "name": "Deck Fogo Selvagem",
+      "id": "deck-elementais",
+      "name": "Guardiões Elementais & Natureza",
       "price": 1200,
       "currency": "gold",
-      "desc": "Um deck temático completo para dominar a arena.",
-      "image": "",
       "cards": [
-        "19 musgo",
-        "14 raizes",
-        "18 sal",
-        "17 fumaca",
-        "F ria do slime de basalto 1",
-        "Cavaleiro slime prateado blo",
-        "15 quartzo",
-        "Guardi o mbar das ampulhetas",
-        "Slime de cobre na engrenagem",
-        "Slime coral invoca drag o de",
-        "Slime colosso arranca coluna",
-        "16 abissal"
-      ]
+        "Regente da Alvorada",
+        "Tempestade de Bronze",
+        "Ancestral da Mare Perro",
+        "Guardiao das Nuvens",
+        "Ciclope Slime Rompe as Correntes",
+        "Slime branca cromada de Virgem",
+        "Slime Colosso Ancestral",
+        "Slime Coral Invocador",
+        "Escorpião de Pedra Ancestral",
+        "Guardião da cera na capela",
+        "Guardião âmbar das ampulhetas",
+        "Slime Ciclope Guardião",
+        "Slime de lava emergindo da fissura",
+        "5ed647d0 5a1f 4fc3 869f 8aa3d90e821a",
+        "Antídoto verde na velha botica",
+        "Caranguejo cromado sob a lua",
+        "Cavaleiro slime branco de Áries",
+        "Escudo rubro contra a onda serpentina",
+        "Fantasma de Slime no Cemitério Sombrio",
+        "Geleca rosa planta uma bolota brilhante"
+      ],
+      "theme": "Elementar",
+      "desc": "Deck equilibrado com 20 cartas: 60% Comuns e Raras, 20% Épicas, 15% Lendárias e 5% Míticas (Viking Ancestral)."
     },
     {
-      "id": "deck_teste_gelo",
-      "name": "Deck Gelo Eterno",
-      "price": 1200,
+      "id": "deck-sombras",
+      "name": "Cripta das Sombras & Necromancia",
+      "price": 1600,
       "currency": "gold",
-      "desc": "Um deck temático completo para dominar a arena.",
-      "image": "",
       "cards": [
-        "Slime alquimista desviando d",
-        "Slime de Fogo em Investida E",
-        "Slime ametista lan a fragmen",
-        "Slime de vento soprando folh",
-        "Slime explorador deslizando ",
-        "Slime astronauta no campo de",
-        "Slime rosa invertido entre c",
-        "Slime pirata ndigo sob a tem",
-        "Slime oce nico surfando na c",
-        "Slime cido saltando no esgot",
-        "Slime Zen no Santu rio Flore",
-        "Slime vulc nico martela a bi"
-      ]
+        "Regente da Alvorada",
+        "Ceifador de Lodo Lunar",
+        "Ceifador Sombrio da Meia-Noite",
+        "Tempestade de Bronze",
+        "Vampiro Slime Sombrio",
+        "Arqueiro Slime da Vigia",
+        "Ciclope Slime Rompe as Correntes",
+        "Vampiro Slime Sombrio",
+        "Morcego Espectral da Noite",
+        "Bruxo Alquimista Macabro",
+        "Monstro de Abóbora em Slime Sob a Lua Cheia",
+        "Vampiro Alado de Gotham",
+        "Múmia de Gosma Encantada",
+        "Bruxo de Ectoplasma",
+        "Bruxo de Ectoplasma",
+        "Bruxo de Ectoplasma",
+        "Bruxo de Ectoplasma",
+        "Abóbora Macabra",
+        "Abóbora Macabra",
+        "Abóbora Macabra"
+      ],
+      "theme": "Trevas / Necromante",
+      "desc": "Deck equilibrado com 20 cartas: 60% Comuns e Raras, 20% Épicas, 15% Lendárias e 5% Míticas (Viking Ancestral)."
     }
   ],
   "coinPacks": [
@@ -271,16 +295,18 @@
   "packs": [
     {
       "id": "booster_starter",
-      "name": "Booster Iniciante",
-      "desc": "Pacote básico com 3 cartas. Ideal para reforçar seu deck com novas criaturas.",
+      "name": "Booster Ecos de Slimelands (Geral)",
+      "desc": "Pacote geral com 9 cartas sorteadas de todos os biomas. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária (5%+2% Especial), 3% Mítica.",
       "price": 0,
       "currency": "gold",
       "cardsCount": 9,
-      "mode": "special",
+      "mode": "random",
       "rates": {
-        "common": 80,
-        "rare": 18,
-        "legendary": 2
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
       },
       "theme": "charizard",
       "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
@@ -291,6 +317,168 @@
       },
       "published": true,
       "customFront": "/cards/Batalha_dos_slimes_fant_sticos.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_divinos",
+      "name": "Booster Panteão Divino & Celestiais",
+      "desc": "9 cartas consagradas aos deuses, constelações e titãs celestiais. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-divinos",
+      "price": 250,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/01_sol.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_elementais",
+      "name": "Booster Guardiões Elementais",
+      "desc": "9 cartas de criaturas dos elementos da natureza: fogo, água, terra, gelo e trovão. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-elementais",
+      "price": 200,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/10 lava.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_sombras",
+      "name": "Booster Cripta das Sombras",
+      "desc": "9 cartas de necromantes, vampiros, bruxos, ceifadores e horrores sombrios. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-sombras",
+      "price": 220,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/halloween_original_4_ceifador.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_guerreiros",
+      "name": "Booster Clã dos Ronins & Guerreiros",
+      "desc": "9 cartas de samurais, vikings nórdicos dos fiordes, shoguns e ninjas. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-guerreiros",
+      "price": 220,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/5241c360-0176-4455-87ca-d6263cb64e8e.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_gourmet",
+      "name": "Booster Reino Gourmet & Travessos",
+      "desc": "9 cartas de doces, pudins, panquecas de mel e travessos companheiros encantados. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-gourmet",
+      "price": 180,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/Slime coelhinho leva ovo brilhante ao ninho-1.png",
+      "fixedCards": []
+    },
+    {
+      "id": "booster_grimorio",
+      "name": "Booster Grimório Arcano & Relíquias",
+      "desc": "9 cartas de elixires místicos, feitiços arcanos, poções e relíquias de batalha. Taxas: 60% Comum, 20% Rara, 10% Épica, 7% Lendária, 3% Mítica.",
+      "deckId": "deck-grimorio",
+      "price": 240,
+      "currency": "gold",
+      "cardsCount": 9,
+      "mode": "random",
+      "rates": {
+        "common": 60,
+        "rare": 20,
+        "epic": 10,
+        "legendary": 7,
+        "mythic": 3
+      },
+      "theme": "charizard",
+      "customBack": "/cards/886dc319-0d46-4389-9914-93fe713ae289.png",
+      "cardGroups": {
+        "common": [],
+        "rare": [],
+        "legendary": []
+      },
+      "published": true,
+      "customFront": "/cards/item 01.png",
       "fixedCards": []
     }
   ],

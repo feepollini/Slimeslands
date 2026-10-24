@@ -1,6 +1,7 @@
 import { PlayerConfig, MapProject, PlayerInventoryConfig, MapMarker, ActionNpcConfig } from '../types/map';
 import { DirectionalSpritePack } from './directionalSpriteImporter';
 import { DEFAULT_ACTION_NPC_CONFIG, DEFAULT_ATTACK_CONFIGS } from './npcActionEngine';
+import { dehydrateObjectAssetsToDisk } from '../../../core/DiskAssetEngine';
 
 export const CHARACTERS_STORAGE_KEY = 'marker_dream_characters_roster_v2';
 
@@ -170,15 +171,33 @@ export function loadCharactersRoster(project?: MapProject): PlayerConfig[] {
 }
 
 /**
- * Salva a lista de personagens no localStorage global da engine
+ * Salva a lista de personagens no localStorage e na unidade de disco local da engine (`src/core/engine_storage/marker_dream_characters_roster_v2.json`),
+ * desidratando automaticamente qualquer Base64 para arquivos físicos em `/public/assets/engine/characters/`.
  */
 export function saveCharactersRosterToStorage(characters: PlayerConfig[]): void {
-  if (typeof window !== 'undefined' && window.localStorage) {
+  if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(CHARACTERS_STORAGE_KEY, JSON.stringify(characters));
+      if (window.localStorage) {
+        localStorage.setItem(CHARACTERS_STORAGE_KEY, JSON.stringify(characters));
+      }
     } catch (e) {
       console.warn('Erro ao salvar roster de personagens no localStorage:', e);
     }
+
+    dehydrateObjectAssetsToDisk(characters, 'characters')
+      .then((cleanChars) => {
+        try {
+          if (window.localStorage) {
+            localStorage.setItem(CHARACTERS_STORAGE_KEY, JSON.stringify(cleanChars));
+          }
+        } catch {}
+        return fetch('/api/engine-storage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: CHARACTERS_STORAGE_KEY, data: cleanChars }),
+        });
+      })
+      .catch(() => {});
   }
 }
 

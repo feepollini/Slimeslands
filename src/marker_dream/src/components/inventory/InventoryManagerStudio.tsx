@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type {
   MapProject,
   PlayerInventoryConfig,
@@ -6,35 +6,30 @@ import type {
   InventoryItemType,
   InventoryItemRarity,
   GalleryAsset,
+  PlayerConfig,
 } from '../../types/map';
 import {
   getOrCreatePlayerInventory,
-  DEFAULT_PLAYER_INVENTORY,
+  processInventoryFolderFilesToDisk,
 } from '../../utils/inventoryHelpers';
+import { readUploadedImage } from '../../utils/tileGenerator';
 import {
   Package,
   Plus,
   Trash2,
   Shield,
-  Swords,
-  Sparkles,
-  Key,
-  Flame,
-  Coins,
-  Gem,
-  CheckCircle2,
   X,
   Upload,
-  Layers,
-  ArrowUpDown,
-  Filter,
-  Check,
+  FolderOpen,
 } from 'lucide-react';
 
 interface Props {
   project: MapProject;
   onUpdateProject: (updates: Partial<MapProject>) => void;
+  player?: PlayerConfig;
+  onUpdatePlayer?: (updates: Partial<PlayerConfig>) => void;
   galleryAssets?: GalleryAsset[];
+  galleryCategories?: string[];
   showToast?: (message: string) => void;
   isCompact?: boolean;
 }
@@ -69,6 +64,15 @@ export const InventoryManagerStudio: React.FC<Props> = ({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState<boolean>(false);
+
+  // Refs e estados de Importação de Pasta / PNGs em Massa
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const multiFilesInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingFolder, setIsImportingFolder] = useState<boolean>(false);
+  const [importProgressText, setImportProgressText] = useState<string>('');
+  const [folderImportCategory, setFolderImportCategory] = useState<InventoryItemType | 'auto'>('auto');
+  const [folderImportRarity, setFolderImportRarity] = useState<InventoryItemRarity | 'auto'>('auto');
+  const [isDragOverGrid, setIsDragOverGrid] = useState<boolean>(false);
 
   // Formulário de Novo Item
   const [newItemName, setNewItemName] = useState<string>('Novo Artefato');
@@ -186,10 +190,121 @@ export const InventoryManagerStudio: React.FC<Props> = ({
     showToast?.(`✨ "${newItem.name}" adicionado ao Inventário Geral!`);
   };
 
+  // Importar Pasta ou Múltiplos PNGs direto para o Inventário (Mochila + Catálogo + Disco Local)
+  const handleBulkFolderOrFilesImport = async (files: FileList | File[], isFolder: boolean) => {
+    if (!files || files.length === 0) return;
+    setIsImportingFolder(true);
+    setImportProgressText('Iniciando importação para o disco...');
+
+    try {
+      const mappedOverrideCat =
+        folderImportCategory === 'auto' || folderImportCategory === 'custom'
+          ? 'auto'
+          : folderImportCategory;
+
+      const { folderName, newAssets, newCatalogItems, newBackpackItems } =
+        await processInventoryFolderFilesToDisk(files, {
+          sourceLabel: isFolder ? 'importação de pasta no inventário' : 'importação em massa no inventário',
+          defaultBiomeId: project.biomes?.[0]?.id || 'forest',
+          overrideCategory: mappedOverrideCat as any,
+          overrideRarity: folderImportRarity,
+          startingSlotIndex: inventory.items.length,
+          onProgress: (cur, tot, name) => {
+            setImportProgressText(`Salvando no disco (${cur}/${tot}): ${name}`);
+          },
+        });
+
+      if (newBackpackItems.length === 0) {
+        showToast?.('⚠️ Nenhuma imagem válida (.png, .jpg, .webp, .svg) encontrada na pasta selecionada.');
+        return;
+      }
+
+      const combinedItems = [...inventory.items, ...newBackpackItems];
+      const neededSlots = Math.min(60, Math.max(inventory.maxSlots, combinedItems.length));
+
+      const nextInventory: PlayerInventoryConfig = {
+        ...inventory,
+        maxSlots: neededSlots,
+        items: combinedItems,
+      };
+
+      const existingAssets = project.galleryAssets || galleryAssets || [];
+      const existingCatalog = project.itemCatalog || [];
+
+      onUpdateProject({
+        playerInventory: nextInventory,
+        galleryAssets: [...newAssets, ...existingAssets],
+        itemCatalog: [...newCatalogItems, ...existingCatalog],
+        player: {
+          ...(project.player || { id: 'p1', name: 'Herói', x: 384, y: 100, color: '#3b82f6', speed: 4 }),
+          inventory: nextInventory,
+        },
+      });
+
+      setSelectedItemId(newBackpackItems[0].id);
+      showToast?.(
+        `📁 Pasta "${folderName}": ${newBackpackItems.length} itens importados para o disco local e adicionados à Mochila & Catálogo!`
+      );
+    } catch (err) {
+      console.error('Erro ao importar pasta no inventário:', err);
+      showToast?.('❌ Erro ao processar importação de pasta no inventário.');
+    } finally {
+      setIsImportingFolder(false);
+      setImportProgressText('');
+    }
+  };
+
   return (
-    <div className="space-y-4 text-white">
-      {/* Box de Arquitetura Global do Inventário */}
-      <div className="p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-950/40 border-2 border-amber-500/40 rounded-2xl shadow-lg relative overflow-hidden">
+    <div
+      className="space-y-4 text-white"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragOverGrid(true);
+      }}
+      onDragLeave={() => setIsDragOverGrid(false)}
+      onDrop={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOverGrid(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          await handleBulkFolderOrFilesImport(e.dataTransfer.files, false);
+        }
+      }}
+    >
+      {/* Inputs ocultos para Importar Pasta e Importar Múltiplos PNGs */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        className="hidden"
+        onChange={async (e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            await handleBulkFolderOrFilesImport(e.target.files, true);
+          }
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={multiFilesInputRef}
+        type="file"
+        multiple
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        className="hidden"
+        onChange={async (e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            await handleBulkFolderOrFilesImport(e.target.files, false);
+          }
+          e.target.value = '';
+        }}
+      />
+
+      {/* Box de Arquitetura Global do Inventário + Importar Pasta */}
+      <div
+        className={`p-3.5 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-950/40 border-2 rounded-2xl shadow-lg relative overflow-hidden transition-all ${
+          isDragOverGrid ? 'border-emerald-400 ring-2 ring-emerald-500/40' : 'border-amber-500/40'
+        }`}
+      >
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-300 shadow-inner">
@@ -205,19 +320,101 @@ export const InventoryManagerStudio: React.FC<Props> = ({
                 </span>
               </div>
               <p className="text-[11px] text-zinc-300 leading-snug mt-0.5">
-                O inventário pertence ao herói e persiste em todas as fases, masmorras e mapa do mundo.
+                Importe uma pasta inteira de sprites (salvos direto no disco local) ou crie itens individuais para a mochila.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsAddItemModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4 stroke-[3]" />
-            <span>Adicionar Novo Item</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={isImportingFolder}
+              onClick={() => {
+                if (folderInputRef.current) {
+                  folderInputRef.current.value = '';
+                  folderInputRef.current.click();
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
+              title="Importar uma pasta inteira de imagens PNG/JPG/WebP direto para o disco local e para a mochila"
+            >
+              <FolderOpen className="w-4 h-4 stroke-[2.5]" />
+              <span>{isImportingFolder ? 'Importando Pasta...' : 'Importar Pasta'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isImportingFolder}
+              onClick={() => {
+                if (multiFilesInputRef.current) {
+                  multiFilesInputRef.current.value = '';
+                  multiFilesInputRef.current.click();
+                }
+              }}
+              className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+              title="Selecionar múltiplos arquivos PNG/WebP de uma só vez"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Importar PNGs</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAddItemModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4 stroke-[3]" />
+              <span>Adicionar Novo Item</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de Configuração Rápida do Importar Pasta */}
+        <div className="mt-2.5 pt-2.5 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-amber-300 font-bold flex items-center gap-1">
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>Regra p/ Importar Pasta:</span>
+            </span>
+
+            <select
+              value={folderImportCategory}
+              onChange={(e) => setFolderImportCategory(e.target.value as any)}
+              className="bg-black/70 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-zinc-200 font-semibold focus:outline-none focus:border-emerald-400 cursor-pointer"
+              title="Categoria padrão ao importar uma pasta"
+            >
+              <option value="auto">🤖 Auto-Detectar Tipo (Nome/Subpasta)</option>
+              {Object.entries(ITEM_TYPE_LABELS).map(([k, meta]) => (
+                <option key={k} value={k}>
+                  {meta.icon} Forçar: {meta.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={folderImportRarity}
+              onChange={(e) => setFolderImportRarity(e.target.value as any)}
+              className="bg-black/70 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-zinc-200 font-semibold focus:outline-none focus:border-emerald-400 cursor-pointer"
+              title="Raridade padrão ao importar uma pasta"
+            >
+              <option value="auto">✨ Auto-Detectar Raridade</option>
+              {Object.entries(RARITY_COLORS).map(([k, meta]) => (
+                <option key={k} value={k}>
+                  Forçar: {meta.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {isImportingFolder && importProgressText ? (
+            <span className="text-emerald-300 font-mono font-bold animate-pulse">
+              ⚡ {importProgressText}
+            </span>
+          ) : (
+            <span className="text-[10px] text-zinc-400 font-mono">
+              💾 Salvo em /public/assets/engine/hud/ (Zero RAM Base64)
+            </span>
+          )}
         </div>
 
         {/* Métricas e Moedas Globais */}
@@ -724,17 +921,17 @@ export const InventoryManagerStudio: React.FC<Props> = ({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const f = e.target.files?.[0];
                         if (f) {
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            if (ev.target?.result) {
-                              setNewItemPng(ev.target.result as string);
-                            }
-                          };
-                          reader.readAsDataURL(f);
+                          try {
+                            const { dataUrl } = await readUploadedImage(f, 'hud');
+                            setNewItemPng(dataUrl);
+                          } catch (err) {
+                            console.warn('Falha ao salvar PNG do item no disco:', err);
+                          }
                         }
+                        e.target.value = '';
                       }}
                     />
                   </label>

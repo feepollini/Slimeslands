@@ -1,6 +1,7 @@
 import { LocalFolderAsset, FolderTreeNode, GalleryAsset } from '../types/map';
 import { readUploadedImage } from '../utils/tileGenerator';
 import { readUploadedVideo } from '../utils/videoUtils';
+import { uploadDataUrlToDisk, uploadFileToDisk } from '../../../core/DiskAssetEngine';
 
 const DB_NAME = 'TileScrollDB';
 const STORE_NAME = 'projects';
@@ -622,24 +623,28 @@ class LocalAssetSyncService {
   }
 
   /**
-   * Converte um asset local da pasta em um registro permanente embutido (Base64),
-   * garantindo que a fase funcione de forma 100% autônoma mesmo se o arquivo
-   * for excluído, renomeado ou se a pasta for desconectada!
+   * Converte um asset local da pasta em um arquivo físico permanente gravado na unidade
+   * de memória do projeto (`/public/assets/engine/`), evitando inflar a RAM com Base64!
    */
   public async makeAssetPersistent(asset: LocalFolderAsset): Promise<GalleryAsset> {
     let dataUrl = this.base64Cache.get(asset.relativePath) || asset.dataUrl;
 
-    if (!dataUrl) {
+    if (!dataUrl || dataUrl.startsWith('data:') || dataUrl.startsWith('blob:')) {
       if (asset.file) {
-        dataUrl = await this.readFileAsDataUrl(asset.file);
+        dataUrl = await uploadFileToDisk(
+          asset.file,
+          asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'engine'
+        );
       } else if (asset.fileHandle) {
         const file = await asset.fileHandle.getFile();
-        dataUrl = await this.readFileAsDataUrl(file);
+        dataUrl = await uploadFileToDisk(
+          file,
+          asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'engine'
+        );
+      } else if (dataUrl && (dataUrl.startsWith('data:') || dataUrl.startsWith('blob:'))) {
+        dataUrl = await uploadDataUrlToDisk(dataUrl, asset.name, 'engine');
       } else {
-        // Fallback: fetch blob url
-        const res = await fetch(asset.previewUrl);
-        const blob = await res.blob();
-        dataUrl = await this.readBlobAsDataUrl(blob);
+        dataUrl = await uploadDataUrlToDisk(asset.previewUrl, asset.name, 'engine');
       }
       this.base64Cache.set(asset.relativePath, dataUrl);
     }

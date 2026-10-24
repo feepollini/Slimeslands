@@ -41,6 +41,8 @@ import {
   X,
 } from 'lucide-react';
 import { DEFAULT_CLOUD_SVG, DEFAULT_FOG_SVG } from '../../data/defaultAtmosphereAssets';
+import { readUploadedImage } from '../../utils/tileGenerator';
+import { uploadFileToDisk } from '../../../../core/DiskAssetEngine';
 
 // Imagens padrão de Mapas Panorâmicos (SVG estilizados e decorativos)
 export const DEFAULT_WORLD_MAP_BACKGROUNDS = [
@@ -413,62 +415,49 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
     showToast('Ponto de interesse removido.');
   };
 
-  // Upload de PNG de Fundo do Mapa
-  const handleUploadBgFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload de PNG de Fundo do Mapa (Persistido diretamente na unidade de disco /public/assets/engine/maps/)
+  const handleUploadBgFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (dataUrl) {
-        const img = new Image();
-        img.onload = () => {
-          updateWorldMap({
-            backgroundPng: dataUrl,
-            mapWidth: Math.max(1200, img.naturalWidth || 1600),
-            mapHeight: Math.max(500, img.naturalHeight || 667),
-          });
-          showToast('🗺️ Imagem de fundo do mapa importada com sucesso!');
-        };
-        img.src = dataUrl;
-      }
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    try {
+      const res = await readUploadedImage(file);
+      const diskUrl = await uploadFileToDisk(file, 'maps');
+      updateWorldMap({
+        backgroundPng: diskUrl || res.dataUrl,
+        mapWidth: Math.max(1200, res.width || 1600),
+        mapHeight: Math.max(500, res.height || 667),
+      });
+      showToast('🗺️ Imagem de fundo do mapa salva na unidade local!');
+    } catch {
+      showToast('Erro ao importar imagem do mapa.');
+    }
   };
 
-  // Upload de PNG de ícone para o POI selecionado
-  const handleUploadPoiIcon = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload de PNG de ícone para o POI selecionado (Persistido na unidade de disco)
+  const handleUploadPoiIcon = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedPoiId) return;
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (dataUrl) {
-        updatePoi(selectedPoiId, { iconPng: dataUrl });
-        showToast('🖼️ PNG personalizado do ponto atualizado!');
-      }
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    const diskUrl = await uploadFileToDisk(file, 'maps');
+    if (diskUrl) {
+      updatePoi(selectedPoiId, { iconPng: diskUrl });
+      showToast('🖼️ PNG personalizado do ponto salvo na unidade local!');
+    }
   };
 
-  // Upload de Banner da Janela de Viagem
-  const handleUploadPoiBanner = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload de Banner da Janela de Viagem (Persistido na unidade de disco)
+  const handleUploadPoiBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedPoiId) return;
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (dataUrl) {
-        updatePoi(selectedPoiId, { bannerPng: dataUrl });
-        showToast('🖼️ Banner da janela de viagem atualizado!');
-      }
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    const diskUrl = await uploadFileToDisk(file, 'maps');
+    if (diskUrl) {
+      updatePoi(selectedPoiId, { bannerPng: diskUrl });
+      showToast('🖼️ Banner da janela de viagem salvo na unidade local!');
+    }
   };
 
   // Clique no canvas em Modo de Inserção Contínua (Cria marcador e encadeia/ramifica)

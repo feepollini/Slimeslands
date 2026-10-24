@@ -1,5 +1,6 @@
 import { MapProject, SavedLevel, SavedLevelStats } from '../types/map';
 import { internProjectAssets } from './assetRegistry';
+import { dehydrateObjectAssetsToDisk } from '../../../core/DiskAssetEngine';
 
 const DB_NAME = 'TileScrollDB';
 const STORE_NAME = 'projects';
@@ -10,6 +11,42 @@ const LEVELS_INDEX_KEY = 'levels_manifest_index_v2';
 const LEVEL_SLOT_PREFIX = 'phase_slot_v2_';
 
 let cachedDbPromise: Promise<IDBDatabase> | null = null;
+const diskSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleDiskStorageWrite(key: string, data: any, delayMs = 400): void {
+  if (typeof window === 'undefined') return;
+  const prev = diskSaveTimers.get(key);
+  if (prev) clearTimeout(prev);
+
+  diskSaveTimers.set(
+    key,
+    setTimeout(async () => {
+      diskSaveTimers.delete(key);
+      try {
+        const cleanData = await dehydrateObjectAssetsToDisk(data, 'phases');
+        await fetch('/api/engine-storage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, data: cleanData }),
+        });
+      } catch {
+        // Ignore network errors if offline
+      }
+    }, delayMs)
+  );
+}
+
+async function fetchDiskStorageKey<T>(key: string): Promise<T | null> {
+  if (typeof window === 'undefined') return null;
+  try {
+    const res = await fetch(`/api/engine-storage?key=${encodeURIComponent(key)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json as T) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function attachDbLifecycle(db: IDBDatabase) {
   db.onclose = () => {
@@ -23,7 +60,6 @@ function attachDbLifecycle(db: IDBDatabase) {
 
 /**
  * Abre ou reutiliza a conexão singleton com o IndexedDB nativo do navegador.
- * Auto-repara o banco (upgrade de versão automático) caso a objectStore 'projects' não exista.
  */
 function openDB(): Promise<IDBDatabase> {
   if (cachedDbPromise) return cachedDbPromise;
@@ -54,7 +90,6 @@ function openDB(): Promise<IDBDatabase> {
 
       request.onsuccess = () => {
         const db = request.result;
-        // Se o banco já existia no navegador sem a store 'projects', faz upgrade automático de versão para criá-la
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const nextVersion = Math.max(DB_VERSION, (db.version || 1) + 1);
           db.close();
@@ -146,7 +181,7 @@ export function computeLevelStats(proj: MapProject | undefined): SavedLevelStats
 }
 
 /**
- * Sanitiza recursivamente objetos antes de salvar no IndexedDB,
+ * Sanitiza recursivamente objetos antes de salvar no IndexedDB / Disco,
  * removendo quaisquer instâncias de PointerEvent, Eventos DOM ou referências não clonáveis.
  */
 export function sanitizeForIndexedDB<T>(obj: T): T {
@@ -167,21 +202,23 @@ export function sanitizeForIndexedDB<T>(obj: T): T {
         return value;
       })
     );
-  } catch (err) {
+  } catch {
     return obj;
   }
 }
 
 /**
- * Salva os dados da Fase Ativa no IndexedDB (Unidade Local).
+ * Salva os dados da Fase Ativa no IndexedDB + Unidade Física do Projeto (`src/core/engine_storage/active_project.json`).
  */
 export async function saveProject(project: MapProject): Promise<void> {
+  const safeProject = sanitizeForIndexedDB(project);
+  scheduleDiskStorageWrite(PROJECT_KEY, safeProject, 450);
+
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const safeProject = sanitizeForIndexedDB(project);
       const request = store.put(safeProject, PROJECT_KEY);
 
       request.onsuccess = () => resolve();
@@ -193,12 +230,12 @@ export async function saveProject(project: MapProject): Promise<void> {
 }
 
 /**
- * Carrega os dados da Fase Ativa do IndexedDB.
+ * Carrega os dados da Fase Ativa da Unidade Física do Projeto ou IndexedDB.
  */
 export async function loadProject(): Promise<MapProject | null> {
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const idbProject = await new Promise<MapProject | null>((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const request = store.get(PROJECT_KEY);
@@ -211,10 +248,21 @@ export async function loadProject(): Promise<MapProject | null> {
         resolve(null);
       };
     });
+    if (idbProject) {
+      // Sincroniza em background com a unidade física do disco caso ainda não exista lá
+      scheduleDiskStorageWrite(PROJECT_KEY, idbProject, 800);
+      return idbProject;
+    }
   } catch (err) {
     console.warn('Could not load from IndexedDB:', err);
-    return null;
   }
+
+  // Fallback para a unidade física do projeto (src/core/engine_storage/active_project.json)
+  const diskProj = await fetchDiskStorageKey<MapProject>(PROJECT_KEY);
+  if (diskProj && typeof diskProj === 'object') {
+    return internProjectAssets(diskProj);
+  }
+  return null;
 }
 
 /**
@@ -222,7 +270,7 @@ export async function loadProject(): Promise<MapProject | null> {
  * - Mantém stats pré-computados, metadados e tiles básicos dos biomas (para o card de preview do Hub)
  * - Mantém apenas marcadores não-terreno sem motionLayers (para portais de Travel entre fases)
  * - Descarta da RAM dezenas de milhares de células de colisão, tufos de grama/flores, carimbos e overlays.
- * Os dados completos permanecem 100% intactos no slot dedicado do IndexedDB e são hidratados sob demanda ao abrir a fase.
+ * Os dados completos permanecem 100% intactos no slot dedicado do Disco / IndexedDB e são hidratados sob demanda.
  */
 export function createColdLevelStub(lvl: SavedLevel): SavedLevel {
   if (!lvl || !lvl.projectData) return lvl;
@@ -264,15 +312,16 @@ export function createColdLevelStub(lvl: SavedLevel): SavedLevel {
 }
 
 /**
- * Carrega uma única fase completa diretamente do IndexedDB sob demanda (Lazy Hydration).
+ * Carrega uma única fase completa diretamente do IndexedDB ou da Unidade Física do Projeto sob demanda (Lazy Hydration).
  */
 export async function loadSingleLevelSlot(levelId: string): Promise<SavedLevel | null> {
+  const slotKey = `${LEVEL_SLOT_PREFIX}${levelId}`;
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const idbFound = await new Promise<SavedLevel | null>((resolve) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.get(`${LEVEL_SLOT_PREFIX}${levelId}`);
+      const req = store.get(slotKey);
       req.onsuccess = () => {
         const found = req.result as SavedLevel | undefined;
         if (found && found.projectData) {
@@ -281,7 +330,6 @@ export async function loadSingleLevelSlot(levelId: string): Promise<SavedLevel |
           resolve({ ...found, isColdStub: false });
           return;
         }
-        // Fallback para galeria legada caso o slot individual ainda não exista
         const legacyReq = store.get(LEVELS_GALLERY_KEY);
         legacyReq.onsuccess = () => {
           const legacyList = (legacyReq.result as SavedLevel[]) || [];
@@ -298,68 +346,89 @@ export async function loadSingleLevelSlot(levelId: string): Promise<SavedLevel |
       };
       req.onerror = () => resolve(null);
     });
+    if (idbFound) return idbFound;
   } catch (err) {
     console.warn('Could not load single level slot from IndexedDB:', err);
-    return null;
   }
+
+  // Fallback para unidade de disco do projeto
+  const diskSlot = await fetchDiskStorageKey<SavedLevel>(slotKey);
+  if (diskSlot && diskSlot.projectData) {
+    diskSlot.projectData = internProjectAssets(diskSlot.projectData);
+    diskSlot.stats = diskSlot.stats || computeLevelStats(diskSlot.projectData);
+    return { ...diskSlot, isColdStub: false };
+  }
+
+  return null;
 }
 
 /**
- * Salva UMA ÚNICA fase em sua própria unidade/slot individual no IndexedDB (`phase_slot_v2_<id>`),
- * evitando re-serializar todas as outras fases e eliminando gargalos de Out of Memory.
- * Protegido contra sobrescrita acidental caso receba um Cold Stub (atualiza apenas metadados).
+ * Salva UMA ÚNICA fase em sua própria unidade/slot individual no IndexedDB e no Disco (`src/core/engine_storage/phase_slot_v2_<id>.json`).
  */
 export async function saveSingleLevelSlot(
   level: SavedLevel,
   allLevelsManifest?: SavedLevel[]
 ): Promise<void> {
+  const slotKey = `${LEVEL_SLOT_PREFIX}${level.id}`;
+
+  let manifestIndexToSave: any[] | null = null;
+  if (allLevelsManifest) {
+    const seenIds = new Set<string>();
+    const uniqueLevels = allLevelsManifest.filter((l) => {
+      if (!l?.id || seenIds.has(l.id)) return false;
+      seenIds.add(l.id);
+      return true;
+    });
+    manifestIndexToSave = uniqueLevels.map((l) => ({
+      id: l.id,
+      name: l.name,
+      description: l.description,
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+      thumbnailPng: l.thumbnailPng,
+      closedInTabs: l.closedInTabs,
+      stats: l.stats || computeLevelStats(l.projectData),
+    }));
+    scheduleDiskStorageWrite(LEVELS_INDEX_KEY, sanitizeForIndexedDB(manifestIndexToSave), 300);
+  }
+
+  if (!level.isColdStub) {
+    const enriched: SavedLevel = {
+      ...level,
+      isColdStub: false,
+      stats: level.stats || computeLevelStats(level.projectData),
+    };
+    scheduleDiskStorageWrite(slotKey, sanitizeForIndexedDB(enriched), 400);
+  }
+
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const slotKey = `${LEVEL_SLOT_PREFIX}${level.id}`;
 
       const writeManifest = () => {
-        if (allLevelsManifest) {
-          const seenIds = new Set<string>();
-          const uniqueLevels = allLevelsManifest.filter((l) => {
-            if (!l?.id || seenIds.has(l.id)) return false;
-            seenIds.add(l.id);
-            return true;
-          });
-          const manifestIndex = uniqueLevels.map((l) => ({
-            id: l.id,
-            name: l.name,
-            description: l.description,
-            createdAt: l.createdAt,
-            updatedAt: l.updatedAt,
-            thumbnailPng: l.thumbnailPng,
-            closedInTabs: l.closedInTabs,
-            stats: l.stats || computeLevelStats(l.projectData),
-          }));
-          store.put(sanitizeForIndexedDB(manifestIndex), LEVELS_INDEX_KEY);
+        if (manifestIndexToSave) {
+          store.put(sanitizeForIndexedDB(manifestIndexToSave), LEVELS_INDEX_KEY);
         }
       };
 
       if (level.isColdStub) {
-        // Preserva o projectData completo existente no disco, atualizando apenas metadados
         const existingReq = store.get(slotKey);
         existingReq.onsuccess = () => {
           const existing = existingReq.result as SavedLevel | undefined;
           if (existing && existing.projectData) {
-            store.put(
-              sanitizeForIndexedDB({
-                ...existing,
-                name: level.name,
-                description: level.description,
-                updatedAt: level.updatedAt,
-                thumbnailPng: level.thumbnailPng ?? existing.thumbnailPng,
-                closedInTabs: level.closedInTabs,
-                isColdStub: false,
-              }),
-              slotKey
-            );
+            const merged = sanitizeForIndexedDB({
+              ...existing,
+              name: level.name,
+              description: level.description,
+              updatedAt: level.updatedAt,
+              thumbnailPng: level.thumbnailPng ?? existing.thumbnailPng,
+              closedInTabs: level.closedInTabs,
+              isColdStub: false,
+            });
+            store.put(merged, slotKey);
+            scheduleDiskStorageWrite(slotKey, merged, 400);
           }
           writeManifest();
         };
@@ -382,36 +451,45 @@ export async function saveSingleLevelSlot(
 }
 
 /**
- * Remove o slot individual de uma fase excluída e atualiza o manifesto.
+ * Remove o slot individual de uma fase excluída no IndexedDB e no Disco, e atualiza o manifesto.
  */
 export async function deleteSingleLevelSlot(
   levelId: string,
   remainingLevels: SavedLevel[]
 ): Promise<void> {
+  const slotKey = `${LEVEL_SLOT_PREFIX}${levelId}`;
+  if (typeof window !== 'undefined') {
+    fetch(`/api/engine-storage?key=${encodeURIComponent(slotKey)}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+  }
+
+  const seenIds = new Set<string>();
+  const uniqueRemaining = remainingLevels.filter((l) => {
+    if (!l?.id || seenIds.has(l.id)) return false;
+    seenIds.add(l.id);
+    return true;
+  });
+  const manifestIndex = uniqueRemaining.map((l) => ({
+    id: l.id,
+    name: l.name,
+    description: l.description,
+    createdAt: l.createdAt,
+    updatedAt: l.updatedAt,
+    thumbnailPng: l.thumbnailPng,
+    closedInTabs: l.closedInTabs,
+    stats: l.stats || computeLevelStats(l.projectData),
+  }));
+
+  scheduleDiskStorageWrite(LEVELS_INDEX_KEY, sanitizeForIndexedDB(manifestIndex), 250);
+
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
-      store.delete(`${LEVEL_SLOT_PREFIX}${levelId}`);
-
-      const seenIds = new Set<string>();
-      const uniqueRemaining = remainingLevels.filter((l) => {
-        if (!l?.id || seenIds.has(l.id)) return false;
-        seenIds.add(l.id);
-        return true;
-      });
-      const manifestIndex = uniqueRemaining.map((l) => ({
-        id: l.id,
-        name: l.name,
-        description: l.description,
-        createdAt: l.createdAt,
-        updatedAt: l.updatedAt,
-        thumbnailPng: l.thumbnailPng,
-        closedInTabs: l.closedInTabs,
-        stats: l.stats || computeLevelStats(l.projectData),
-      }));
+      store.delete(slotKey);
       store.put(sanitizeForIndexedDB(manifestIndex), LEVELS_INDEX_KEY);
 
       tx.oncomplete = () => resolve();
@@ -423,38 +501,48 @@ export async function deleteSingleLevelSlot(
 }
 
 /**
- * Salva a galeria de fases particionada em unidades individuais no IndexedDB.
+ * Salva a galeria de fases particionada em unidades individuais no IndexedDB e no Disco.
  */
 export async function saveLevelsGallery(levels: SavedLevel[]): Promise<void> {
+  const seenIds = new Set<string>();
+  const uniqueLevels = levels.filter((l) => {
+    if (!l?.id || seenIds.has(l.id)) return false;
+    seenIds.add(l.id);
+    return true;
+  });
+
+  const manifestIndex = uniqueLevels.map((l) => {
+    const stats = l.stats || computeLevelStats(l.projectData);
+    if (!l.isColdStub) {
+      const enriched = sanitizeForIndexedDB({ ...l, isColdStub: false, stats });
+      scheduleDiskStorageWrite(`${LEVEL_SLOT_PREFIX}${l.id}`, enriched, 450);
+    }
+    return {
+      id: l.id,
+      name: l.name,
+      description: l.description,
+      createdAt: l.createdAt,
+      updatedAt: l.updatedAt,
+      thumbnailPng: l.thumbnailPng,
+      closedInTabs: l.closedInTabs,
+      stats,
+    };
+  });
+
+  scheduleDiskStorageWrite(LEVELS_INDEX_KEY, sanitizeForIndexedDB(manifestIndex), 300);
+
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
-      const seenIds = new Set<string>();
-      const uniqueLevels = levels.filter((l) => {
-        if (!l?.id || seenIds.has(l.id)) return false;
-        seenIds.add(l.id);
-        return true;
-      });
-
-      const manifestIndex = uniqueLevels.map((l) => {
+      uniqueLevels.forEach((l) => {
         const stats = l.stats || computeLevelStats(l.projectData);
         if (!l.isColdStub) {
           const enriched = { ...l, isColdStub: false, stats };
           store.put(sanitizeForIndexedDB(enriched), `${LEVEL_SLOT_PREFIX}${l.id}`);
         }
-        return {
-          id: l.id,
-          name: l.name,
-          description: l.description,
-          createdAt: l.createdAt,
-          updatedAt: l.updatedAt,
-          thumbnailPng: l.thumbnailPng,
-          closedInTabs: l.closedInTabs,
-          stats,
-        };
       });
 
       store.put(sanitizeForIndexedDB(manifestIndex), LEVELS_INDEX_KEY);
@@ -469,23 +557,29 @@ export async function saveLevelsGallery(levels: SavedLevel[]): Promise<void> {
 }
 
 /**
- * Carrega a galeria de fases do IndexedDB, unificando automaticamente slots dedicados V2
- * e fases legadas, aplicando interning de assets e mantendo fases fechadas em Cold Storage (stub leve na RAM).
+ * Carrega a galeria de fases do IndexedDB ou da Unidade Física do Projeto (`src/core/engine_storage/`),
+ * aplicando interning de assets e mantendo fases fechadas em Cold Storage (stub leve na RAM).
  */
 export async function loadLevelsGallery(): Promise<SavedLevel[]> {
   try {
     const db = await openDB();
-    return new Promise((resolve) => {
+    const idbLevels = await new Promise<SavedLevel[]>((resolve) => {
       try {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
 
         const indexReq = store.get(LEVELS_INDEX_KEY);
         const legacyReq = store.get(LEVELS_GALLERY_KEY);
-        const slotRequests: Array<{ meta: { id: string; closedInTabs?: boolean }; idx: number; req: IDBRequest }> = [];
+        const slotRequests: Array<{
+          meta: { id: string; closedInTabs?: boolean };
+          idx: number;
+          req: IDBRequest;
+        }> = [];
 
         indexReq.onsuccess = () => {
-          const manifestList = indexReq.result as Array<{ id: string; closedInTabs?: boolean }> | undefined;
+          const manifestList = indexReq.result as
+            | Array<{ id: string; closedInTabs?: boolean }>
+            | undefined;
           if (manifestList && Array.isArray(manifestList) && manifestList.length > 0) {
             const seenManifestIds = new Set<string>();
             manifestList.forEach((meta, idx) => {
@@ -511,8 +605,15 @@ export async function loadLevelsGallery(): Promise<SavedLevel[]> {
                 found.projectData = internProjectAssets(found.projectData);
                 found.stats = found.stats || computeLevelStats(found.projectData);
                 const isClosed = meta.closedInTabs ?? found.closedInTabs;
-                const fullLevel: SavedLevel = { ...found, id: meta.id, closedInTabs: isClosed, isColdStub: false };
-                loadedSlots.push(isClosed && idx > 0 ? createColdLevelStub(fullLevel) : fullLevel);
+                const fullLevel: SavedLevel = {
+                  ...found,
+                  id: meta.id,
+                  closedInTabs: isClosed,
+                  isColdStub: false,
+                };
+                loadedSlots.push(
+                  isClosed && idx > 0 ? createColdLevelStub(fullLevel) : fullLevel
+                );
               } else {
                 const fallback = legacyLevels.find((l) => l.id === meta.id);
                 if (fallback && fallback.projectData) {
@@ -529,7 +630,6 @@ export async function loadLevelsGallery(): Promise<SavedLevel[]> {
             }
           }
 
-          // Fallback para galeria legada, internando todas as texturas no Pool
           const seenLegacyIds = new Set<string>();
           const internedLegacy = legacyLevels
             .filter((lvl) => {
@@ -558,10 +658,41 @@ export async function loadLevelsGallery(): Promise<SavedLevel[]> {
         resolve([]);
       }
     });
+
+    if (idbLevels.length > 0) {
+      return idbLevels;
+    }
   } catch (err) {
     console.warn('Could not load levels gallery from IndexedDB:', err);
-    return [];
   }
+
+  // Fallback para unidade física de disco do projeto (src/core/engine_storage/)
+  const diskManifest = await fetchDiskStorageKey<Array<{ id: string; closedInTabs?: boolean }>>(
+    LEVELS_INDEX_KEY
+  );
+  if (Array.isArray(diskManifest) && diskManifest.length > 0) {
+    const loadedFromDisk: SavedLevel[] = [];
+    for (let idx = 0; idx < diskManifest.length; idx++) {
+      const meta = diskManifest[idx];
+      if (!meta?.id) continue;
+      const slot = await fetchDiskStorageKey<SavedLevel>(`${LEVEL_SLOT_PREFIX}${meta.id}`);
+      if (slot && slot.projectData) {
+        slot.projectData = internProjectAssets(slot.projectData);
+        slot.stats = slot.stats || computeLevelStats(slot.projectData);
+        const isClosed = meta.closedInTabs ?? slot.closedInTabs;
+        const fullLevel: SavedLevel = {
+          ...slot,
+          id: meta.id,
+          closedInTabs: isClosed,
+          isColdStub: false,
+        };
+        loadedFromDisk.push(isClosed && idx > 0 ? createColdLevelStub(fullLevel) : fullLevel);
+      }
+    }
+    return loadedFromDisk;
+  }
+
+  return [];
 }
 
 /**

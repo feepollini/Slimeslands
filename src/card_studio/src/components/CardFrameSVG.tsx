@@ -136,7 +136,11 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
   const titleTextRef = React.useRef<SVGTextElement | null>(null);
   const [measuredTitleScale, setMeasuredTitleScale] = React.useState(1);
 
-  const pvChars = (card.pvText || '').split('');
+  const isMagicCard = card.entityType === 'Magia';
+  const resolvedLeftSideText = isMagicCard
+    ? (card.pvText || 'DF300').replace(/^PV/i, 'DF').replace(/^P\s*V/i, 'DF')
+    : card.pvText || '';
+  const pvChars = resolvedLeftSideText.split('');
   const elementChars = (card.elementText || '').split('');
 
   // Dynamic font size for Top Title inside the 165..515 top notch (safe flat inner width = 292px between 194..486)
@@ -208,7 +212,6 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
     setDragStart(null);
   };
 
-  const isMagicCard = card.entityType === 'Magia';
   const showSummonSlot = card.showSummonCostPill ?? true;
   const abilityPillCount = card.pillCount || 4;
   const dockAutoFit = card.dockAutoFit ?? true;

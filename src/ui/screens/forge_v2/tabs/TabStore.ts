@@ -1,6 +1,7 @@
 import { StoreScreen } from '../../StoreScreen';
 import { ProgressionManager } from '../../../../core/ProgressionManager';
 import { CARD_TEMPLATES } from '../../../../core/constants';
+import storeData from '../../../../core/store.json';
 import {
   renderMatrixCardSVG,
   getMergedGameTemplatesSync,
@@ -22,13 +23,19 @@ export interface StoreDeck {
 export interface StorePackRates {
   common: number;
   rare: number;
+  epic?: number;
   legendary: number;
+  mythic?: number;
+  limited?: number;
 }
 
 export interface StorePackCardGroups {
   common?: string[];
   rare?: string[];
+  epic?: string[];
   legendary?: string[];
+  mythic?: string[];
+  limited?: string[];
 }
 
 export interface StorePack {
@@ -102,27 +109,40 @@ export const SECTION_METADATA: Record<string, { label: string; icon: string; des
 
 // Normaliza uma vez e preenche campos faltantes
 export function normalizeStoreData(input: any): StoreData {
+  const defaultPacks = Array.isArray((storeData as any)?.packs)
+    ? JSON.parse(JSON.stringify((storeData as any).packs))
+    : [];
   if (input && typeof input === 'object' && !Array.isArray(input)) {
     input.titles = { ...DEFAULT_TITLES, ...(input.titles || {}) };
     if (!Array.isArray(input.banners)) input.banners = [];
     if (!Array.isArray(input.dailyPool)) input.dailyPool = [];
     if (!Array.isArray(input.rare)) input.rare = [];
     if (!Array.isArray(input.decks)) input.decks = [];
-    if (!Array.isArray(input.packs)) input.packs = [];
+    if (!Array.isArray(input.packs) || input.packs.length === 0) {
+      input.packs = defaultPacks;
+    }
     if (!Array.isArray(input.coinPacks)) input.coinPacks = [];
     if (!Array.isArray(input.gemPacks)) input.gemPacks = [];
     if (!Array.isArray(input.artifacts)) input.artifacts = [];
     if (!Array.isArray(input.sectionOrder) || input.sectionOrder.length === 0) {
       input.sectionOrder = [...DEFAULT_SECTION_ORDER];
-    } else if (!input.sectionOrder.includes('packs_split') && input.sectionVisibility?.packs_split !== false) {
-      const pIdx = input.sectionOrder.indexOf('packs');
-      if (pIdx !== -1) {
-        input.sectionOrder.splice(pIdx + 1, 0, 'packs_split');
-      } else {
-        input.sectionOrder.push('packs_split');
+    } else {
+      if (!input.sectionOrder.includes('packs') && input.sectionVisibility?.packs !== false) {
+        const dIdx = input.sectionOrder.indexOf('decks');
+        if (dIdx !== -1) input.sectionOrder.splice(dIdx + 1, 0, 'packs');
+        else input.sectionOrder.push('packs');
+      }
+      if (!input.sectionOrder.includes('packs_split') && input.sectionVisibility?.packs_split !== false) {
+        const pIdx = input.sectionOrder.indexOf('packs');
+        if (pIdx !== -1) {
+          input.sectionOrder.splice(pIdx + 1, 0, 'packs_split');
+        } else {
+          input.sectionOrder.push('packs_split');
+        }
       }
     }
     if (!input.sectionVisibility) input.sectionVisibility = {};
+    if (input.sectionVisibility.packs === undefined) input.sectionVisibility.packs = true;
     if (input.sectionVisibility.packs_split === undefined) input.sectionVisibility.packs_split = true;
     input.deckLayoutMode = 'standalone'; // Decks tem apenas um modo: o separado
     if (!input.boosterDisplayMode) input.boosterDisplayMode = 'carousel';
@@ -134,7 +154,7 @@ export function normalizeStoreData(input: any): StoreData {
     dailyPool: [],
     rare: [],
     decks: [],
-    packs: [],
+    packs: defaultPacks,
     coinPacks: [{ gold: 1000, price: 10 }],
     gemPacks: [{ gems: 100, price: 'R$ 4,90' }],
     artifacts: [],

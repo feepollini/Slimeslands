@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { BiomeTileConfig } from '../types/map';
 import { readUploadedImage, trimImageBorder } from '../utils/tileGenerator';
+import { uploadFileToDisk } from '../../../core/DiskAssetEngine';
 import {
   Upload,
   Trash2,
@@ -62,14 +63,11 @@ export const BiomeStudio: React.FC<Props> = ({
     }
   };
 
-  const handleUploadAudio = (biomeId: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onUpdateBiome(biomeId, { bgmAudioUrl: reader.result, bgmVolume: 0.7 });
-      }
-    };
-    reader.readAsDataURL(file);
+  const handleUploadAudio = async (biomeId: string, file: File) => {
+    const diskAudioUrl = await uploadFileToDisk(file, 'audio');
+    if (diskAudioUrl) {
+      onUpdateBiome(biomeId, { bgmAudioUrl: diskAudioUrl, bgmVolume: 0.7 });
+    }
   };
 
   // Replace existing biome tile PNG

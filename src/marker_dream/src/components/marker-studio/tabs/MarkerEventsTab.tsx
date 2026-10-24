@@ -7,6 +7,7 @@ import {
   DEFAULT_INTERCEPT_CONFIG,
 } from '../../../types/map';
 import { readUploadedImage } from '../../../utils/tileGenerator';
+import { uploadFileToDisk } from '../../../../../core/DiskAssetEngine';
 import { parseDirectionalFolderFiles, SpriteDirection4Way } from '../../../utils/directionalSpriteImporter';
 import { loadCharactersRoster } from '../../../utils/characterHelpers';
 import { getCapitaLyraDirectionalSprites } from '../../../utils/interceptTestPhaseGenerator';
@@ -236,26 +237,22 @@ export const MarkerEventsTab: React.FC<MarkerEventsTabProps> = ({
     }
   };
 
-  const handleUploadAudioEvent = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadAudioEvent = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const eventId = activeAudioEventIdRef.current;
     if (!file || !selectedMarker) return;
-    try {
-      const reader = new FileReader();
-      reader.onload = (uploadEv) => {
-        const dataUrl = uploadEv.target?.result as string;
-        if (!dataUrl) return;
-        const currentEvents = getMarkerEvents(selectedMarker);
-        const updated = currentEvents.map((evt) =>
-          evt.id === eventId ? { ...evt, audioUrl: dataUrl } : evt
-        );
-        updateMarkerEvents(updated);
-      };
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error('Erro ao ler áudio:', err);
-    }
     e.target.value = '';
+    try {
+      const diskAudioUrl = await uploadFileToDisk(file, 'audio');
+      if (!diskAudioUrl) return;
+      const currentEvents = getMarkerEvents(selectedMarker);
+      const updated = currentEvents.map((evt) =>
+        evt.id === eventId ? { ...evt, audioUrl: diskAudioUrl } : evt
+      );
+      updateMarkerEvents(updated);
+    } catch (err) {
+      console.error('Erro ao salvar áudio na unidade local:', err);
+    }
   };
 
   const handleUploadRewardSlot = async (e: React.ChangeEvent<HTMLInputElement>) => {

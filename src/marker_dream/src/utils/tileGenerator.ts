@@ -1,3 +1,5 @@
+import { uploadDataUrlToDisk, uploadFileToDisk, type DiskAssetCategory } from '../../../core/DiskAssetEngine';
+
 export interface UploadedImageResult {
   dataUrl: string;
   width: number;
@@ -8,12 +10,19 @@ export interface UploadedImageResult {
 /**
  * Extracts average color from image canvas
  */
-export function extractDominantColor(ctx: CanvasRenderingContext2D, width: number, height: number): string {
+export function extractDominantColor(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): string {
   try {
     const sampleW = Math.min(width, 32);
     const sampleH = Math.min(height, 32);
     const imgData = ctx.getImageData(0, 0, sampleW, sampleH).data;
-    let r = 0, g = 0, b = 0, count = 0;
+    let r = 0,
+      g = 0,
+      b = 0,
+      count = 0;
     for (let i = 0; i < imgData.length; i += 4) {
       const a = imgData[i + 3];
       if (a > 50) {
@@ -31,9 +40,14 @@ export function extractDominantColor(ctx: CanvasRenderingContext2D, width: numbe
 }
 
 /**
- * Loads a user-uploaded image file as a DataURL PNG and measures its exact natural pixel dimensions.
+ * Loads a user-uploaded image file, measures its exact natural pixel dimensions,
+ * and persists the physical asset directly to the project's local disk storage unit
+ * (`/public/assets/engine/<category>/<filename>`) so RAM and localStorage never bloat with Base64!
  */
-export function readUploadedImage(file: File): Promise<UploadedImageResult> {
+export function readUploadedImage(
+  file: File,
+  category: DiskAssetCategory = 'engine'
+): Promise<UploadedImageResult> {
   return new Promise((resolve, reject) => {
     const isImageMime = Boolean(file.type && file.type.startsWith('image/'));
     const isImageExt = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif)$/i.test(file.name || '');
@@ -41,67 +55,71 @@ export function readUploadedImage(file: File): Promise<UploadedImageResult> {
       reject(new Error('O arquivo selecionado não é uma imagem válida.'));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        const dataUrl = reader.result;
-        const img = new Image();
-        img.onload = () => {
-          const w = img.naturalWidth || 64;
-          const h = img.naturalHeight || 64;
-          let dominant = '#2d4a22';
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.min(w, 32);
-            canvas.height = Math.min(h, 32);
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              dominant = extractDominantColor(ctx, canvas.width, canvas.height);
-            }
-          } catch {
-            // ignore
-          }
 
-          resolve({
-            dataUrl,
-            width: w,
-            height: h,
-            dominantColor: dominant,
-          });
-        };
-        img.onerror = () => {
-          resolve({ dataUrl, width: 64, height: 64, dominantColor: '#2d4a22' });
-        };
-        img.src = dataUrl;
-      } else {
-        reject(new Error('Erro ao processar imagem.'));
+    const tempObjectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = async () => {
+      const w = img.naturalWidth || 64;
+      const h = img.naturalHeight || 64;
+      let dominant = '#2d4a22';
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.min(w, 32);
+        canvas.height = Math.min(h, 32);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          dominant = extractDominantColor(ctx, canvas.width, canvas.height);
+        }
+      } catch {
+        // ignore
+      } finally {
+        URL.revokeObjectURL(tempObjectUrl);
+      }
+
+      const diskUrl = await uploadFileToDisk(file, category);
+      resolve({
+        dataUrl: diskUrl,
+        width: w,
+        height: h,
+        dominantColor: dominant,
+      });
+    };
+
+    img.onerror = async () => {
+      URL.revokeObjectURL(tempObjectUrl);
+      try {
+        const diskUrl = await uploadFileToDisk(file, category);
+        resolve({ dataUrl: diskUrl, width: 64, height: 64, dominantColor: '#2d4a22' });
+      } catch (err) {
+        reject(err);
       }
     };
-    reader.onerror = () => reject(new Error('Falha na leitura do arquivo.'));
-    reader.readAsDataURL(file);
+
+    img.src = tempObjectUrl;
   });
 }
 
 /**
- * Loads and optimizes a HUD icon / button PNG so it preserves crisp transparency
- * while staying compact enough to never exceed localStorage / IndexedDB quotas.
+ * Loads and optimizes a HUD icon / button PNG and persists it to the project's local disk unit.
  */
 export async function readUploadedHudIcon(
   file: File,
   maxDimension: number = 256
 ): Promise<UploadedImageResult> {
   const res = await readUploadedImage(file);
-  if (!res.dataUrl || res.dataUrl.startsWith('data:image/svg')) {
+  if (!res.dataUrl || res.dataUrl.endsWith('.svg')) {
     return res;
   }
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => {
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
       try {
         const origW = img.naturalWidth || res.width || 64;
         const origH = img.naturalHeight || res.height || 64;
-        if (origW <= maxDimension && origH <= maxDimension && res.dataUrl.length < 180_000) {
+        if (origW <= maxDimension && origH <= maxDimension) {
           resolve(res);
           return;
         }
@@ -119,9 +137,14 @@ export async function readUploadedHudIcon(
         ctx.clearRect(0, 0, targetW, targetH);
         ctx.drawImage(img, 0, 0, targetW, targetH);
         const optimizedDataUrl = canvas.toDataURL('image/png');
+        const diskUrl = await uploadDataUrlToDisk(
+          optimizedDataUrl,
+          `hud_${file.name || 'icon'}`,
+          'ui'
+        );
         resolve({
           ...res,
-          dataUrl: optimizedDataUrl,
+          dataUrl: diskUrl,
           width: targetW,
           height: targetH,
         });
@@ -135,13 +158,16 @@ export async function readUploadedHudIcon(
 }
 
 /**
- * Trims N pixels from all 4 borders of a PNG DataURL.
- * Useful when an exported PNG contains a 1px border or anti-aliasing artifact at edges.
+ * Trims N pixels from all 4 borders of an image and persists the trimmed PNG to disk.
  */
-export function trimImageBorder(dataUrl: string, trimPx: number = 1): Promise<UploadedImageResult> {
+export function trimImageBorder(
+  dataUrl: string,
+  trimPx: number = 1
+): Promise<UploadedImageResult> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
+    img.crossOrigin = 'anonymous';
+    img.onload = async () => {
       const origW = img.naturalWidth;
       const origH = img.naturalHeight;
       if (origW <= trimPx * 2 || origH <= trimPx * 2) {
@@ -162,8 +188,9 @@ export function trimImageBorder(dataUrl: string, trimPx: number = 1): Promise<Up
       ctx.drawImage(img, trimPx, trimPx, newW, newH, 0, 0, newW, newH);
       const newUrl = canvas.toDataURL('image/png');
       const dominant = extractDominantColor(ctx, newW, newH);
+      const diskUrl = await uploadDataUrlToDisk(newUrl, 'trimmed_tile', 'biomes');
       resolve({
-        dataUrl: newUrl,
+        dataUrl: diskUrl,
         width: newW,
         height: newH,
         dominantColor: dominant,
@@ -177,7 +204,7 @@ export function trimImageBorder(dataUrl: string, trimPx: number = 1): Promise<Up
 export interface CustomCanvasOptions {
   width: number;
   height: number;
-  backgroundColor: string; // ex: '#ffffff', '#0f172a', etc.
+  backgroundColor: string;
   patternStyle?: 'blank' | 'grid' | 'dots' | 'blueprint' | 'checkerboard';
   patternColor?: string;
   gridSize?: number;
@@ -194,10 +221,14 @@ export function generateCustomCanvasPNG(options: CustomCanvasOptions): UploadedI
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    return { dataUrl: '', width: w, height: h, dominantColor: options.backgroundColor || '#ffffff' };
+    return {
+      dataUrl: '',
+      width: w,
+      height: h,
+      dominantColor: options.backgroundColor || '#ffffff',
+    };
   }
 
-  // Preenchimento de fundo
   ctx.fillStyle = options.backgroundColor || '#ffffff';
   ctx.fillRect(0, 0, w, h);
 
@@ -263,4 +294,3 @@ export function generateCustomCanvasPNG(options: CustomCanvasOptions): UploadedI
     dominantColor: dominant,
   };
 }
-

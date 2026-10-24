@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { uploadFileToDisk } from '../../../core/DiskAssetEngine';
 import {
   Rocket,
   MapPin,
@@ -941,19 +942,12 @@ export const SpawnStudio: React.FC<Props> = ({
               type="file"
               accept="video/mp4,video/webm,video/ogg,video/quicktime"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                if (file.size <= 15 * 1024 * 1024) {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    update({ introVideoUrl: reader.result as string });
-                  };
-                  reader.readAsDataURL(file);
-                } else {
-                  const url = URL.createObjectURL(file);
-                  update({ introVideoUrl: url });
-                }
+                e.target.value = '';
+                const diskVideoUrl = await uploadFileToDisk(file, 'video');
+                update({ introVideoUrl: diskVideoUrl });
               }}
             />
           </div>
@@ -1061,20 +1055,13 @@ export const SpawnStudio: React.FC<Props> = ({
               type="file"
               accept="audio/mp3,audio/mpeg,audio/wav,audio/ogg"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 const name = file.name;
-                if (file.size <= 12 * 1024 * 1024) {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    update({ introAudioUrl: reader.result as string, introAudioName: name });
-                  };
-                  reader.readAsDataURL(file);
-                } else {
-                  const url = URL.createObjectURL(file);
-                  update({ introAudioUrl: url, introAudioName: name });
-                }
+                e.target.value = '';
+                const diskAudioUrl = await uploadFileToDisk(file, 'audio');
+                update({ introAudioUrl: diskAudioUrl, introAudioName: name });
               }}
             />
           </div>

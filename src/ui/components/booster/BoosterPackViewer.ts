@@ -21,7 +21,7 @@ import { renderMatrixCardSVG } from '../../screens/forge_v2/utils/HestridiaMatri
 // FLAGS MODULARES (Prontas para desfazer/desativar facilmente se necessário)
 // ============================================================================
 export const ENABLE_BOOSTER_TEAR_GLOW = false; // Removido conforme solicitado
-export const ENABLE_BOOSTER_CAROUSEL = false;  // Desativa a ciranda experimental para abrir o Booster 3D diretamente na tela
+export const ENABLE_BOOSTER_CAROUSEL = true;  // Ciranda / Carrossel 3D de 12 boosters ativado
 
 export interface BoosterPackViewerOptions {
   theme?: 'charizard' | 'pikachu' | 'rayquaza' | 'mewtwo' | string;
@@ -320,8 +320,16 @@ export class BoosterPackViewer {
     }
 
     // Carrega arte do verso personalizada com segurança
-    if (!this.options.customBackTexture && this.options.customBackUrl) {
-      texLoader.load(this.options.customBackUrl, (loadedTex) => {
+    const customBackUrlToLoad =
+      this.options.customBackUrl ||
+      (typeof this.options.customBack === 'string' &&
+      (this.options.customBack.startsWith('/') ||
+        this.options.customBack.startsWith('data:') ||
+        this.options.customBack.startsWith('http'))
+        ? this.options.customBack
+        : undefined);
+    if (!this.options.customBackTexture && customBackUrlToLoad) {
+      texLoader.load(customBackUrlToLoad, (loadedTex) => {
         loadedTex.colorSpace = THREE.SRGBColorSpace;
         loadedTex.needsUpdate = true;
         foilBackMat.map = loadedTex;
@@ -838,6 +846,41 @@ export class BoosterPackViewer {
     let shimmerTimer = 0;
     let shimmerMeshIdx = -1;
 
+    // State Variables (declaradas antes das funções e de rebuildCardMeshes para evitar TDZ ReferenceError)
+    let packState: 'carousel' | 'sealed' | 'cutting' | 'opened' = ENABLE_BOOSTER_CAROUSEL ? 'carousel' : 'sealed';
+    let carouselAngle = 0;
+    let targetCarouselAngle = 0;
+    let carouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+    let targetCarouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+    let carouselIntroProgress = 0;
+    let lastCarouselTickSlot = 0;
+    let chosenCarouselSlotIdx = -1;
+
+    // Rotação 3D livre do pacote enquadrado na frente da ciranda antes de escolhê-lo
+    let inspectRotX = 0.06;
+    let inspectRotY = 0.0;
+    let targetInspectRotX = 0.06;
+    let targetInspectRotY = 0.0;
+    let carouselDragMode: 'none' | 'wheel' | 'inspect' = 'none';
+    let clickedSideSlotIndex = -1;
+
+    let cutProgress = 0;
+    let targetCutProgress = 0;
+    let flopProgress = 0;
+
+    let isCardsLeapt = false;
+    let cardsLeapProgress = 0;
+    let targetCardsLeapProgress = 0;
+
+    let isCardsFlipped = false;
+    let cardsFlipProgress = 0;
+    let targetCardsFlipProgress = 0;
+
+    let isGridMode = false;
+    let gridProgress = 0;
+    let revealedCount = 0;
+    let initialFlipRevealed = false;
+
     const triggerCardShimmer = (targetIdx?: number) => {
       shimmerTimer = 1.35;
       shimmerMeshIdx = targetIdx !== undefined ? targetIdx : (cardOrder[0] ?? 0);
@@ -1071,40 +1114,6 @@ export class BoosterPackViewer {
 
     rebuildCardMeshes(cardsData);
 
-    // State Variables
-    let packState: 'carousel' | 'sealed' | 'cutting' | 'opened' = ENABLE_BOOSTER_CAROUSEL ? 'carousel' : 'sealed';
-    let carouselAngle = 0;
-    let targetCarouselAngle = 0;
-    let carouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
-    let targetCarouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
-    let lastCarouselTickSlot = 0;
-    let chosenCarouselSlotIdx = -1;
-
-    // Rotação 3D livre do pacote enquadrado na frente da ciranda antes de escolhê-lo
-    let inspectRotX = 0.06;
-    let inspectRotY = 0.0;
-    let targetInspectRotX = 0.06;
-    let targetInspectRotY = 0.0;
-    let carouselDragMode: 'none' | 'wheel' | 'inspect' = 'none';
-    let clickedSideSlotIndex = -1;
-
-    let cutProgress = 0;
-    let targetCutProgress = 0;
-    let flopProgress = 0;
-
-    let isCardsLeapt = false;
-    let cardsLeapProgress = 0;
-    let targetCardsLeapProgress = 0;
-
-    let isCardsFlipped = false;
-    let cardsFlipProgress = 0;
-    let targetCardsFlipProgress = 0;
-
-    let isGridMode = false;
-    let gridProgress = 0;
-    let revealedCount = 0;
-    let initialFlipRevealed = false;
-
     // Pointer Interaction
     let isPointerDown = false;
     let isCuttingStroke = false;
@@ -1136,32 +1145,34 @@ export class BoosterPackViewer {
     const carouselBar = document.createElement('div');
     carouselBar.className = 'booster-carousel-bar';
     carouselBar.style.cssText = `
-      position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+      position: absolute; bottom: max(18px, env(safe-area-inset-bottom, 18px)); left: 50%; transform: translateX(-50%);
+      width: calc(100vw - 24px); max-width: 400px; box-sizing: border-box;
       display: ${ENABLE_BOOSTER_CAROUSEL ? 'flex' : 'none'};
-      flex-direction: column; align-items: center; gap: 10px;
+      flex-direction: column; align-items: center; gap: 8px;
       z-index: 1000; pointer-events: auto;
     `;
 
     const carouselHint = document.createElement('div');
     carouselHint.style.cssText = `
-      font-size: 0.72rem; font-weight: 800; letter-spacing: 1.3px;
-      color: #334155; text-transform: uppercase;
-      background: rgba(255, 255, 255, 0.92);
-      padding: 6px 18px; border-radius: 999px;
+      font-size: clamp(0.58rem, 2.4vw, 0.68rem); font-weight: 800; letter-spacing: 0.8px;
+      color: #334155; text-transform: uppercase; text-align: center;
+      background: rgba(255, 255, 255, 0.94);
+      padding: 5px 14px; border-radius: 999px;
       border: 1px solid rgba(148, 163, 184, 0.35);
       box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
-      pointer-events: none; white-space: nowrap;
+      pointer-events: none; max-width: 100%; box-sizing: border-box;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     `;
 
     const updateCarouselHintText = () => {
       const slotNum = getActiveFrontSlotIndex() + 1;
-      carouselHint.innerHTML = `<span style="color:#d97706;">PACOTE #${slotNum} DE ${CAROUSEL_SLOTS}</span> · ARRASTE NO PACOTE PARA ROTACIONAR 3D · LATERAIS GIRA A RODA`;
+      carouselHint.innerHTML = `<span style="color:#d97706;">PACOTE #${slotNum}/${CAROUSEL_SLOTS}</span> · GIRE A RODA OU ROTACIONE 3D`;
     };
     updateCarouselHintText();
 
     const carouselControlsRow = document.createElement('div');
     carouselControlsRow.style.cssText = `
-      display: flex; align-items: center; gap: 12px;
+      display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; box-sizing: border-box;
     `;
 
     const resetInspectRotation = () => {
@@ -1173,9 +1184,9 @@ export class BoosterPackViewer {
     btnSpinLeft.innerHTML = '‹';
     btnSpinLeft.title = 'Pacote Anterior';
     btnSpinLeft.style.cssText = `
-      width: 42px; height: 42px; border-radius: 50%;
+      width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
       background: #ffffff; border: 1.5px solid rgba(15, 23, 42, 0.14);
-      color: #0f172a; font-size: 1.35rem; font-weight: 800;
+      color: #0f172a; font-size: 1.3rem; font-weight: 800;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
       transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -1252,12 +1263,13 @@ export class BoosterPackViewer {
     const btnPickPack = document.createElement('button');
     btnPickPack.innerHTML = '✨ ESCOLHER ESTE BOOSTER';
     btnPickPack.style.cssText = `
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      padding: 12px 28px; white-space: nowrap; border-radius: 999px;
+      flex: 1; min-width: 0; max-width: 260px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 11px 16px; white-space: nowrap; border-radius: 999px;
       background: linear-gradient(135deg, #ffd700 0%, #f59e0b 55%, #d97706 100%);
       color: #0f172a; border: 1.5px solid rgba(255, 255, 255, 0.9);
-      font-family: 'Outfit', sans-serif; font-size: 0.86rem; font-weight: 900;
-      letter-spacing: 0.8px; cursor: pointer; transition: all 0.2s ease;
+      font-family: 'Outfit', sans-serif; font-size: clamp(0.72rem, 3vw, 0.85rem); font-weight: 900;
+      letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
       box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35), 0 2px 6px rgba(15, 23, 42, 0.08);
     `;
     btnPickPack.onclick = (e) => {
@@ -1325,6 +1337,7 @@ export class BoosterPackViewer {
       packState = ENABLE_BOOSTER_CAROUSEL ? 'carousel' : 'sealed';
       carouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
       targetCarouselTransition = ENABLE_BOOSTER_CAROUSEL ? 0 : 1;
+      carouselIntroProgress = 0;
       carouselRootGroup.visible = ENABLE_BOOSTER_CAROUSEL;
       carouselBar.style.display = ENABLE_BOOSTER_CAROUSEL ? 'flex' : 'none';
       worldGroup.visible = !ENABLE_BOOSTER_CAROUSEL;
@@ -1364,21 +1377,23 @@ export class BoosterPackViewer {
     const bottomGridBar = document.createElement('div');
     bottomGridBar.className = 'booster-grid-actions';
     bottomGridBar.style.cssText = `
-      position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; justify-content: center; gap: 14px;
+      position: absolute; bottom: max(18px, env(safe-area-inset-bottom, 18px)); left: 50%; transform: translateX(-50%);
+      width: calc(100vw - 24px); max-width: 420px; box-sizing: border-box;
+      display: none; align-items: center; justify-content: center; gap: 10px;
       z-index: 1000; pointer-events: auto;
     `;
 
     // Cápsula 1: Abrir outro pack (cápsula simples de linha única)
     const btnOpenAnother = document.createElement('button');
-    btnOpenAnother.innerHTML = `✨ Abrir Outro Pack`;
+    btnOpenAnother.innerHTML = `✨ Abrir Outro`;
     btnOpenAnother.style.cssText = `
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      padding: 10px 22px; white-space: nowrap; border-radius: 999px;
+      flex: 1; min-width: 0;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 14px; white-space: nowrap; border-radius: 999px;
       background: #ffffff;
       color: #0f172a; border: 1.5px solid rgba(15, 23, 42, 0.16);
-      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 800;
-      letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
+      font-family: 'Outfit', sans-serif; font-size: clamp(0.72rem, 2.8vw, 0.84rem); font-weight: 800;
+      letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s ease;
       box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
     `;
     btnOpenAnother.onmouseenter = () => {
@@ -1399,14 +1414,15 @@ export class BoosterPackViewer {
 
     // Cápsula 2: Concluir & Coletar (cápsula simples de linha única)
     const btnCollect = document.createElement('button');
-    btnCollect.innerHTML = `🏆 Concluir & Coletar`;
+    btnCollect.innerHTML = `🏆 Concluir`;
     btnCollect.style.cssText = `
-      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-      padding: 10px 24px; white-space: nowrap; border-radius: 999px;
+      flex: 1; min-width: 0;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 16px; white-space: nowrap; border-radius: 999px;
       background: linear-gradient(135deg, #ffd700 0%, #e5a910 50%, #c48208 100%);
       color: #1a0f00; border: 1px solid rgba(255, 245, 180, 0.6);
-      font-family: 'Outfit', sans-serif; font-size: 0.84rem; font-weight: 800;
-      letter-spacing: 0.6px; cursor: pointer; transition: all 0.2s ease;
+      font-family: 'Outfit', sans-serif; font-size: clamp(0.72rem, 2.8vw, 0.84rem); font-weight: 800;
+      letter-spacing: 0.5px; cursor: pointer; transition: all 0.2s ease;
       box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
     `;
     btnCollect.onmouseenter = () => {
@@ -1897,6 +1913,9 @@ export class BoosterPackViewer {
 
       // --- Atualização da Ciranda / Carrossel 3D de 12 Boosters ---
       if (ENABLE_BOOSTER_CAROUSEL) {
+        if (carouselIntroProgress < 1) {
+          carouselIntroProgress = Math.min(1, carouselIntroProgress + dt / 0.88);
+        }
         carouselAngle += (targetCarouselAngle - carouselAngle) * Math.min(dt * 9, 1);
         carouselTransition += (targetCarouselTransition - carouselTransition) * Math.min(dt * 6.5, 1);
         inspectRotX += (targetInspectRotX - inspectRotX) * Math.min(dt * 10, 1);
@@ -1916,11 +1935,29 @@ export class BoosterPackViewer {
               return;
             }
             const { theta, packHolder } = (slotGrp as any).userData;
-            const relAngle = theta + carouselAngle;
+
+            // Animação de entrada: chegam juntos em maço no centro e abrem em círculo na roda
+            const stagger = (idx / CAROUSEL_SLOTS) * 0.26;
+            const slotIntroRaw = THREE.MathUtils.clamp((carouselIntroProgress - stagger) / (1 - 0.26), 0, 1);
+            const slotEase = 1 - Math.pow(1 - slotIntroRaw, 3);
+
+            const currentTheta = theta * slotEase;
+            const currentRadius = THREE.MathUtils.lerp(CAROUSEL_RADIUS - 1.6, CAROUSEL_RADIUS, slotEase);
+            const bundleOffsetZ = (1 - slotEase) * (-idx * 0.025);
+            const introOffsetY = (1 - slotEase) * -1.35;
+
+            slotGrp.position.set(
+              Math.sin(currentTheta) * currentRadius,
+              introOffsetY,
+              Math.cos(currentTheta) * currentRadius + bundleOffsetZ
+            );
+            slotGrp.rotation.y = currentTheta;
+
+            const relAngle = currentTheta + carouselAngle;
             const cosA = Math.cos(relAngle);
             const frontFactor = THREE.MathUtils.clamp((cosA + 1) / 2, 0, 1);
 
-            if (idx === frontSlotIdx && packState === 'carousel') {
+            if (idx === frontSlotIdx && packState === 'carousel' && carouselIntroProgress >= 0.99) {
               // O pacote enquadrado pode ser rotacionado em 3D pelo usuário antes de escolher!
               packHolder.rotation.x = inspectRotX;
               packHolder.rotation.y = inspectRotY;
@@ -1929,12 +1966,13 @@ export class BoosterPackViewer {
               // Os demais 11 pacotes mantêm suas faces viradas radialmente para fora da roda
               packHolder.rotation.x = 0.04 + Math.sin(timeSec * 2.0 + idx) * 0.018;
               packHolder.rotation.y = 0;
-              packHolder.position.y = Math.sin(timeSec * 2.2 + idx * 0.7) * 0.05 * (1 - frontFactor);
+              packHolder.position.y = Math.sin(timeSec * 2.2 + idx * 0.7) * 0.05 * (1 - frontFactor) * slotEase;
             }
 
             // No centro frontal (frontFactor = 1), baseScale = 1.0 (idêntico ao worldGroup para transição sem corte seco!)
             const baseScale = THREE.MathUtils.lerp(0.58, 1.0, Math.pow(frontFactor, 1.65));
-            const fadeOutScale = baseScale * (1 - carouselTransition * 0.95);
+            const introScale = THREE.MathUtils.lerp(0.78, 1.0, slotEase);
+            const fadeOutScale = baseScale * introScale * (1 - carouselTransition * 0.95);
             slotGrp.scale.setScalar(Math.max(0.001, fadeOutScale));
           });
         } else {

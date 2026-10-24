@@ -1,4 +1,10 @@
 import defaultMobbys from './mobbys.json';
+import {
+  dehydrateObjectAssetsToDisk,
+  isBase64DataUrl,
+  isVolatileBlobUrl,
+  uploadDataUrlToDisk,
+} from './DiskAssetEngine';
 
 export interface MobbyDialogue {
   triggerType: 'hp_below' | 'turn_reached';
@@ -31,10 +37,11 @@ export interface Mobby {
 }
 
 const STORAGE_KEY = 'legends_mobbys_data';
-const MATRIX_STORAGE_KEY = 'slimelands_matrix_v1_snapshot';
+const MATRIX_STORAGE_KEY = 'slimelands_active_matrix_v1';
 
 export class MobbyManager {
   private static mobbys: Mobby[] = [];
+  private static diskHydrated = false;
 
   public static loadMobbys(): Mobby[] {
     try {
@@ -43,6 +50,7 @@ export class MobbyManager {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           this.mobbys = parsed;
+          this.hydrateFromDiskAsync();
           return this.mobbys;
         }
       }
@@ -50,10 +58,30 @@ export class MobbyManager {
       console.warn('Erro ao carregar mobbys do localStorage:', e);
     }
 
-    // Fallback para o arquivo inicial
+    // Fallback para o arquivo em disco inicial (mobbys.json)
     this.mobbys = JSON.parse(JSON.stringify(defaultMobbys));
     this.saveMobbys(this.mobbys);
+    this.hydrateFromDiskAsync();
     return this.mobbys;
+  }
+
+  private static hydrateFromDiskAsync(): void {
+    if (this.diskHydrated || typeof window === 'undefined') return;
+    this.diskHydrated = true;
+    fetch('/api/mobbys')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((diskList) => {
+        if (Array.isArray(diskList) && diskList.length > 0) {
+          // Se o localStorage estiver vazio ou desatualizado, sincroniza da unidade de disco
+          if (!this.mobbys || this.mobbys.length === 0) {
+            this.mobbys = diskList;
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(diskList));
+            } catch (_) {}
+          }
+        }
+      })
+      .catch(() => {});
   }
 
   public static getMobbys(): Mobby[] {
@@ -65,7 +93,7 @@ export class MobbyManager {
 
   public static getMobbyById(id: string): Mobby | null {
     const list = this.getMobbys();
-    const found = list.find(m => m.id === id);
+    const found = list.find((m) => m.id === id);
     if (found) return JSON.parse(JSON.stringify(found));
     return list.length > 0 ? JSON.parse(JSON.stringify(list[0])) : null;
   }
@@ -76,7 +104,7 @@ export class MobbyManager {
     const normId = (cardId || '').trim().toLowerCase();
     if (!normTitle && !normId) return null;
 
-    const found = list.find(m => {
+    const found = list.find((m) => {
       const mLinkedId = (m.linkedCardId || '').trim().toLowerCase();
       const mRewardId = (m.rewardCardId || '').trim().toLowerCase();
       if (normId && (mLinkedId === normId || mRewardId === normId)) return true;
@@ -102,7 +130,7 @@ export class MobbyManager {
     let targetMobby: Mobby | undefined;
 
     if (mobbyId) {
-      targetMobby = list.find(m => m.id === mobbyId);
+      targetMobby = list.find((m) => m.id === mobbyId);
       if (targetMobby) {
         targetMobby.rewardCardId = normCardTitle || normCardId;
         targetMobby.linkedCardId = normCardId || normCardTitle;
@@ -112,7 +140,7 @@ export class MobbyManager {
       }
     } else {
       // Desvincular Mobbys que apontavam para esta carta
-      list.forEach(m => {
+      list.forEach((m) => {
         if (
           m.linkedCardId === normCardId ||
           m.rewardCardId.toLowerCase() === normCardTitle.toLowerCase()
@@ -124,7 +152,7 @@ export class MobbyManager {
 
     this.saveMobbys(list);
 
-    // Atualiza o snapshot da Matriz (localStorage) para refletir o vínculo na Carta
+    // Atualiza o snapshot da Matriz para refletir o vínculo na Carta
     try {
       const rawSnap = localStorage.getItem(MATRIX_STORAGE_KEY);
       if (rawSnap) {
@@ -133,7 +161,8 @@ export class MobbyManager {
           snap.cards = snap.cards.map((c: any) => {
             const isTargetCard =
               (normCardId && c.id === normCardId) ||
-              (normCardTitle && (c.title || '').trim().toLowerCase() === normCardTitle.toLowerCase());
+              (normCardTitle &&
+                (c.title || '').trim().toLowerCase() === normCardTitle.toLowerCase());
             if (isTargetCard) {
               return {
                 ...c,
@@ -142,7 +171,6 @@ export class MobbyManager {
                 ...(syncImageUrl ? { imageUrl: syncImageUrl } : {}),
               };
             }
-            // Se outro card apontava exclusivamente para este mesmo mobby, mantém ou atualiza
             return c;
           });
           localStorage.setItem(MATRIX_STORAGE_KEY, JSON.stringify(snap));
@@ -178,27 +206,38 @@ export class MobbyManager {
       console.warn('Erro ao salvar mobbys no localStorage:', e);
     }
 
-    // Debounce na gravação em disco para evitar I/O excessivo enquanto o usuário arrasta controles
+    // Debounce na gravação em disco (com desidratação automática de Base64 para public/assets/engine/mobbys)
     if (this.backendDebounceTimer) {
       clearTimeout(this.backendDebounceTimer);
     }
-    this.backendDebounceTimer = setTimeout(() => {
+    this.backendDebounceTimer = setTimeout(async () => {
       try {
-        fetch('/api/save-mobbys', {
+        const cleanList = await dehydrateObjectAssetsToDisk(this.mobbys, 'mobbys');
+        this.mobbys = cleanList;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanList));
+        } catch (_) {}
+        await fetch('/api/save-mobbys', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(list)
-        }).catch(() => {});
+          body: JSON.stringify(cleanList),
+        });
       } catch (_) {}
-    }, 800);
+    }, 600);
   }
 
   public static upsertMobby(mobby: Mobby): void {
     if (mobby.rewardCardId && !mobby.linkedCardId) {
       mobby.linkedCardId = mobby.rewardCardId;
     }
+    // Se algum campo de mídia do Mobby vier em Base64 ou blob:, desidrata imediatamente para disco
+    if (isBase64DataUrl(mobby.image) || isVolatileBlobUrl(mobby.image)) {
+      uploadDataUrlToDisk(mobby.image, mobby.name || mobby.id, 'mobbys').then((url) => {
+        mobby.image = url;
+      });
+    }
     const list = this.getMobbys();
-    const idx = list.findIndex(m => m.id === mobby.id);
+    const idx = list.findIndex((m) => m.id === mobby.id);
     if (idx >= 0) {
       list[idx] = mobby;
     } else {
@@ -208,7 +247,7 @@ export class MobbyManager {
   }
 
   public static deleteMobby(id: string): void {
-    const list = this.getMobbys().filter(m => m.id !== id);
+    const list = this.getMobbys().filter((m) => m.id !== id);
     this.saveMobbys(list);
   }
 }

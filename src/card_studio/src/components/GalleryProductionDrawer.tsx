@@ -55,6 +55,7 @@ import {
 } from '../utils/colorExtractor';
 import { BLANK_TEMPLATE_CARD } from '../utils/defaultCards';
 import { MobbyManager } from '../../../core/MobbyManager';
+import { uploadFileToDisk } from '../../../core/DiskAssetEngine';
 
 interface GalleryProductionDrawerProps {
   cards: CardData[];
@@ -177,6 +178,15 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       : true
   );
 
+  // Step 3 visual triage dimension & pending queue filter (works like Step 2!)
+  const [step3TriageDimension, setStep3TriageDimension] = useState<
+    'biome' | 'family' | 'type_class' | 'collection'
+  >(persistedUI?.step3TriageDimension || 'biome');
+  const [step3PendingFilter, setStep3PendingFilter] = useState<
+    'ALL' | 'NO_BIOME' | 'NO_FAMILY' | 'NO_COLLECTION'
+  >(persistedUI?.step3PendingFilter || 'ALL');
+  const [showStep3ComboBar, setShowStep3ComboBar] = useState<boolean>(false);
+
   React.useEffect(() => {
     try {
       localStorage.setItem(
@@ -189,6 +199,8 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           selectedDeckId,
           filterEntityType,
           step2ShowOnlyUnclassified,
+          step3TriageDimension,
+          step3PendingFilter,
         })
       );
     } catch {
@@ -202,6 +214,8 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
     selectedDeckId,
     filterEntityType,
     step2ShowOnlyUnclassified,
+    step3TriageDimension,
+    step3PendingFilter,
   ]);
 
   // Multi-selection for Batch Classification & Version generation
@@ -227,7 +241,8 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
   const [editingDeckName, setEditingDeckName] = useState<string>('');
   const [isImportingFolder, setIsImportingFolder] = useState(false);
-  const [showSubgroupFilters, setShowSubgroupFilters] = useState(true);
+  const [showSubgroupFilters, setShowSubgroupFilters] = useState(false);
+  const [isStepDockCollapsed, setIsStepDockCollapsed] = useState(false);
 
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const multiFilesInputRef = useRef<HTMLInputElement | null>(null);
@@ -249,13 +264,19 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   const unclassifiedCount = cards.filter(isCardUnclassified).length;
   const classifiedCount = cards.length - unclassifiedCount;
 
-  // Converts a card between Criatura and Magia while preserving its rarity classification state!
-  const convertCardToEntityType = (c: CardData, targetEntity: 'Criatura' | 'Magia'): CardData => {
+  // Converts a card between Criatura, Magia, and Item while preserving its rarity classification state!
+  const convertCardToEntityType = (c: CardData, targetEntity: CardEntityType): CardData => {
+    const rawNum =
+      c.pvNumber ||
+      parseInt((c.pvText || '').replace(/\D/g, ''), 10) ||
+      300;
     if (targetEntity === 'Magia') {
       const manaCost = c.magicManaCost ?? 3;
       return {
         ...c,
         entityType: 'Magia',
+        pvNumber: rawNum,
+        pvText: c.isNeutralMatrix ? 'DF—' : `DF${rawNum}`,
         magicManaCost: manaCost,
         summonStaminaCost: undefined,
         showSummonCostPill: true,
@@ -271,12 +292,24 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
         magicAbilityKind: c.magicAbilityKind || 'passive',
         linkedPassiveId: c.linkedPassiveId || 'first_strike',
       };
+    } else if (targetEntity === 'Item') {
+      return {
+        ...c,
+        entityType: 'Item',
+        pvNumber: undefined,
+        summonStaminaCost: undefined,
+        showSummonCostPill: false,
+        pvText: 'ITEM',
+      };
     } else {
       const stamCost = c.summonStaminaCost ?? 2;
       return {
         ...c,
         entityType: 'Criatura',
+        pvNumber: rawNum,
+        pvText: c.isNeutralMatrix ? 'PV—' : `PV${rawNum}`,
         summonStaminaCost: stamCost,
+        showSummonCostPill: true,
         summonCostPill: {
           id: 'pill-summon-cost',
           mode: 'stat',
@@ -376,11 +409,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const dataUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.readAsDataURL(file);
-        });
+        const tempPreviewUrl = URL.createObjectURL(file);
 
         const rawName = file.name.replace(/\.[^/.]+$/, '').trim();
         const baseTitle =
@@ -392,17 +421,22 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
         let extractedPalettes = DEFAULT_PRESET_PALETTES;
         try {
-          const palettes = await extractAdaptivePalettesFromImage(dataUrl);
+          const palettes = await extractAdaptivePalettesFromImage(tempPreviewUrl);
           if (palettes && palettes.length > 0) {
             extractedPalettes = palettes;
           }
         } catch {
           // fallback
+        } finally {
+          URL.revokeObjectURL(tempPreviewUrl);
         }
+
+        // Persist physical file to project disk unit (/public/cards/...)
+        const diskImageUrl = await uploadFileToDisk(file, 'cards');
 
         let neutralMatrix = createNeutralMatrixCard({
           title: baseTitle,
-          imageUrl: dataUrl,
+          imageUrl: diskImageUrl,
           deckId: targetDeck,
           palette: extractedPalettes[0],
         });
@@ -543,15 +577,15 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
         next.entityType = batchEntityType;
         if (batchEntityType === 'Magia') {
           const manaCost = next.magicManaCost ?? 3;
+          const numDf =
+            next.pvNumber ||
+            parseInt((next.pvText || '').replace(/\D/g, ''), 10) ||
+            300;
           next.cardClass = next.cardClass || 'Rara';
           next.summonStaminaCost = undefined;
           next.magicManaCost = manaCost;
-          next.pvText =
-            next.pvText && !next.pvText.startsWith('MANA')
-              ? next.pvText
-              : next.pvNumber
-              ? `PV${next.pvNumber}`
-              : 'PV—';
+          next.pvNumber = numDf;
+          next.pvText = next.isNeutralMatrix ? 'DF—' : `DF${numDf}`;
           next.showSummonCostPill = true;
           next.summonCostPill = {
             id: 'pill-summon-cost',
@@ -571,6 +605,12 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           next.pvText = 'ITEM';
         } else if (batchEntityType === 'Criatura') {
           const stamCost = next.summonStaminaCost ?? 3;
+          const numPv =
+            next.pvNumber ||
+            parseInt((next.pvText || '').replace(/\D/g, ''), 10) ||
+            300;
+          next.pvNumber = numPv;
+          next.pvText = next.isNeutralMatrix ? 'PV—' : `PV${numPv}`;
           next.showSummonCostPill = true;
           next.summonCostPill = {
             id: 'pill-summon-cost',
@@ -676,15 +716,104 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
   const cardsWithImage = cards.filter((c) => Boolean(c.imageUrl)).length;
   const cardsWithBiome = cards.filter((c) => Boolean(c.biome)).length;
   const cardsWithFamily = cards.filter((c) => Boolean(c.family)).length;
+  const missingBiomeCount = cards.length - cardsWithBiome;
+  const missingFamilyCount = cards.length - cardsWithFamily;
+  const missingCollectionCount = cards.filter(
+    (c) => !c.collections || c.collections.length === 0
+  ).length;
 
   const isBoosterReady =
     commonCount >= 4 && rareCount >= 2 && magicCount >= 2 && highRankCount >= 1;
+
+  // Apply 1-click or drag-and-drop action in Step 3 visual boxes
+  const applyStep3BoxToCards = (
+    targetIds: string[],
+    kind: 'biome' | 'family' | 'collection' | 'entity' | 'rarity' | 'deck',
+    value: string
+  ) => {
+    if (targetIds.length === 0) return;
+
+    if (kind === 'deck') {
+      targetIds.forEach((id) => onAssignCardDeck(id, value));
+      setSelectedCardIds([]);
+      return;
+    }
+
+    updateTargetCards(targetIds, (card) => {
+      if (kind === 'biome') {
+        const nextBiome = value === '__CLEAR__' ? undefined : value;
+        const nextElem =
+          nextBiome && (!card.elementText || card.elementText === 'NEUTRA')
+            ? nextBiome.slice(0, 6).toUpperCase()
+            : card.elementText;
+        return {
+          ...card,
+          biome: nextBiome,
+          elementText: nextElem,
+        };
+      }
+      if (kind === 'family') {
+        return {
+          ...card,
+          family: value === '__CLEAR__' ? undefined : value,
+        };
+      }
+      if (kind === 'collection') {
+        if (value === '__CLEAR__') {
+          return { ...card, collections: [] };
+        }
+        const current = card.collections || [];
+        return {
+          ...card,
+          collections: current.includes(value) ? current : [...current, value],
+        };
+      }
+      if (kind === 'entity') {
+        return convertCardToEntityType(card, value as CardEntityType);
+      }
+      if (kind === 'rarity') {
+        return applyRarityToCardRecord(card, value as CardClass | 'UNCLASSIFIED');
+      }
+      return card;
+    });
+    setSelectedCardIds([]);
+  };
+
+  const handleDropOnStep3Box = (
+    e: React.DragEvent,
+    kind: 'biome' | 'family' | 'collection' | 'entity' | 'rarity' | 'deck',
+    value: string
+  ) => {
+    e.preventDefault();
+    setActiveDropZone(null);
+    const droppedId = e.dataTransfer.getData('text/plain') || draggedCardId;
+    setDraggedCardId(null);
+    if (!droppedId) return;
+
+    const targetIds = validSelectedCardIds.includes(droppedId)
+      ? validSelectedCardIds
+      : [droppedId];
+    applyStep3BoxToCards(targetIds, kind, value);
+  };
 
   // Filtered Cards logic
   const filteredCards = cards.filter((c) => {
     // In Guided Mode Step 2 with "Show unclassified only"
     if (galleryFlowMode === 'guided' && pipelineStep === 2 && step2ShowOnlyUnclassified) {
       if (!isCardUnclassified(c)) return false;
+    }
+
+    // In Guided Mode Step 3 with Pending Queue Filter ("Sem Bioma", "Sem Família", "Sem Coleção")
+    if (galleryFlowMode === 'guided' && pipelineStep === 3) {
+      if (step3PendingFilter === 'NO_BIOME' && c.biome) return false;
+      if (step3PendingFilter === 'NO_FAMILY' && c.family) return false;
+      if (
+        step3PendingFilter === 'NO_COLLECTION' &&
+        c.collections &&
+        c.collections.length > 0
+      ) {
+        return false;
+      }
     }
 
     // Free Mode / Step 3 Primary Rarity Navigation
@@ -865,75 +994,173 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       />
 
       {/* =====================================================================
-          1. BARRA DE TOPO DA MATRIZ: ALTERNADOR MODO GUIADO X GRADE LIVRE
+          1. BARRA UNIFICADA DE TOPO: ETAPAS INLINE + IMPORTAÇÃO RÁPIDA + LAYOUT
          ===================================================================== */}
-      <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0E1118] flex items-center justify-between gap-2 flex-wrap shrink-0">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="text-sm font-bold text-white whitespace-nowrap">
-              Matriz de Cartas
-            </span>
-            <span className="text-xs font-mono tabular-nums text-slate-400 whitespace-nowrap">
-              · {cards.length} cartas ({unclassifiedCount} pendentes)
-            </span>
-          </div>
+      <div className="px-2.5 py-1.5 border-b border-slate-800/80 bg-[#0E1118] flex items-center justify-between gap-1.5 flex-wrap shrink-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Pipeline Steps & Free Grid Switcher Inline */}
+          <div className="flex items-center gap-0.5 bg-slate-950/90 border border-slate-800 rounded-lg p-0.5">
+            {([
+              { step: 1 as const, label: '1. Importar' },
+              {
+                step: 2 as const,
+                label: '2. Raridades',
+                badge: unclassifiedCount > 0 ? `${unclassifiedCount}` : undefined,
+              },
+              {
+                step: 3 as const,
+                label: '3. Bioma & Tipo',
+                badge:
+                  missingBiomeCount > 0
+                    ? `${cardsWithBiome}/${cards.length}`
+                    : undefined,
+              },
+              {
+                step: 4 as const,
+                label: '4. Diagnóstico',
+                ok: isBoosterReady,
+              },
+            ]).map((item) => {
+              const active =
+                galleryFlowMode === 'guided' && pipelineStep === item.step;
+              return (
+                <button
+                  key={item.step}
+                  type="button"
+                  onClick={() => {
+                    setGalleryFlowMode('guided');
+                    setPipelineStep(item.step);
+                    setIsStepDockCollapsed(false);
+                  }}
+                  className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 whitespace-nowrap ${
+                    active
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {item.badge && (
+                    <span
+                      className={`px-1 rounded text-[9px] font-mono ${
+                        active
+                          ? 'bg-black/30 text-amber-200 font-black'
+                          : 'bg-slate-800 text-amber-300'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
 
-          {/* Flow Mode Switcher */}
-          <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+            <div className="w-[1px] h-3.5 bg-slate-800 mx-0.5" />
+
             <button
-              onClick={() => setGalleryFlowMode('guided')}
-              className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
-                galleryFlowMode === 'guided'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Workflow className="w-3.5 h-3.5" />
-              <span>Modo Guiado (Passo a Passo)</span>
-            </button>
-            <button
+              type="button"
               onClick={() => setGalleryFlowMode('free')}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 whitespace-nowrap ${
                 galleryFlowMode === 'free'
                   ? 'bg-slate-700 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
+              title="Grade Livre sem caixas de etapa"
             >
-              <Grid className="w-3.5 h-3.5" />
-              <span>Grade Livre</span>
+              <Grid className="w-3 h-3" />
+              <span>Livre</span>
+            </button>
+
+            {galleryFlowMode === 'guided' && (
+              <button
+                type="button"
+                onClick={() => setIsStepDockCollapsed((prev) => !prev)}
+                className="px-1.5 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:text-white hover:bg-slate-800"
+                title={
+                  isStepDockCollapsed
+                    ? 'Mostrar barra de caixas da etapa atual'
+                    : 'Recolher barra de caixas para ganhar mais espaço vertical nas cartas'
+                }
+              >
+                {isStepDockCollapsed ? '▼ Caixas' : '▲ Ocultar'}
+              </button>
+            )}
+          </div>
+
+          {/* Instant Import Shortcuts */}
+          <div className="flex items-center gap-0.5 bg-slate-900/90 border border-slate-800 rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() =>
+                setIngestionEntityType((prev) =>
+                  prev === 'Magia' ? 'Criatura' : 'Magia'
+                )
+              }
+              title="Tipo padrão ao importar novas imagens ou pastas (Clique para alternar)"
+              className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                ingestionEntityType === 'Magia'
+                  ? 'bg-purple-600/80 text-white'
+                  : 'bg-emerald-600/80 text-white'
+              }`}
+            >
+              {ingestionEntityType === 'Magia' ? '🔮 Magia' : '🐉 Criatura'}
+            </button>
+            <button
+              type="button"
+              onClick={() => folderInputRef.current?.click()}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-[10px] font-bold text-amber-300 flex items-center gap-0.5"
+              title="Importar pasta inteira de imagens direto na Matriz"
+            >
+              <FolderUp className="w-3 h-3" />
+              <span>+Pasta</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => multiFilesInputRef.current?.click()}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-[10px] font-bold text-sky-300 flex items-center gap-0.5"
+              title="Importar imagens avulsas direto na Matriz"
+            >
+              <ImagePlus className="w-3 h-3" />
+              <span>+Imgs</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateNeutralMatrix}
+              className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-[10px] font-bold text-emerald-300 flex items-center gap-0.5"
+              title="Criar nova carta Matriz em branco"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Nova</span>
             </button>
           </div>
         </div>
 
-        {/* Right Tools: Verso Global + Grid Zoom + Expand */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex items-center gap-1 bg-purple-950/30 border border-purple-500/35 rounded-lg px-2 py-1">
+        {/* Right Tools: Verso Global + Grid Zoom + Limpar + Expand */}
+        <div className="flex items-center gap-1 flex-wrap">
+          <div className="flex items-center gap-1 bg-purple-950/30 border border-purple-500/35 rounded-lg px-1.5 py-0.5">
             {globalBackImageUrl && (
               <img
                 src={globalBackImageUrl}
                 alt="Verso Global"
-                className="w-3.5 h-5 object-fill rounded-[1px] border border-purple-400/50 shrink-0"
+                className="w-3 h-4 object-fill rounded-[1px] border border-purple-400/50 shrink-0"
               />
             )}
             <button
               onClick={onUploadGlobalBack}
-              className="text-xs font-semibold text-purple-200 hover:text-white flex items-center gap-1 whitespace-nowrap"
+              className="text-[10px] font-semibold text-purple-200 hover:text-white flex items-center gap-1 whitespace-nowrap"
               title="Definir Verso Global"
             >
-              <ImagePlus className="w-3.5 h-3.5 text-purple-400" />
-              <span>{globalBackImageUrl ? 'Verso' : 'Importar Verso'}</span>
+              <span>{globalBackImageUrl ? 'Verso' : '+Verso'}</span>
             </button>
             <button
               onClick={onFlipCardPreview}
-              className="px-1.5 py-0.5 rounded bg-purple-600/80 hover:bg-purple-500 text-[10px] font-bold text-white whitespace-nowrap"
+              className="px-1 py-0.2 rounded bg-purple-600/80 hover:bg-purple-500 text-[9px] font-bold text-white"
             >
               Ver
             </button>
             {globalBackImageUrl && (
               <button
                 onClick={onClearGlobalBack}
-                className="text-[10px] text-rose-300 hover:text-rose-200 px-0.5"
+                className="text-[9px] text-rose-300 hover:text-rose-200 px-0.5"
               >
                 ✕
               </button>
@@ -941,12 +1168,11 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           </div>
 
           <div className="flex items-center gap-0.5 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-            <Grid className="w-3.5 h-3.5 text-slate-400 ml-1.5 mr-0.5" />
             {([3, 4, 5, 6] as const).map((cols) => (
               <button
                 key={cols}
                 onClick={() => setGridCols(cols)}
-                className={`px-1.5 py-0.5 rounded text-[11px] font-mono tabular-nums font-bold transition-colors ${
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums font-bold transition-colors ${
                   gridCols === cols
                     ? 'bg-emerald-600 text-white'
                     : 'text-slate-400 hover:text-white'
@@ -960,7 +1186,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           {cards.length > 0 && (
             <button
               onClick={onClearAllCards}
-              className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-xs font-medium text-slate-400 hover:text-rose-300 transition-colors whitespace-nowrap"
+              className="px-1.5 py-0.5 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-[10px] font-medium text-slate-400 hover:text-rose-300 transition-colors"
             >
               Limpar
             </button>
@@ -968,16 +1194,16 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
 
           <button
             onClick={onToggleExpandedWide}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1 transition-colors whitespace-nowrap"
+            className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] font-semibold text-slate-200 flex items-center gap-1 transition-colors"
           >
             {isExpandedWide ? (
               <>
-                <Minimize2 className="w-3.5 h-3.5" />
+                <Minimize2 className="w-3 h-3" />
                 <span>Reduzir</span>
               </>
             ) : (
               <>
-                <Maximize2 className="w-3.5 h-3.5" />
+                <Maximize2 className="w-3 h-3" />
                 <span>Expandir</span>
               </>
             )}
@@ -986,255 +1212,98 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
       </div>
 
       {/* =====================================================================
-          2. ESTEIRA GUIADA: PIPELINE DE 4 ETAPAS (QUANDO MODO GUIADO ATIVO)
+          2. FAIXA COMPACTA DE CAIXAS DA ETAPA ATUAL (OCUPA ~48px EM VEZ DE 280px)
          ===================================================================== */}
-      {galleryFlowMode === 'guided' && (
-        <div className="px-4 py-2.5 border-b border-slate-800/90 bg-[#0B0F17] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
-          <div className="flex items-center gap-2 min-w-max">
-            {/* Step 1 */}
-            <button
-              onClick={() => setPipelineStep(1)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                pipelineStep === 1
-                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
-                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
-                1
-              </span>
-              <span>1. Ingestão & Base</span>
-              {unclassifiedCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
-                  {unclassifiedCount}
-                </span>
-              )}
-            </button>
-
-            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-
-            {/* Step 2 */}
-            <button
-              onClick={() => setPipelineStep(2)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                pipelineStep === 2
-                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
-                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
-                2
-              </span>
-              <span>2. Triagem de Raridades</span>
-              <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">
-                {classifiedCount}/{cards.length}
-              </span>
-            </button>
-
-            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-
-            {/* Step 3 */}
-            <button
-              onClick={() => setPipelineStep(3)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                pipelineStep === 3
-                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
-                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
-                3
-              </span>
-              <span>3. Subgrupos & Regras</span>
-            </button>
-
-            <ArrowRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-
-            {/* Step 4 */}
-            <button
-              onClick={() => setPipelineStep(4)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                pipelineStep === 4
-                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-md ring-2 ring-emerald-500/30'
-                  : 'bg-slate-900/90 text-slate-300 border-slate-800 hover:bg-slate-800'
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black">
-                4
-              </span>
-              <span>4. Diagnóstico & Packs</span>
-              {isBoosterReady ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-              ) : (
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
-              )}
-            </button>
-          </div>
-
-          {/* Quick step progress indicators */}
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[11px] text-slate-400 font-mono">
-              Etapa {pipelineStep} de 4
+      {galleryFlowMode === 'guided' && !isStepDockCollapsed && pipelineStep === 1 && (
+        <div className="px-3 py-2 bg-[#0A0D14] border-b border-slate-800/80 flex items-center justify-between gap-2 flex-wrap shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-300">
+              Importar como:
             </span>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          3. PAINÉIS ESPECÍFICOS DE CADA ETAPA DO MODO GUIADO
-         ===================================================================== */}
-      {galleryFlowMode === 'guided' && pipelineStep === 1 && (
-        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Database className="w-4 h-4 text-emerald-400" />
-                <span>Etapa 1: Ingestão de Base de Cartas</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Escolha o modo da Matriz abaixo (<strong>Criaturas</strong> ou <strong>Magias</strong>) antes de importar pastas ou imagens. Elas entram prontas para separação de raridades na Etapa 2.
-              </p>
-            </div>
             <button
-              onClick={() => setPipelineStep(2)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md shrink-0"
+              type="button"
+              onClick={() => {
+                setIngestionEntityType('Criatura');
+                setFilterEntityType('ALL');
+              }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                ingestionEntityType === 'Criatura'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-slate-800 text-slate-300 hover:text-white'
+              }`}
             >
-              <span>Avançar para Triagem ({unclassifiedCount} pendentes)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              🐉 Criaturas (PV)
             </button>
-          </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIngestionEntityType('Magia');
+                setFilterEntityType('Magia');
+              }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                ingestionEntityType === 'Magia'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'bg-slate-800 text-slate-300 hover:text-white'
+              }`}
+            >
+              🔮 Magias (+DF no PV do Player)
+            </button>
 
-          {/* Seletor de Matriz de Ingestão: Criaturas vs Magias */}
-          <div className="flex items-center justify-between gap-2 flex-wrap bg-slate-900/90 border border-slate-800 rounded-xl p-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider px-1">
-                Tipo da Matriz ao Importar:
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setIngestionEntityType('Criatura');
-                  setFilterEntityType('ALL');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  ingestionEntityType === 'Criatura'
-                    ? 'bg-emerald-600 text-white shadow ring-2 ring-emerald-400/50'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                <span>🐉 Matriz de Criaturas (Slimes)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIngestionEntityType('Magia');
-                  setFilterEntityType('Magia');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  ingestionEntityType === 'Magia'
-                    ? 'bg-purple-600 text-white shadow ring-2 ring-purple-400/50'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                <span>🔮 Matriz de Cartas de Magia (Com Raridades)</span>
-              </button>
-            </div>
+            <div className="w-[1px] h-4 bg-slate-800 mx-1" />
 
-            {unclassifiedCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setPipelineStep(2)}
-                className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/50 text-amber-300 hover:bg-amber-500/30 text-[11px] font-extrabold flex items-center gap-1"
-              >
-                <span>⚡ Continuar separando {unclassifiedCount} cartas pendentes →</span>
-              </button>
-            )}
-          </div>
-
-          {/* 3 Action Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
             <button
               onClick={() => folderInputRef.current?.click()}
               disabled={isImportingFolder}
-              className="p-3 rounded-xl bg-gradient-to-b from-amber-950/20 to-slate-900 border border-amber-500/40 hover:border-amber-400 text-left transition-all group"
+              className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[11px] flex items-center gap-1"
             >
-              <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
-                <FolderUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>
-                  Importar Pasta ({ingestionEntityType === 'Magia' ? '🔮 Magias' : '🐉 Criaturas'})
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Carrega todas as imagens de uma pasta direto como {ingestionEntityType === 'Magia' ? 'Cartas de Magia' : 'Criaturas'} aguardando raridade.
-              </p>
+              <FolderUp className="w-3.5 h-3.5" />
+              <span>Importar Pasta</span>
             </button>
-
             <button
               onClick={() => multiFilesInputRef.current?.click()}
-              className="p-3 rounded-xl bg-gradient-to-b from-sky-950/20 to-slate-900 border border-sky-500/40 hover:border-sky-400 text-left transition-all group"
+              className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 font-bold text-[11px] flex items-center gap-1"
             >
-              <div className="flex items-center gap-2 text-sky-400 font-bold text-xs">
-                <ImagePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>
-                  Adicionar Imagens ({ingestionEntityType === 'Magia' ? '🔮 Magias' : '🐉 Criaturas'})
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Selecione imagens avulsas para registrar como {ingestionEntityType === 'Magia' ? 'Magia' : 'Criatura'} e separar raridade na Etapa 2.
-              </p>
+              <ImagePlus className="w-3.5 h-3.5" />
+              <span>Adicionar Imagens</span>
             </button>
-
             <button
               onClick={handleCreateNeutralMatrix}
-              className="p-3 rounded-xl bg-gradient-to-b from-emerald-950/20 to-slate-900 border border-emerald-500/40 hover:border-emerald-400 text-left transition-all group"
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 font-bold text-[11px] flex items-center gap-1"
             >
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span>
-                  Criar Matriz em Branco ({ingestionEntityType === 'Magia' ? '🔮 Magia' : '🐉 Criatura'})
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                Cria uma matriz vazia de {ingestionEntityType} para configurar arte, nome e raridade.
-              </p>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Criar em Branco</span>
             </button>
           </div>
+
+          <button
+            onClick={() => setPipelineStep(2)}
+            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white flex items-center gap-1"
+          >
+            <span>Etapa 2: Raridades ({unclassifiedCount} pend.)</span>
+            <ArrowRight className="w-3 h-3" />
+          </button>
         </div>
       )}
 
-      {galleryFlowMode === 'guided' && pipelineStep === 2 && (
-        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Move className="w-4 h-4 text-emerald-400" />
-                <span>Etapa 2: Triagem & Distribuição de Raridades (Criaturas & Magias)</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Tanto <strong>Criaturas</strong> quanto <strong>Cartas de Magia</strong> possuem raridades (Comum a Limitada). Arraste para as caixas abaixo ou selecione e clique!
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPipelineStep(1)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Voltar</span>
-              </button>
+      {galleryFlowMode === 'guided' && !isStepDockCollapsed && pipelineStep === 2 && (
+        <div className="px-3 py-1.5 bg-[#0A0D14] border-b border-slate-800/80 space-y-1.5 shrink-0">
+          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+            <span className="text-[11px] text-slate-400">
+              <strong className="text-white">Etapa 2 (Raridades):</strong> Arraste cartas ou selecione em lote e clique na caixa:
+            </span>
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setPipelineStep(3)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md"
+                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold text-white flex items-center gap-1"
               >
-                <span>Avançar para Subgrupos</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>Etapa 3: Biomas & Tipos</span>
+                <ArrowRight className="w-3 h-3" />
               </button>
             </div>
           </div>
 
-          {/* Interactive Drag & Drop Target Zones */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1">
+          {/* Compact Single-Row Drop Chips for Rarity */}
+          <div className="grid grid-cols-3 sm:grid-cols-7 gap-1.5">
             {categoryTriageBoxes.map((cat) => {
               const isOver = activeDropZone === cat.key;
               const hasChecked = validSelectedCardIds.length > 0;
@@ -1245,266 +1314,163 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                   onDragLeave={handleDragLeaveCategory}
                   onDrop={(e) => handleDropOnCategory(e, cat.key)}
                   onClick={() => {
-                    if (hasChecked) {
-                      if (cat.key === 'Magia') {
-                        onReplaceCards(
-                          cards.map((c) =>
-                            validSelectedCardIds.includes(c.id)
-                              ? convertCardToEntityType(c, 'Magia')
-                              : c
-                          )
-                        );
-                      } else {
-                        onReplaceCards(
-                          cards.map((c) =>
-                            validSelectedCardIds.includes(c.id)
-                              ? applyRarityToCardRecord(c, cat.key as CardClass)
-                              : c
-                          )
-                        );
-                      }
-                      setSelectedCardIds([]);
+                    const targets =
+                      validSelectedCardIds.length > 0
+                        ? validSelectedCardIds
+                        : activeCardId
+                        ? [activeCardId]
+                        : [];
+                    if (targets.length === 0) return;
+                    if (cat.key === 'Magia') {
+                      onReplaceCards(
+                        cards.map((c) =>
+                          targets.includes(c.id)
+                            ? convertCardToEntityType(c, 'Magia')
+                            : c
+                        )
+                      );
+                    } else {
+                      onReplaceCards(
+                        cards.map((c) =>
+                          targets.includes(c.id)
+                            ? applyRarityToCardRecord(c, cat.key as CardClass)
+                            : c
+                        )
+                      );
                     }
+                    setSelectedCardIds([]);
                   }}
-                  className={`p-2 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                  title={`${cat.label} — Arraste uma carta ou clique para aplicar às selecionadas`}
+                  className={`px-2 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-1 ${
                     cat.bgClass
                   } ${
                     isOver
-                      ? 'border-emerald-400 ring-2 ring-emerald-400/60 scale-[1.03] shadow-lg'
+                      ? 'border-emerald-400 ring-2 ring-emerald-400/60 scale-[1.02]'
                       : hasChecked
-                      ? `${cat.borderClass} hover:border-white hover:scale-[1.02]`
-                      : cat.borderClass
+                      ? `${cat.borderClass} hover:border-white`
+                      : `${cat.borderClass} hover:border-slate-500`
                   }`}
                 >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-bold ${cat.textClass}`}>
-                        {cat.label}
-                      </span>
-                      <span className="px-1.5 py-0.2 rounded-full bg-slate-950/80 border border-slate-700 text-[10px] font-mono tabular-nums text-white">
-                        {cat.count}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
-                      {cat.sublabel}
-                    </p>
-                  </div>
-
-                  <div className="mt-2 pt-1.5 border-t border-slate-800/60 flex items-center justify-between text-[10px]">
-                    <span className="text-slate-400">
-                      {isOver ? 'Solte para aplicar!' : hasChecked ? 'Clique p/ Aplicar' : 'Solte aqui'}
-                    </span>
-                    {hasChecked && (
-                      <span className="text-emerald-400 font-bold">
-                        +{validSelectedCardIds.length}
-                      </span>
-                    )}
-                  </div>
+                  <span className={`text-[11px] font-bold truncate ${cat.textClass}`}>
+                    {cat.key === 'Magia' ? '🔮 Magia (DF)' : cat.label}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-white shrink-0">
+                    {cat.count}
+                  </span>
                 </div>
               );
             })}
           </div>
-
-          {/* Step 2 filter toggle + Entity Matrix Switcher */}
-          <div className="flex items-center justify-between flex-wrap gap-2 pt-1 text-xs text-slate-400">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-slate-300">Visualizar:</span>
-              <button
-                onClick={() => setStep2ShowOnlyUnclassified(true)}
-                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
-                  step2ShowOnlyUnclassified
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                Apenas Pendentes ({unclassifiedCount})
-              </button>
-              <button
-                onClick={() => setStep2ShowOnlyUnclassified(false)}
-                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
-                  !step2ShowOnlyUnclassified
-                    ? 'bg-slate-200 text-slate-950 font-bold'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                Todas ({cards.length})
-              </button>
-
-              <span className="text-slate-600 mx-1">|</span>
-              <span className="font-semibold text-slate-300">Matriz:</span>
-              <button
-                onClick={() => setFilterEntityType('ALL')}
-                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
-                  filterEntityType === 'ALL'
-                    ? 'bg-sky-500 text-slate-950 font-bold'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                Todas
-              </button>
-              <button
-                onClick={() => setFilterEntityType('Criatura')}
-                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
-                  filterEntityType === 'Criatura'
-                    ? 'bg-emerald-500 text-slate-950 font-bold'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                🐉 Criaturas ({cards.filter((c) => (c.entityType || 'Criatura') === 'Criatura').length})
-              </button>
-              <button
-                onClick={() => setFilterEntityType('Magia')}
-                className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors ${
-                  filterEntityType === 'Magia'
-                    ? 'bg-purple-500 text-white font-bold'
-                    : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                🔮 Magias ({cards.filter((c) => c.entityType === 'Magia').length})
-              </button>
-            </div>
-
-            <div className="text-[11px] text-slate-400">
-              💡 Segure e arraste qualquer carta até a caixa de raridade.
-            </div>
-          </div>
         </div>
       )}
 
-      {galleryFlowMode === 'guided' && pipelineStep === 3 && (
-        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <Tag className="w-4 h-4 text-emerald-400" />
-                <span>Etapa 3: Subgrupos & Tags Temáticas</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Atribua Famílias, Biomas, Coleções e Tipos independentemente da raridade.
-              </p>
+      {galleryFlowMode === 'guided' && !isStepDockCollapsed && pipelineStep === 3 && (
+        <div className="px-3 py-1.5 bg-[#0A0D14] border-b border-slate-800/80 space-y-1.5 shrink-0">
+          {/* Compact Dimension Tabs + Actions on ONE slim line */}
+          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setStep3TriageDimension('biome')}
+                className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                  step3TriageDimension === 'biome'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>🌍 Biomas ({subgroupCatalog.biomes.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep3TriageDimension('family')}
+                className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                  step3TriageDimension === 'family'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>🧬 Famílias ({subgroupCatalog.families.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep3TriageDimension('type_class')}
+                className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                  step3TriageDimension === 'type_class'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>⚡ Tipo & Classe</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep3TriageDimension('collection')}
+                className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                  step3TriageDimension === 'collection'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-slate-800/80 text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>🎴 Decks & Coleções</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setNewSubgroupKind(
+                    step3TriageDimension === 'family'
+                      ? 'family'
+                      : step3TriageDimension === 'collection'
+                      ? 'collection'
+                      : 'biome'
+                  )
+                }
+                className="px-2 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold"
+              >
+                + Criar {step3TriageDimension === 'family' ? 'Família' : step3TriageDimension === 'collection' ? 'Coleção' : 'Bioma'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowStep3ComboBar((prev) => !prev)}
+                className={`px-2 py-1 rounded-md border text-[10px] font-semibold ${
+                  showStep3ComboBar
+                    ? 'bg-slate-700 border-slate-500 text-white'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                }`}
+              >
+                Combo Multi-Tags
+              </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPipelineStep(2)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Voltar</span>
-              </button>
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setPipelineStep(4)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1.5 transition-all shadow-md"
+                className="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold text-white flex items-center gap-1"
               >
-                <span>Avançar para Diagnóstico</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <span>Diagnóstico</span>
+                <ArrowRight className="w-3 h-3" />
               </button>
-            </div>
-          </div>
-
-          {/* Quick Subgroups Batch Assignment Row */}
-          <div className="flex items-center gap-2 flex-wrap pt-1 bg-slate-900/80 border border-slate-800 rounded-xl p-2.5">
-            <span className="text-xs font-bold text-slate-300">
-              Atribuir aos Selecionados ({validSelectedCardIds.length || (activeCardId ? '1' : '0')}):
-            </span>
-
-            {/* Biome Select */}
-            <select
-              value={batchBiome}
-              onChange={(e) => setBatchBiome(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-emerald-300 font-semibold"
-            >
-              <option value="">Bioma...</option>
-              {subgroupCatalog.biomes.map((b) => (
-                <option key={b} value={b}>
-                  Bioma: {b}
-                </option>
-              ))}
-              <option value="__CLEAR__">(Remover Bioma)</option>
-            </select>
-
-            {/* Family Select */}
-            <select
-              value={batchFamily}
-              onChange={(e) => setBatchFamily(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200"
-            >
-              <option value="">Família...</option>
-              {subgroupCatalog.families.map((f) => (
-                <option key={f} value={f}>
-                  Família: {f}
-                </option>
-              ))}
-              <option value="__CLEAR__">(Remover Família)</option>
-            </select>
-
-            {/* Collection Select */}
-            <select
-              value={batchCollection}
-              onChange={(e) => setBatchCollection(e.target.value)}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-purple-300"
-            >
-              <option value="">Coleção...</option>
-              {subgroupCatalog.collections.map((col) => (
-                <option key={col} value={col}>
-                  Coleção: {col}
-                </option>
-              ))}
-              <option value="__CLEAR__">(Limpar Coleções)</option>
-            </select>
-
-            {/* Entity Type Select */}
-            <select
-              value={batchEntityType}
-              onChange={(e) => setBatchEntityType(e.target.value as CardEntityType | '')}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-sky-300 font-semibold"
-            >
-              <option value="">Tipo...</option>
-              <option value="Criatura">Criatura</option>
-              <option value="Magia">Magia</option>
-              <option value="Item">Item</option>
-            </select>
-
-            <button
-              onClick={handleApplyBatchClassifications}
-              disabled={!batchBiome && !batchFamily && !batchCollection && !batchEntityType}
-              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-xs font-bold text-white transition-all shadow"
-            >
-              Aplicar Tags
-            </button>
-
-            {/* Create new subgroup tag button */}
-            <div className="flex items-center gap-1 ml-auto">
-              {(['biome', 'family', 'collection'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  onClick={() => setNewSubgroupKind(kind)}
-                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 hover:text-white transition-colors"
-                >
-                  + Novo {kind === 'biome' ? 'Bioma' : kind === 'family' ? 'Família' : 'Coleção'}
-                </button>
-              ))}
             </div>
           </div>
 
           {/* Quick Create Subgroup Inline Modal */}
           {newSubgroupKind && (
-            <div className="p-2.5 rounded-lg bg-slate-900 border border-emerald-500/50 flex items-center gap-2">
-              <span className="text-xs font-bold text-emerald-400">
-                Criar novo {newSubgroupKind === 'biome' ? 'Bioma' : newSubgroupKind === 'family' ? 'Família' : 'Coleção'}:
+            <div className="p-1.5 rounded-lg bg-slate-900 border border-emerald-500/50 flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-emerald-400">
+                Novo {newSubgroupKind === 'biome' ? 'Bioma' : newSubgroupKind === 'family' ? 'Família' : 'Coleção'}:
               </span>
               <input
                 type="text"
                 value={newSubgroupValue}
                 onChange={(e) => setNewSubgroupValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSaveNewSubgroup()}
-                placeholder="Ex: Slimes Vulcânicos..."
+                placeholder="Nome..."
                 autoFocus
-                className="px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-xs text-white flex-1"
+                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-xs text-white flex-1"
               />
               <button
                 onClick={handleSaveNewSubgroup}
-                className="px-3 py-1 rounded bg-emerald-600 text-xs font-bold text-white"
+                className="px-2.5 py-0.5 rounded bg-emerald-600 text-[11px] font-bold text-white"
               >
                 Salvar
               </button>
@@ -1513,270 +1479,649 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                   setNewSubgroupKind(null);
                   setNewSubgroupValue('');
                 }}
-                className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400"
+                className="px-2 py-0.5 rounded bg-slate-800 text-[11px] text-slate-400"
               >
-                Cancelar
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* ULTRA-COMPACT 1-LINE DROP CHIPS FOR STEP 3 */}
+          {step3TriageDimension === 'biome' && (
+            <div className="flex items-center gap-1.5 flex-wrap max-h-20 overflow-y-auto">
+              {subgroupCatalog.biomes.map((biome) => {
+                const zoneKey = `biome:${biome}`;
+                const isOver = activeDropZone === zoneKey;
+                const count = cards.filter((c) => c.biome === biome).length;
+                const hasChecked = validSelectedCardIds.length > 0;
+                return (
+                  <div
+                    key={biome}
+                    onDragOver={(e) => handleDragOverCategory(e, zoneKey)}
+                    onDragLeave={handleDragLeaveCategory}
+                    onDrop={(e) => handleDropOnStep3Box(e, 'biome', biome)}
+                    onClick={() => {
+                      const targets =
+                        validSelectedCardIds.length > 0
+                          ? validSelectedCardIds
+                          : activeCardId
+                          ? [activeCardId]
+                          : [];
+                      applyStep3BoxToCards(targets, 'biome', biome);
+                    }}
+                    title={`Arraste cartas ou clique para aplicar Bioma: ${biome}`}
+                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 bg-emerald-950/35 ${
+                      isOver
+                        ? 'border-emerald-400 ring-2 ring-emerald-400/60 scale-[1.03]'
+                        : hasChecked
+                        ? 'border-emerald-500/70 hover:border-white'
+                        : 'border-emerald-600/40 hover:border-emerald-400'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-emerald-300 whitespace-nowrap">
+                      🌍 {biome}
+                    </span>
+                    <span className="px-1.5 py-0.1 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-white">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+
+              <div
+                onDragOver={(e) => handleDragOverCategory(e, 'biome:__CLEAR__')}
+                onDragLeave={handleDragLeaveCategory}
+                onDrop={(e) => handleDropOnStep3Box(e, 'biome', '__CLEAR__')}
+                onClick={() => {
+                  const targets =
+                    validSelectedCardIds.length > 0
+                      ? validSelectedCardIds
+                      : activeCardId
+                      ? [activeCardId]
+                      : [];
+                  applyStep3BoxToCards(targets, 'biome', '__CLEAR__');
+                }}
+                title="Remover Bioma das cartas selecionadas"
+                className="px-2.5 py-1 rounded-lg border border-rose-500/40 hover:border-rose-400 bg-rose-950/25 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="text-[11px] font-bold text-rose-300 whitespace-nowrap">
+                  🚫 Sem Bioma
+                </span>
+                <span className="px-1.5 py-0.1 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-white">
+                  {missingBiomeCount}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {step3TriageDimension === 'family' && (
+            <div className="flex items-center gap-1.5 flex-wrap max-h-20 overflow-y-auto">
+              {subgroupCatalog.families.map((fam) => {
+                const zoneKey = `family:${fam}`;
+                const isOver = activeDropZone === zoneKey;
+                const count = cards.filter((c) => c.family === fam).length;
+                const hasChecked = validSelectedCardIds.length > 0;
+                return (
+                  <div
+                    key={fam}
+                    onDragOver={(e) => handleDragOverCategory(e, zoneKey)}
+                    onDragLeave={handleDragLeaveCategory}
+                    onDrop={(e) => handleDropOnStep3Box(e, 'family', fam)}
+                    onClick={() => {
+                      const targets =
+                        validSelectedCardIds.length > 0
+                          ? validSelectedCardIds
+                          : activeCardId
+                          ? [activeCardId]
+                          : [];
+                      applyStep3BoxToCards(targets, 'family', fam);
+                    }}
+                    title={`Arraste cartas ou clique para aplicar Família: ${fam}`}
+                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 bg-sky-950/35 ${
+                      isOver
+                        ? 'border-sky-400 ring-2 ring-sky-400/60 scale-[1.03]'
+                        : hasChecked
+                        ? 'border-sky-500/70 hover:border-white'
+                        : 'border-sky-600/40 hover:border-sky-400'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-sky-300 whitespace-nowrap">
+                      🧬 {fam}
+                    </span>
+                    <span className="px-1.5 py-0.1 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-white">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+
+              <div
+                onDragOver={(e) => handleDragOverCategory(e, 'family:__CLEAR__')}
+                onDragLeave={handleDragLeaveCategory}
+                onDrop={(e) => handleDropOnStep3Box(e, 'family', '__CLEAR__')}
+                onClick={() => {
+                  const targets =
+                    validSelectedCardIds.length > 0
+                      ? validSelectedCardIds
+                      : activeCardId
+                      ? [activeCardId]
+                      : [];
+                  applyStep3BoxToCards(targets, 'family', '__CLEAR__');
+                }}
+                className="px-2.5 py-1 rounded-lg border border-rose-500/40 hover:border-rose-400 bg-rose-950/25 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="text-[11px] font-bold text-rose-300 whitespace-nowrap">
+                  🚫 Sem Família
+                </span>
+                <span className="px-1.5 py-0.1 rounded-full bg-slate-950/90 border border-slate-700 text-[10px] font-mono text-white">
+                  {missingFamilyCount}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {step3TriageDimension === 'type_class' && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(
+                [
+                  {
+                    kind: 'entity' as const,
+                    val: 'Criatura',
+                    label: '🐉 Criatura (PV)',
+                    cls: 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300',
+                    count: cards.filter((c) => (c.entityType || 'Criatura') === 'Criatura').length,
+                  },
+                  {
+                    kind: 'entity' as const,
+                    val: 'Magia',
+                    label: '🔮 Magia (+DF)',
+                    cls: 'bg-purple-950/40 border-purple-500/50 text-purple-300',
+                    count: cards.filter((c) => c.entityType === 'Magia').length,
+                  },
+                  {
+                    kind: 'entity' as const,
+                    val: 'Item',
+                    label: '🛡️ Item',
+                    cls: 'bg-sky-950/40 border-sky-500/50 text-sky-300',
+                    count: cards.filter((c) => c.entityType === 'Item').length,
+                  },
+                  ...OFFICIAL_CLASSES.map((r) => ({
+                    kind: 'rarity' as const,
+                    val: r,
+                    label: `⭐ ${r}`,
+                    cls: 'bg-slate-900/90 border-slate-700 text-amber-300',
+                    count: cards.filter((c) => c.cardClass === r).length,
+                  })),
+                ]
+              ).map((box) => {
+                const zoneKey = `${box.kind}:${box.val}`;
+                const isOver = activeDropZone === zoneKey;
+                const hasChecked = validSelectedCardIds.length > 0;
+                return (
+                  <div
+                    key={zoneKey}
+                    onDragOver={(e) => handleDragOverCategory(e, zoneKey)}
+                    onDragLeave={handleDragLeaveCategory}
+                    onDrop={(e) => handleDropOnStep3Box(e, box.kind, box.val)}
+                    onClick={() => {
+                      const targets =
+                        validSelectedCardIds.length > 0
+                          ? validSelectedCardIds
+                          : activeCardId
+                          ? [activeCardId]
+                          : [];
+                      applyStep3BoxToCards(targets, box.kind, box.val);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${box.cls} ${
+                      isOver
+                        ? 'ring-2 ring-emerald-400 scale-[1.03]'
+                        : hasChecked
+                        ? 'hover:border-white'
+                        : 'hover:border-slate-400'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold whitespace-nowrap">{box.label}</span>
+                    <span className="px-1.5 py-0.1 rounded-full bg-slate-950/80 text-[10px] font-mono text-white">
+                      {box.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {step3TriageDimension === 'collection' && (
+            <div className="flex items-center gap-1.5 flex-wrap max-h-20 overflow-y-auto">
+              {decks.map((d) => {
+                const zoneKey = `deck:${d.id}`;
+                const isOver = activeDropZone === zoneKey;
+                const count = cards.filter((c) => (c.deckId || 'deck-main') === d.id).length;
+                return (
+                  <div
+                    key={zoneKey}
+                    onDragOver={(e) => handleDragOverCategory(e, zoneKey)}
+                    onDragLeave={handleDragLeaveCategory}
+                    onDrop={(e) => handleDropOnStep3Box(e, 'deck', d.id)}
+                    onClick={() => {
+                      const targets =
+                        validSelectedCardIds.length > 0
+                          ? validSelectedCardIds
+                          : activeCardId
+                          ? [activeCardId]
+                          : [];
+                      applyStep3BoxToCards(targets, 'deck', d.id);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 bg-amber-950/25 ${
+                      isOver
+                        ? 'border-amber-400 ring-2 ring-amber-400/60 scale-[1.03]'
+                        : 'border-amber-500/40 hover:border-amber-300'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-amber-300 whitespace-nowrap">
+                      🎴 {d.name}
+                    </span>
+                    <span className="px-1.5 py-0.1 rounded-full bg-slate-950/80 text-[10px] font-mono text-white">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {subgroupCatalog.collections.map((col) => {
+                const zoneKey = `collection:${col}`;
+                const isOver = activeDropZone === zoneKey;
+                const count = cards.filter(
+                  (c) => c.collections && c.collections.includes(col)
+                ).length;
+                return (
+                  <div
+                    key={zoneKey}
+                    onDragOver={(e) => handleDragOverCategory(e, zoneKey)}
+                    onDragLeave={handleDragLeaveCategory}
+                    onDrop={(e) => handleDropOnStep3Box(e, 'collection', col)}
+                    onClick={() => {
+                      const targets =
+                        validSelectedCardIds.length > 0
+                          ? validSelectedCardIds
+                          : activeCardId
+                          ? [activeCardId]
+                          : [];
+                      applyStep3BoxToCards(targets, 'collection', col);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 bg-purple-950/30 ${
+                      isOver
+                        ? 'border-purple-400 ring-2 ring-purple-400/60 scale-[1.03]'
+                        : 'border-purple-500/40 hover:border-purple-300'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-purple-300 whitespace-nowrap">
+                      📚 {col}
+                    </span>
+                    <span className="px-1.5 py-0.1 rounded-full bg-slate-950/80 text-[10px] font-mono text-white">
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Optional Multi-Tag Combo Bar */}
+          {showStep3ComboBar && (
+            <div className="flex items-center gap-1.5 flex-wrap bg-slate-900/80 border border-slate-800 rounded-lg p-1.5">
+              <span className="text-[11px] font-bold text-slate-300">
+                Combo ({validSelectedCardIds.length || (activeCardId ? '1' : '0')}):
+              </span>
+              <select
+                value={batchBiome}
+                onChange={(e) => setBatchBiome(e.target.value)}
+                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-emerald-300 font-semibold"
+              >
+                <option value="">Bioma...</option>
+                {subgroupCatalog.biomes.map((b) => (
+                  <option key={b} value={b}>
+                    Bioma: {b}
+                  </option>
+                ))}
+                <option value="__CLEAR__">(Remover Bioma)</option>
+              </select>
+
+              <select
+                value={batchFamily}
+                onChange={(e) => setBatchFamily(e.target.value)}
+                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-200"
+              >
+                <option value="">Família...</option>
+                {subgroupCatalog.families.map((f) => (
+                  <option key={f} value={f}>
+                    Família: {f}
+                  </option>
+                ))}
+                <option value="__CLEAR__">(Remover Família)</option>
+              </select>
+
+              <select
+                value={batchCollection}
+                onChange={(e) => setBatchCollection(e.target.value)}
+                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-purple-300"
+              >
+                <option value="">Coleção...</option>
+                {subgroupCatalog.collections.map((col) => (
+                  <option key={col} value={col}>
+                    Coleção: {col}
+                  </option>
+                ))}
+                <option value="__CLEAR__">(Limpar Coleções)</option>
+              </select>
+
+              <select
+                value={batchEntityType}
+                onChange={(e) => setBatchEntityType(e.target.value as CardEntityType | '')}
+                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-sky-300 font-semibold"
+              >
+                <option value="">Tipo...</option>
+                <option value="Criatura">Criatura (PV)</option>
+                <option value="Magia">Magia (+DF)</option>
+                <option value="Item">Item</option>
+              </select>
+
+              <button
+                onClick={handleApplyBatchClassifications}
+                disabled={!batchBiome && !batchFamily && !batchCollection && !batchEntityType}
+                className="px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-[11px] font-bold text-white transition-all"
+              >
+                Aplicar Combo
               </button>
             </div>
           )}
         </div>
       )}
 
-      {galleryFlowMode === 'guided' && pipelineStep === 4 && (
-        <div className="p-4 bg-[#0A0D14] border-b border-slate-800/80 space-y-3 shrink-0">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Etapa 4: Diagnóstico de Saúde & Validação de Boosters</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Checagem automática para abertura de Boosters de 9 Cartas oficiais e integridade do catálogo.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPipelineStep(3)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Voltar</span>
-              </button>
-
-              <button
-                onClick={handleExportMatrixJson}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-sky-300 flex items-center gap-1.5 transition-colors"
-                title="Exportar arquivo JSON com todos os dados da Matriz"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                <span>Exportar JSON</span>
-              </button>
-
-              <button
-                onClick={onOpenBoosterModal}
-                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-black text-slate-950 flex items-center gap-1.5 transition-all shadow-md"
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                <span>Abrir Loja & Testar Boosters</span>
-              </button>
-            </div>
+      {galleryFlowMode === 'guided' && !isStepDockCollapsed && pipelineStep === 4 && (
+        <div className="px-3 py-2 bg-[#0A0D14] border-b border-slate-800/80 flex items-center justify-between gap-2 flex-wrap shrink-0">
+          <div className="flex items-center gap-2 flex-wrap text-[11px]">
+            <span className="font-bold text-white flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              Diagnóstico Pack 9 Cartas:
+            </span>
+            <span className={commonCount >= 4 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+              Comum {commonCount}/4
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className={rareCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+              Rara {rareCount}/2
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className={magicCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+              Magia(DF) {magicCount}/2
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className={highRankCount >= 1 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+              Rank A/S {highRankCount}/1
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-300">
+              Biomas {cardsWithBiome}/{cards.length}
+            </span>
           </div>
 
-          {/* Diagnostic Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
-            {/* Booster Requirements Check */}
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-200">Requisitos de Booster (9 Cartas)</span>
-                  {isBoosterReady ? (
-                    <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-[10px] font-bold text-emerald-300">
-                      Apto
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-500/50 text-[10px] font-bold text-amber-300">
-                      Incompleto
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-1 mt-2 text-xs">
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Comuns (min 4):</span>
-                    <span className={commonCount >= 4 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {commonCount}/4 {commonCount >= 4 ? '✓' : '✗'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Raras (min 2):</span>
-                    <span className={rareCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {rareCount}/2 {rareCount >= 2 ? '✓' : '✗'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Magias (min 2):</span>
-                    <span className={magicCount >= 2 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {magicCount}/2 {magicCount >= 2 ? '✓' : '✗'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Rank Alto A/S (min 1):</span>
-                    <span className={highRankCount >= 1 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {highRankCount}/1 {highRankCount >= 1 ? '✓' : '✗'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Metadata Integrity Check */}
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
-              <div>
-                <span className="text-xs font-bold text-slate-200">Integridade dos Metadados</span>
-                <div className="space-y-1 mt-2 text-xs">
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Ilustração vinculada:</span>
-                    <span className={cardsWithImage === cards.length ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {cardsWithImage}/{cards.length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Bioma catalogado:</span>
-                    <span className="text-slate-200 font-mono">
-                      {cardsWithBiome}/{cards.length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Família catalogada:</span>
-                    <span className="text-slate-200 font-mono">
-                      {cardsWithFamily}/{cards.length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-slate-300">
-                    <span>• Não Classificadas restantes:</span>
-                    <span className={unclassifiedCount === 0 ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                      {unclassifiedCount}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Distribution Summary */}
-            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
-              <div>
-                <span className="text-xs font-bold text-slate-200">Distribuição do Baralho</span>
-                <div className="grid grid-cols-3 gap-1 mt-2 text-center text-[10px]">
-                  <div className="p-1 rounded bg-slate-800">
-                    <div className="text-slate-400">Comum</div>
-                    <div className="font-bold text-white mt-0.5">{commonCount}</div>
-                  </div>
-                  <div className="p-1 rounded bg-emerald-950/40">
-                    <div className="text-emerald-400">Rara</div>
-                    <div className="font-bold text-white mt-0.5">{rareCount}</div>
-                  </div>
-                  <div className="p-1 rounded bg-sky-950/40">
-                    <div className="text-sky-400">Magia</div>
-                    <div className="font-bold text-white mt-0.5">{magicCount}</div>
-                  </div>
-                  <div className="p-1 rounded bg-purple-950/40">
-                    <div className="text-purple-400">Épica</div>
-                    <div className="font-bold text-white mt-0.5">
-                      {cards.filter((c) => c.cardClass === 'Épica').length}
-                    </div>
-                  </div>
-                  <div className="p-1 rounded bg-amber-950/40">
-                    <div className="text-amber-400">Lendária</div>
-                    <div className="font-bold text-white mt-0.5">
-                      {cards.filter((c) => c.cardClass === 'Lendária').length}
-                    </div>
-                  </div>
-                  <div className="p-1 rounded bg-rose-950/40">
-                    <div className="text-rose-400">Mítica</div>
-                    <div className="font-bold text-white mt-0.5">
-                      {cards.filter((c) => c.cardClass === 'Mítica').length}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleExportMatrixJson}
+              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-sky-300 flex items-center gap-1"
+            >
+              <FileDown className="w-3 h-3" />
+              <span>Exportar JSON</span>
+            </button>
+            <button
+              onClick={onOpenBoosterModal}
+              className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-[11px] font-black text-slate-950 flex items-center gap-1"
+            >
+              <ShoppingBag className="w-3 h-3" />
+              <span>Testar Boosters</span>
+            </button>
           </div>
         </div>
       )}
 
       {/* =====================================================================
-          4. NAVEGAÇÃO DE FILTROS TRADICIONAIS (MODO LIVRE OU ETAPA 3)
+          3. BARRA ÚNICA DE FILTROS, BUSCA E AÇÕES EM LOTE (SEM DUPLICIDADE!)
          ===================================================================== */}
-      {(galleryFlowMode === 'free' || pipelineStep === 3) && (
-        <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0D1017] flex items-center justify-between gap-2 flex-wrap shrink-0">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1">
-            <button
-              onClick={() => setSelectedRarityTab('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
-                selectedRarityTab === 'ALL'
-                  ? 'bg-white text-slate-950'
-                  : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              Todas ({cards.length})
-            </button>
+      <div className="px-2.5 py-1.5 border-b border-slate-800/80 bg-[#0C0F17] flex items-center justify-between gap-1.5 flex-wrap shrink-0 text-xs">
+        {/* Left: Active Mode Queue / Rarity Tabs + Lote Selection */}
+        <div className="flex items-center gap-1 flex-wrap">
+          <button
+            onClick={() => setIsMultiSelectMode((prev) => !prev)}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+              isMultiSelectMode
+                ? 'bg-amber-400 text-slate-950 font-bold'
+                : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+            }`}
+            title="Ativar seleção múltipla com 1 clique nas cartas"
+          >
+            {isMultiSelectMode ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+            <span>Lote</span>
+          </button>
 
-            <button
-              onClick={() => setSelectedRarityTab('UNCLASSIFIED')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                selectedRarityTab === 'UNCLASSIFIED'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-950/70'
-              }`}
-            >
-              <span>Não Classificadas</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-950/80 text-[10px] font-mono tabular-nums text-amber-300">
-                {unclassifiedCount}
+          <button
+            onClick={handleSelectAllFiltered}
+            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold"
+          >
+            {filteredCards.length > 0 &&
+            filteredCards.every((c) => validSelectedCardIds.includes(c.id))
+              ? 'Desmarcar'
+              : `Sel. (${filteredCards.length})`}
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-slate-800 mx-0.5" />
+
+          {/* Context-aware Queue Filter Pills (No duplicate bars!) */}
+          {galleryFlowMode === 'guided' && pipelineStep === 2 ? (
+            <>
+              <button
+                onClick={() => setStep2ShowOnlyUnclassified(true)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  step2ShowOnlyUnclassified
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                }`}
+              >
+                Pendentes ({unclassifiedCount})
+              </button>
+              <button
+                onClick={() => setStep2ShowOnlyUnclassified(false)}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  !step2ShowOnlyUnclassified
+                    ? 'bg-white text-slate-950 font-bold'
+                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                }`}
+              >
+                Todas ({cards.length})
+              </button>
+            </>
+          ) : galleryFlowMode === 'guided' && pipelineStep === 3 ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setStep3PendingFilter('ALL')}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  step3PendingFilter === 'ALL'
+                    ? 'bg-white text-slate-950 font-bold'
+                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                }`}
+              >
+                Todas ({cards.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep3PendingFilter('NO_BIOME');
+                  setStep3TriageDimension('biome');
+                }}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  step3PendingFilter === 'NO_BIOME'
+                    ? 'bg-emerald-500 text-slate-950 font-bold'
+                    : 'bg-slate-900 text-emerald-300 hover:text-white'
+                }`}
+              >
+                S/ Bioma ({missingBiomeCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep3PendingFilter('NO_FAMILY');
+                  setStep3TriageDimension('family');
+                }}
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  step3PendingFilter === 'NO_FAMILY'
+                    ? 'bg-sky-500 text-slate-950 font-bold'
+                    : 'bg-slate-900 text-sky-300 hover:text-white'
+                }`}
+              >
+                S/ Família ({missingFamilyCount})
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setSelectedRarityTab('ALL')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                  selectedRarityTab === 'ALL'
+                    ? 'bg-white text-slate-950'
+                    : 'bg-slate-900 text-slate-400 hover:text-white'
+                }`}
+              >
+                Todas ({cards.length})
+              </button>
+              <button
+                onClick={() => setSelectedRarityTab('UNCLASSIFIED')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                  selectedRarityTab === 'UNCLASSIFIED'
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'bg-amber-950/40 text-amber-300 border border-amber-500/40'
+                }`}
+              >
+                S/ Raridade ({unclassifiedCount})
+              </button>
+              {enabledRarities.map((rarity) => {
+                const count = cards.filter((c) => c.cardClass === rarity).length;
+                return (
+                  <button
+                    key={rarity}
+                    onClick={() => setSelectedRarityTab(rarity)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                      selectedRarityTab === rarity
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-900 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {rarity} ({count})
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* Batch quick actions when cards are checked */}
+          {validSelectedCardIds.length > 0 && (
+            <>
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold font-mono text-[10px]">
+                {validSelectedCardIds.length} sel.
               </span>
-            </button>
-
-            {enabledRarities.map((rarity) => {
-              const count = cards.filter((c) => c.cardClass === rarity).length;
-              const isSelected = selectedRarityTab === rarity;
-              return (
-                <button
-                  key={rarity}
-                  onClick={() => setSelectedRarityTab(rarity)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-900 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <span>{rarity}</span>
-                  <span className="text-[10px] opacity-75 font-mono tabular-nums">
-                    ({count})
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search Box */}
-          <div className="flex items-center gap-1.5">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar por nome, bioma..."
-                className="pl-7 pr-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-44"
-              />
-            </div>
-
-            <button
-              onClick={() => setShowSubgroupFilters((prev) => !prev)}
-              className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors ${
-                showSubgroupFilters
-                  ? 'bg-slate-800 border-slate-700 text-white'
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-              title="Alternar filtros secundários de subgrupos"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  updateTargetCards(validSelectedCardIds, (c) =>
+                    convertCardToEntityType(c, 'Criatura')
+                  );
+                  setSelectedCardIds([]);
+                }}
+                className="px-1.5 py-0.5 rounded bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold"
+              >
+                🐉 Criatura (PV)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateTargetCards(validSelectedCardIds, (c) =>
+                    convertCardToEntityType(c, 'Magia')
+                  );
+                  setSelectedCardIds([]);
+                }}
+                className="px-1.5 py-0.5 rounded bg-purple-950/70 hover:bg-purple-900 border border-purple-500/50 text-purple-300 text-[10px] font-bold"
+              >
+                🔮 Magia (+DF)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleGenerateRandomVersionForCards(
+                    cards.filter((c) => validSelectedCardIds.includes(c.id))
+                  )
+                }
+                className="px-1.5 py-0.5 rounded bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-300 text-[10px] font-bold"
+              >
+                ✨ Gerar Versões
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCardIds([])}
+                className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]"
+              >
+                ✕
+              </button>
+            </>
+          )}
         </div>
-      )}
 
-      {/* Subgroup Filters Bar (Section 5 & 6) */}
-      {(galleryFlowMode === 'free' || pipelineStep === 3) && showSubgroupFilters && (
-        <div className="px-4 py-2 border-b border-slate-800/80 bg-[#0A0D14] flex items-center gap-2 flex-wrap text-xs shrink-0">
-          <span className="font-semibold text-slate-400 text-[11px]">Subgrupos:</span>
+        {/* Right: Search + Toggle Subgroup Dropdowns */}
+        <div className="flex items-center gap-1">
+          <select
+            value={filterEntityType}
+            onChange={(e) => setFilterEntityType(e.target.value)}
+            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-sky-300 font-semibold"
+          >
+            <option value="ALL">Todos Tipos</option>
+            <option value="Criatura">🐉 Criaturas</option>
+            <option value="Magia">🔮 Magias (DF)</option>
+            <option value="Item">🛡️ Itens</option>
+          </select>
 
+          <div className="relative">
+            <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar carta..."
+              className="pl-6 pr-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-32"
+            />
+          </div>
+
+          <button
+            onClick={() => setShowSubgroupFilters((prev) => !prev)}
+            className={`px-1.5 py-0.5 rounded border text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+              showSubgroupFilters
+                ? 'bg-slate-800 border-slate-600 text-white'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+            title="Filtrar por Bioma, Família ou Coleção"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Subgroup Filters Bar (Only shown when filter icon is clicked) */}
+      {showSubgroupFilters && (
+        <div className="px-3 py-1 border-b border-slate-800/80 bg-[#0A0D14] flex items-center gap-1.5 flex-wrap text-[11px] shrink-0">
+          <span className="font-semibold text-slate-400">Filtros:</span>
           <select
             value={filterBiome}
             onChange={(e) => setFilterBiome(e.target.value)}
-            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-emerald-300 font-semibold"
+            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-emerald-300"
           >
-            <option value="ALL">Todos os Biomas</option>
+            <option value="ALL">Todos Biomas</option>
             {subgroupCatalog.biomes.map((b) => (
               <option key={b} value={b}>
                 {b}
@@ -1787,9 +2132,9 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           <select
             value={filterFamily}
             onChange={(e) => setFilterFamily(e.target.value)}
-            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-slate-200"
+            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-200"
           >
-            <option value="ALL">Todas as Famílias</option>
+            <option value="ALL">Todas Famílias</option>
             {subgroupCatalog.families.map((f) => (
               <option key={f} value={f}>
                 {f}
@@ -1800,68 +2145,17 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
           <select
             value={filterCollection}
             onChange={(e) => setFilterCollection(e.target.value)}
-            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-purple-300"
+            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-purple-300"
           >
-            <option value="ALL">Todas as Coleções</option>
+            <option value="ALL">Todas Coleções</option>
             {subgroupCatalog.collections.map((col) => (
               <option key={col} value={col}>
                 {col}
               </option>
             ))}
           </select>
-
-          <select
-            value={filterEntityType}
-            onChange={(e) => setFilterEntityType(e.target.value)}
-            className="px-2 py-1 rounded bg-slate-900 border border-slate-800 text-xs text-sky-300"
-          >
-            <option value="ALL">Todos os Tipos</option>
-            <option value="Criatura">Criatura</option>
-            <option value="Magia">Magia</option>
-            <option value="Item">Item</option>
-          </select>
         </div>
       )}
-
-      {/* Batch Selection Action Bar */}
-      <div className="px-4 py-1.5 border-b border-slate-800/80 bg-[#0C0F17] flex items-center justify-between gap-2 shrink-0 text-xs">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsMultiSelectMode((prev) => !prev)}
-            className={`px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 transition-colors ${
-              isMultiSelectMode
-                ? 'bg-amber-400 text-slate-950 font-bold'
-                : 'bg-slate-900 text-slate-400 hover:text-white'
-            }`}
-          >
-            {isMultiSelectMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-            <span>{isMultiSelectMode ? 'Modo Lote Ativo' : 'Seleção em Lote'}</span>
-          </button>
-
-          {isMultiSelectMode && (
-            <>
-              <button
-                onClick={handleSelectAllFiltered}
-                className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium"
-              >
-                {filteredCards.length > 0 &&
-                filteredCards.every((c) => validSelectedCardIds.includes(c.id))
-                  ? 'Desmarcar Todos'
-                  : 'Selecionar Todos'}
-              </button>
-              {validSelectedCardIds.length > 0 && (
-                <span className="text-amber-400 font-bold font-mono">
-                  {validSelectedCardIds.length} selecionados
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="text-slate-400 font-mono text-[11px]">
-          Exibindo {filteredCards.length} de {cards.length}
-        </div>
-      </div>
 
       {/* =====================================================================
           5. GRADE PRINCIPAL DE CARTAS (CARDS GRID)
@@ -1872,13 +2166,14 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
             <Layers className="w-10 h-10 mb-2 opacity-30 text-slate-400" />
             <p className="text-sm font-semibold text-slate-400">Nenhuma carta encontrada nesta exibição</p>
             <p className="text-xs text-slate-600 mt-1 max-w-sm">
-              Alterne os filtros acima ou utilize a Etapa 1 para carregar uma pasta ou criar novas cartas.
+              Alterne os filtros acima ou utilize os botões + Pasta / + Imagens no topo para adicionar cartas.
             </p>
             <div className="mt-4 flex items-center gap-2">
               <button
                 onClick={() => {
                   setSelectedRarityTab('ALL');
                   setStep2ShowOnlyUnclassified(false);
+                  setStep3PendingFilter('ALL');
                   setSearchQuery('');
                   setFilterBiome('ALL');
                   setFilterFamily('ALL');
@@ -1887,7 +2182,7 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                 }}
                 className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
               >
-                Limpar Todos os Filtros
+                Mostrar Todas as Cartas ({cards.length})
               </button>
               <button
                 onClick={handleCreateNeutralMatrix}
@@ -1983,74 +2278,124 @@ export const GalleryProductionDrawer: React.FC<GalleryProductionDrawerProps> = R
                     />
                   </div>
 
-                  {/* Title & Rank Row */}
-                  <div className="mt-2 flex items-center justify-between gap-1">
-                    <span className="text-xs font-bold text-white truncate">
-                      {card.title}
-                    </span>
-                    <span className="text-xs font-mono tabular-nums font-bold text-amber-400 shrink-0">
-                      {unclassified ? 'NEUTRA' : `Rank ${card.cardRank || card.rankBadgeText || '—'}`}
-                    </span>
-                  </div>
-
-                  {/* Subgroup Tags + 1-Click Entity Toggle (Criatura <-> Magia) */}
-                  <div className="mt-1 flex items-center gap-1 flex-wrap min-h-[20px]">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const nextEntity = card.entityType === 'Magia' ? 'Criatura' : 'Magia';
-                        updateTargetCards([card.id], (c) => convertCardToEntityType(c, nextEntity));
-                      }}
-                      title="Clique para alternar entre Criatura (Slime) e Carta de Magia mantendo a raridade"
-                      className={`px-1.5 py-0.5 rounded border text-[9px] font-bold transition-colors cursor-pointer ${
-                        card.entityType === 'Magia'
-                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-200 hover:bg-purple-900'
-                          : 'bg-slate-900 border-slate-700 text-sky-300 hover:bg-slate-800'
-                      }`}
-                    >
-                      {card.entityType === 'Magia' ? '🔮 Magia' : '🐉 Criatura'} ⇄
-                    </button>
-                    {card.biome && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-950/50 border border-emerald-500/30 text-[9px] font-semibold text-emerald-300">
-                        {card.biome}
-                      </span>
-                    )}
-                    {card.family && (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[9px] text-slate-300 truncate max-w-[110px]">
-                        {card.family}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Rarity Selector Row */}
+                  {/* Inline Editable Title & Rank Row */}
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="mt-1.5 flex items-center justify-between gap-1 text-[11px] text-slate-400 font-mono tabular-nums"
+                    className="mt-2 flex items-center justify-between gap-1"
                   >
+                    <input
+                      type="text"
+                      value={card.title}
+                      onChange={(e) => {
+                        const nextTitle = e.target.value;
+                        updateTargetCards([card.id], (c) => ({
+                          ...c,
+                          title: nextTitle,
+                        }));
+                      }}
+                      title="Clique para renomear a carta diretamente na grade"
+                      className="text-xs font-bold text-white bg-transparent hover:bg-slate-900/90 focus:bg-slate-900 px-1 py-0.5 rounded border border-transparent focus:border-emerald-500/60 focus:outline-none truncate flex-1 min-w-0"
+                    />
+                    <span className="text-[11px] font-mono tabular-nums font-bold text-amber-400 shrink-0">
+                      {unclassified ? 'NEUTRA' : `R:${card.cardRank || card.rankBadgeText || '—'}`}
+                    </span>
+                  </div>
+
+                  {/* Row 1: 1-Click Entity Type + Rarity Selector */}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 grid grid-cols-2 gap-1"
+                  >
+                    <select
+                      value={card.entityType || 'Criatura'}
+                      onChange={(e) => {
+                        const nextEntity = e.target.value as CardEntityType;
+                        updateTargetCards([card.id], (c) =>
+                          convertCardToEntityType(c, nextEntity)
+                        );
+                      }}
+                      title="Alterar Tipo da Carta (Criatura, Magia ou Item)"
+                      className={`px-1.5 py-0.5 rounded border text-[10px] font-bold truncate cursor-pointer ${
+                        card.entityType === 'Magia'
+                          ? 'bg-purple-950/80 border-purple-500/60 text-purple-200'
+                          : card.entityType === 'Item'
+                          ? 'bg-sky-950/80 border-sky-500/60 text-sky-200'
+                          : 'bg-slate-900 border-slate-700 text-emerald-300'
+                      }`}
+                    >
+                      <option value="Criatura">🐉 Criatura</option>
+                      <option value="Magia">🔮 Magia</option>
+                      <option value="Item">🛡️ Item</option>
+                    </select>
+
                     <select
                       value={unclassified ? 'UNCLASSIFIED' : card.cardClass || 'UNCLASSIFIED'}
                       onChange={(e) => {
                         const nextVal = e.target.value as CardClass | 'UNCLASSIFIED';
                         updateTargetCards([card.id], (c) => applyRarityToCardRecord(c, nextVal));
                       }}
-                      className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-200"
+                      title="Alterar Classe / Raridade da Carta"
+                      className={`px-1.5 py-0.5 rounded border text-[10px] font-bold truncate cursor-pointer ${
+                        unclassified
+                          ? 'bg-amber-950/50 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-200'
+                      }`}
                     >
-                      <option value="UNCLASSIFIED">Não Classificada</option>
+                      <option value="UNCLASSIFIED">⏳ S/ Raridade</option>
                       {OFFICIAL_CLASSES.map((cls) => (
                         <option key={cls} value={cls}>
-                          {cls}
+                          ⭐ {cls}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Row 2: 1-Click Inline Biome & Family Selectors directly on the Card Tile */}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 grid grid-cols-2 gap-1"
+                  >
+                    <select
+                      value={card.biome || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        applyStep3BoxToCards([card.id], 'biome', val || '__CLEAR__');
+                      }}
+                      title="Definir Bioma diretamente no card"
+                      className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold truncate cursor-pointer ${
+                        card.biome
+                          ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                          : 'bg-slate-900/70 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <option value="">🌍 Bioma...</option>
+                      {subgroupCatalog.biomes.map((b) => (
+                        <option key={b} value={b}>
+                          🌍 {b}
                         </option>
                       ))}
                     </select>
 
-                    <span className="truncate text-[10px]">
-                      {unclassified
-                        ? 'Sem Atributos'
-                        : card.entityType === 'Magia'
-                        ? `${card.pvText} · ${card.magicManaCost ?? 3} Mana`
-                        : `${card.pvText} · ${card.summonStaminaCost ?? '—'} Est.`}
-                    </span>
+                    <select
+                      value={card.family || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        applyStep3BoxToCards([card.id], 'family', val || '__CLEAR__');
+                      }}
+                      title="Definir Família diretamente no card"
+                      className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold truncate cursor-pointer ${
+                        card.family
+                          ? 'bg-sky-950/60 border-sky-500/50 text-sky-300'
+                          : 'bg-slate-900/70 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <option value="">🧬 Família...</option>
+                      {subgroupCatalog.families.map((f) => (
+                        <option key={f} value={f}>
+                          🧬 {f}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Bidirectional Mobby Link Parameter Row */}

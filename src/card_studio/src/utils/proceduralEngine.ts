@@ -1478,11 +1478,11 @@ export function createMatrixFromBaseCharacter(
     editState: 'Pronta para Packs',
     isNeutralMatrix: false,
     title: char.name.split(',')[0].trim(),
-    pvText: 'PV—',
+    pvText: isMagic ? 'DF—' : 'PV—',
     elementText: char.element.slice(0, 6).toUpperCase(),
     rankBadgeText: '—',
     loreHeader: isMagic
-      ? `${char.name} · Magia ${assignedRarity} (Mana ${defaultManaCost})`
+      ? `${char.name} · Magia ${assignedRarity} (+DF no PV · Mana ${defaultManaCost})`
       : `${char.name} · Matriz ${assignedRarity}`,
     loreBody: char.description,
     magicPrefix: isMagic
@@ -2096,7 +2096,7 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     classificationState: 'Classificada',
     editState: targetRecordKind === 'version' ? 'Versão Aleatória' : 'Pronta para Packs',
     isNeutralMatrix: false,
-    pvText: isItemCard ? 'ITEM' : `PV${rolledPv}`,
+    pvText: isItemCard ? 'ITEM' : isMagicCard ? `DF${rolledPv}` : `PV${rolledPv}`,
     elementText:
       matrix.elementText && matrix.elementText !== 'NEUTRA' && matrix.elementText !== 'MATRIZ'
         ? matrix.elementText
@@ -2105,7 +2105,7 @@ export function generateFromMatrix(req: MatrixGenerationRequest): CardData {
     loreHeader: isCreature
       ? `${matrix.title} · ${matrixRarity} (Estamina ${rolledSummonCost})`
       : isMagicCard
-      ? `${matrix.title} · Magia ${matrixRarity} (Mana ${rolledSummonCost})`
+      ? `${matrix.title} · Magia ${matrixRarity} (+${rolledPv} DF · Mana ${rolledSummonCost})`
       : `${matrix.title} · ${entityType} (${matrixRarity})`,
     magicPrefix: isMagicCard
       ? resolvedMagicPrefix

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { SubBiomeConfig, MapMarker } from '../types/map';
 import { readUploadedImage, trimImageBorder } from '../utils/tileGenerator';
+import { uploadFileToDisk } from '../../../core/DiskAssetEngine';
 import {
   Trash2,
   Image as ImageIcon,
@@ -69,14 +70,11 @@ export const SubBiomeStudio: React.FC<Props> = ({
     }
   };
 
-  const handleUploadAudio = (sbId: string, file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onUpdateSubBiome(sbId, { bgmAudioUrl: reader.result, bgmVolume: 0.7 });
-      }
-    };
-    reader.readAsDataURL(file);
+  const handleUploadAudio = async (sbId: string, file: File) => {
+    const diskAudioUrl = await uploadFileToDisk(file, 'audio');
+    if (diskAudioUrl) {
+      onUpdateSubBiome(sbId, { bgmAudioUrl: diskAudioUrl, bgmVolume: 0.7 });
+    }
   };
 
   // Upload new Sub-Biome PNG

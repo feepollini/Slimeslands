@@ -1222,6 +1222,14 @@ export function getResolvedPlayerPetConfig(player?: PlayerConfig): {
 export type InventoryItemType = 'weapon' | 'armor' | 'potion' | 'key' | 'collectible' | 'currency' | 'drop' | 'custom';
 
 export type InventoryItemCategory =
+  | 'weapon'
+  | 'armor'
+  | 'accessory'
+  | 'potion'
+  | 'key'
+  | 'material'
+  | 'currency'
+  | 'drop'
   | 'consumable'
   | 'collectible'
   | 'quest'

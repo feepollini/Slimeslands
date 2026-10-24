@@ -98,6 +98,9 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
   const resolvedImage = resolveValidCardImageUrl(cd);
   const hydratedCd: CardData = {
     ...cd,
+    pvText: isMagicCard
+      ? (cd.pvText || `DF${basePv}`).replace(/^PV/i, 'DF').replace(/^P\s*V/i, 'DF')
+      : cd.pvText,
     imageUrl: resolvedImage,
     backgroundFill: cd.backgroundFill === 'transparent' ? 'dark' : (cd.backgroundFill || 'dark'),
   };
@@ -233,6 +236,8 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     basePv: basePv,
     pv: basePv,
     maxPv: basePv,
+    df: isMagicCard ? basePv : 0,
+    playerDefenseBonus: isMagicCard ? basePv : 0,
     manaCost: summonCostVal,
     staminaCost: summonCostVal,
     summonCostResource: isMagicCard ? 'mana' : 'stamina',

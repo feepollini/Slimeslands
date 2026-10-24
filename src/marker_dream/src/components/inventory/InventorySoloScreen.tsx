@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type {
   MapProject,
   SavedLevel,
@@ -15,7 +15,6 @@ import {
   Crosshair,
   FolderOpen,
   Trash2,
-  CheckCircle2,
   Coins,
   Gem,
   Plus,
@@ -35,6 +34,7 @@ import {
   getOrCreatePlayerInventory,
   loadInventoryProjects,
   saveInventoryProjectsToStorage,
+  processInventoryFolderFilesToDisk,
 } from '../../utils/inventoryHelpers';
 import { loadSingleLevelSlot } from '../../utils/storage';
 
@@ -100,6 +100,12 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
   const [editingMetaId, setEditingMetaId] = useState<string | null>(null);
   const [editMetaName, setEditMetaName] = useState('');
   const [editMetaDesc, setEditMetaDesc] = useState('');
+
+  // Inputs e estados para Importar Pasta no Editor de Inventários
+  const folderNewProjInputRef = useRef<HTMLInputElement>(null);
+  const folderActiveProjInputRef = useRef<HTMLInputElement>(null);
+  const [isFolderImporting, setIsFolderImporting] = useState(false);
+  const [folderImportStatus, setFolderImportStatus] = useState('');
 
   const activeInvProject = useMemo(
     () =>
@@ -346,6 +352,135 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
     showToast(`✨ Projeto de Inventário "${cleanName}" criado com seu próprio inventário de itens interativos!`);
   };
 
+  // Importar uma Pasta Inteira do computador criando automaticamente um Novo Projeto de Inventário
+  const handleImportFolderAsNewProject = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsFolderImporting(true);
+    setFolderImportStatus('Lendo pasta...');
+
+    try {
+      const { folderName, newAssets, newCatalogItems, newBackpackItems } =
+        await processInventoryFolderFilesToDisk(files, {
+          sourceLabel: 'importação de pasta como projeto',
+          defaultBiomeId: project.biomes?.[0]?.id || 'forest',
+          startingSlotIndex: 0,
+          onProgress: (cur, tot, name) => {
+            setFolderImportStatus(`Disco (${cur}/${tot}): ${name}`);
+          },
+        });
+
+      if (newCatalogItems.length === 0) {
+        showToast('⚠️ Nenhuma imagem válida (.png, .jpg, .webp, .svg) encontrada na pasta.');
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const newId = `inv_proj_folder_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const themeColor =
+        PROJECT_THEME_COLORS[inventoryProjects.length % PROJECT_THEME_COLORS.length];
+
+      const newProj: InventoryProject = {
+        id: newId,
+        name: folderName,
+        description: `Projeto importado da pasta "${folderName}" com ${newCatalogItems.length} itens salvos no disco local.`,
+        themeColor,
+        createdAt: now,
+        updatedAt: now,
+        itemCatalog: newCatalogItems,
+        interactiveAssets: newAssets,
+        playerInventory: {
+          enabled: true,
+          maxSlots: Math.min(60, Math.max(25, newBackpackItems.length)),
+          columns: 5,
+          currencies: { gold: 200, gems: 20 },
+          equippedWeaponId: newBackpackItems.find((i) => i.type === 'weapon')?.id || null,
+          equippedArmorId: newBackpackItems.find((i) => i.type === 'armor')?.id || null,
+          equippedAccessoryId: null,
+          items: newBackpackItems,
+        },
+      };
+
+      const nextList = [newProj, ...inventoryProjects];
+      setInventoryProjects(nextList);
+      saveInventoryProjectsToStorage(nextList);
+      setSelectedInvProjectId(newProj.id);
+
+      const nonItemAssets = (project.galleryAssets || []).filter(
+        (a) =>
+          a.category !== 'Itens de Inventário/Exploração' &&
+          a.category !== 'Itens Interativos' &&
+          !a.id.startsWith('asset-item-')
+      );
+
+      setProject((prev) => ({
+        ...prev,
+        activeInventoryProjectId: newProj.id,
+        savedInventoryProjects: nextList,
+        itemCatalog: newProj.itemCatalog,
+        playerInventory: newProj.playerInventory,
+        galleryAssets: [...newProj.interactiveAssets, ...nonItemAssets],
+      }));
+
+      showToast(
+        `📁 Novo Projeto "${folderName}" criado a partir da pasta com ${newCatalogItems.length} itens no disco local!`
+      );
+    } catch (err) {
+      console.error('Erro ao importar pasta como projeto:', err);
+      showToast('❌ Falha ao importar pasta como projeto de inventário.');
+    } finally {
+      setIsFolderImporting(false);
+      setFolderImportStatus('');
+    }
+  };
+
+  // Importar uma Pasta Inteira diretamente para dentro do Projeto de Inventário Ativo
+  const handleImportFolderIntoActiveProject = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsFolderImporting(true);
+    setFolderImportStatus('Importando pasta p/ projeto ativo...');
+
+    try {
+      const existingBackpack = inventory.items || [];
+      const { folderName, newAssets, newCatalogItems, newBackpackItems } =
+        await processInventoryFolderFilesToDisk(files, {
+          sourceLabel: `pasta "${activeInvProject?.name || 'Inventário'}"`,
+          defaultBiomeId: project.biomes?.[0]?.id || 'forest',
+          startingSlotIndex: existingBackpack.length,
+          onProgress: (cur, tot, name) => {
+            setFolderImportStatus(`Disco (${cur}/${tot}): ${name}`);
+          },
+        });
+
+      if (newCatalogItems.length === 0) {
+        showToast('⚠️ Nenhuma imagem válida (.png, .jpg, .webp, .svg) encontrada na pasta.');
+        return;
+      }
+
+      const combinedBackpack = [...existingBackpack, ...newBackpackItems];
+      const nextPlayerInv = {
+        ...inventory,
+        maxSlots: Math.min(60, Math.max(inventory.maxSlots || 25, combinedBackpack.length)),
+        items: combinedBackpack,
+      };
+
+      handleUpdateProject({
+        galleryAssets: [...newAssets, ...(project.galleryAssets || [])],
+        itemCatalog: [...newCatalogItems, ...(project.itemCatalog || [])],
+        playerInventory: nextPlayerInv,
+      });
+
+      showToast(
+        `📁 Pasta "${folderName}": ${newCatalogItems.length} itens adicionados ao projeto "${activeInvProject?.name}" (Catálogo + Mochila)!`
+      );
+    } catch (err) {
+      console.error('Erro ao importar pasta no projeto ativo:', err);
+      showToast('❌ Falha ao importar pasta no projeto ativo.');
+    } finally {
+      setIsFolderImporting(false);
+      setFolderImportStatus('');
+    }
+  };
+
   // Duplicar Projeto de Inventário
   const handleDuplicateInventoryProject = (proj: InventoryProject) => {
     const copyId = `inv_proj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -449,6 +584,30 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
 
   return (
     <div className="h-screen w-screen bg-zinc-950 text-white flex flex-col overflow-hidden select-none">
+      {/* Inputs ocultos para Importação de Pasta no Editor de Inventários */}
+      <input
+        ref={folderNewProjInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        className="hidden"
+        onChange={async (e) => {
+          await handleImportFolderAsNewProject(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={folderActiveProjInputRef}
+        type="file"
+        multiple
+        {...({ webkitdirectory: '', directory: '' } as any)}
+        className="hidden"
+        onChange={async (e) => {
+          await handleImportFolderIntoActiveProject(e.target.files);
+          e.target.value = '';
+        }}
+      />
+
       {/* Top Technical Accent Line */}
       <div className="w-full h-[2px] flex shrink-0">
         <div className="h-full flex-1 bg-emerald-500" />
@@ -537,6 +696,28 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
             </span>
           </div>
 
+          {isFolderImporting && folderImportStatus && (
+            <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-bold animate-pulse">
+              ⚡ {folderImportStatus}
+            </span>
+          )}
+
+          <button
+            type="button"
+            disabled={isFolderImporting}
+            onClick={() => {
+              if (folderActiveProjInputRef.current) {
+                folderActiveProjInputRef.current.value = '';
+                folderActiveProjInputRef.current.click();
+              }
+            }}
+            className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            title="Importar uma pasta inteira de sprites direto para o Projeto de Inventário ativo"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>Importar Pasta</span>
+          </button>
+
           {activeTestSpawnsCount > 0 && (
             <button
               type="button"
@@ -567,7 +748,7 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* COLUNA 1: LISTA DE PROJETOS DE INVENTÁRIO */}
         <aside className="w-[275px] 2xl:w-[305px] shrink-0 bg-zinc-950 border-r border-zinc-850 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-zinc-850 bg-zinc-900/50 space-y-3">
+          <div className="p-4 border-b border-zinc-850 bg-zinc-900/50 space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FolderKanban className="w-4 h-4 text-emerald-400" />
@@ -581,17 +762,37 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
             </div>
 
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Crie múltiplos projetos e organize em cada um o seu próprio <strong>inventário de itens interativos</strong>, assets PNG e mochila.
+              Crie múltiplos projetos ou <strong>importe uma pasta inteira</strong> para gerar o catálogo, sprites no disco e mochila.
             </p>
 
-            <button
-              type="button"
-              onClick={() => setIsCreatingProject((v) => !v)}
-              className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Novo Projeto de Inventário</span>
-            </button>
+            <div className="grid grid-cols-1 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsCreatingProject((v) => !v)}
+                className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>Novo Projeto de Inventário</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isFolderImporting}
+                onClick={() => {
+                  if (folderNewProjInputRef.current) {
+                    folderNewProjInputRef.current.value = '';
+                    folderNewProjInputRef.current.click();
+                  }
+                }}
+                className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                title="Seleciona uma pasta do seu computador e cria automaticamente um Novo Projeto de Inventário com todos os itens lá dentro"
+              >
+                <FolderOpen className="w-4 h-4 text-amber-400" />
+                <span>
+                  {isFolderImporting ? 'Importando Pasta...' : 'Importar Pasta (Novo Projeto)'}
+                </span>
+              </button>
+            </div>
 
             {/* Formulário Rápido de Criação de Projeto */}
             {isCreatingProject && (
@@ -892,6 +1093,21 @@ export const InventorySoloScreen: React.FC<InventorySoloScreenProps> = ({
             </div>
 
             <div className="flex items-center gap-2 text-xs font-mono">
+              <button
+                type="button"
+                disabled={isFolderImporting}
+                onClick={() => {
+                  if (folderActiveProjInputRef.current) {
+                    folderActiveProjInputRef.current.value = '';
+                    folderActiveProjInputRef.current.click();
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-sans font-bold text-[11px] flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Importar pasta de itens diretamente para este projeto de inventário"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-emerald-400" />
+                <span>+ Importar Pasta</span>
+              </button>
               <span className="px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-300 flex items-center gap-1.5">
                 <Coins className="w-3.5 h-3.5 text-amber-400" />
                 <span className="tabular-nums font-bold">{inventory.currencies.gold}</span>

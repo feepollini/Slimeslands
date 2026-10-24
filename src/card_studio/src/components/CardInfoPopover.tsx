@@ -152,9 +152,9 @@ export const CardInfoPopover: React.FC<CardInfoPopoverProps> = ({
           {isMagic ? (
             <>
               <div className="p-3 text-center">
-                <div className="text-[11px] text-slate-400">Pontos de Vida</div>
-                <div className="text-base font-bold font-mono tabular-nums text-emerald-400 mt-0.5">
-                  {pvVal} PV
+                <div className="text-[11px] text-slate-400">Defesa Extra (PV Player)</div>
+                <div className="text-base font-bold font-mono tabular-nums text-cyan-400 mt-0.5">
+                  🛡️ +{pvVal} DF
                 </div>
               </div>
               <div className="p-3 text-center">

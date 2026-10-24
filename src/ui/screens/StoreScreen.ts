@@ -46,17 +46,35 @@ export class StoreScreen {
         if (raw) localOverride = JSON.parse(raw);
       } catch (_) {}
     }
-    const d: any = customData || localOverride || storeData || {};
+    const baseStore: any = storeData || {};
+    const d: any = customData || (localOverride ? { ...baseStore, ...localOverride } : baseStore);
+    if (!Array.isArray(d.packs) || d.packs.length === 0) {
+      d.packs = Array.isArray(baseStore.packs) ? [...baseStore.packs] : [];
+    }
     this.customTemplates = getMergedGameTemplatesSync(d.templates || []);
     this.boosterDisplayMode = (d.boosterDisplayMode === 'split') ? 'split' : 'carousel';
 
+    const rawOrder = Array.isArray(d.sectionOrder) && d.sectionOrder.length > 0
+      ? [...d.sectionOrder]
+      : ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'];
+    if (!rawOrder.includes('packs')) {
+      const dIdx = rawOrder.indexOf('decks');
+      if (dIdx !== -1) rawOrder.splice(dIdx + 1, 0, 'packs');
+      else rawOrder.push('packs');
+    }
+    if (!rawOrder.includes('packs_split')) {
+      const pIdx = rawOrder.indexOf('packs');
+      if (pIdx !== -1) rawOrder.splice(pIdx + 1, 0, 'packs_split');
+      else rawOrder.push('packs_split');
+    }
+
     this.data = {
-      titles: d.titles || {},
-      banners: (d.banners || []).filter((u: string) => !!u).slice(0, 3),
-      dailyPool: (d.dailyPool || []).filter((o: any) => o && o.card),
-      rare: (d.rare || []).filter((o: any) => o && o.card),
+      titles: { ...(baseStore.titles || {}), ...(d.titles || {}) },
+      banners: (d.banners && d.banners.length > 0 ? d.banners : (baseStore.banners || [])).filter((u: string) => !!u).slice(0, 3),
+      dailyPool: (d.dailyPool && d.dailyPool.length > 0 ? d.dailyPool : (baseStore.dailyPool || [])).filter((o: any) => o && o.card),
+      rare: (d.rare && d.rare.length > 0 ? d.rare : (baseStore.rare || [])).filter((o: any) => o && o.card),
       decks: [
-        ...(d.decks || []),
+        ...(d.decks && d.decks.length > 0 ? d.decks : (baseStore.decks || [])),
         ...getAvailableCustomDecks()
           .filter((cd) => Array.isArray(cd.cards) && cd.cards.length > 0)
           .map((cd) => ({
@@ -70,11 +88,11 @@ export class StoreScreen {
           }))
       ],
       packs: d.packs || [],
-      coinPacks: d.coinPacks || [],
-      gemPacks: d.gemPacks || [],
-      artifacts: (d.artifacts || []).filter((o: any) => o && o.id),
-      sectionOrder: d.sectionOrder || ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'],
-      sectionVisibility: d.sectionVisibility || {},
+      coinPacks: d.coinPacks && d.coinPacks.length > 0 ? d.coinPacks : (baseStore.coinPacks || []),
+      gemPacks: d.gemPacks && d.gemPacks.length > 0 ? d.gemPacks : (baseStore.gemPacks || []),
+      artifacts: (d.artifacts && d.artifacts.length > 0 ? d.artifacts : (baseStore.artifacts || [])).filter((o: any) => o && o.id),
+      sectionOrder: rawOrder,
+      sectionVisibility: { ...(baseStore.sectionVisibility || {}), ...(d.sectionVisibility || {}) },
       deckLayoutMode: d.deckLayoutMode || 'carousel',
       boosterDisplayMode: d.boosterDisplayMode || 'carousel'
     };
@@ -338,57 +356,61 @@ export class StoreScreen {
     }
   };
 
+  private getPackPreviewCards(pack: any): string[] {
+    const out: string[] = [];
+    const pushUnique = (name: string) => {
+      if (name && typeof name === 'string' && !out.includes(name)) {
+        out.push(name);
+      }
+    };
+    if (Array.isArray(pack?.fixedCards)) {
+      pack.fixedCards.forEach(pushUnique);
+    }
+    if (pack?.cardGroups) {
+      (pack.cardGroups.legendary || []).forEach(pushUnique);
+      (pack.cardGroups.rare || []).forEach(pushUnique);
+      (pack.cardGroups.common || []).forEach(pushUnique);
+    }
+    if (out.length === 0) {
+      (this.data.rare || []).slice(0, 4).forEach((o: any) => pushUnique(o.card));
+      (this.data.dailyPool || []).slice(0, 4).forEach((o: any) => pushUnique(o.card));
+    }
+    return out.slice(0, 6);
+  }
+
   private renderBoosterPouchHtml(pack: any, isMain: boolean = true, customWidth?: string): string {
     const styleInfo = this.themeGradients[pack.theme || 'charizard'] || this.themeGradients.charizard;
     const frontImg = pack.customFront;
-    const w = customWidth || (isMain ? '185px' : '140px');
-    const borderColor = '#ff7a00';
-    const borderGlow = 'rgba(255, 122, 0, 0.45)';
+    const w = customWidth || (isMain ? '185px' : '136px');
+    const borderColor = isMain ? styleInfo.border || '#ff9838' : 'rgba(255,255,255,0.28)';
+    const borderGlow = styleInfo.glow || 'rgba(255, 122, 0, 0.45)';
+    const cardsCount = pack.cardsCount || 3;
 
     return `
-      <div class="store-booster-pouch" style="aspect-ratio:1/1.78; width:${w}; border-radius:2px; position:relative; overflow:hidden; background:#0c0d12; border:2px solid ${borderColor}; box-shadow:${isMain ? `0 14px 40px rgba(0,0,0,0.9), 0 0 24px ${borderGlow}` : '0 6px 18px rgba(0,0,0,0.7)'}; display:flex; flex-direction:column; user-select:none; flex-shrink:0;">
-        ${frontImg ? `
-          <div style="width:100%; height:100%; position:relative; overflow:hidden; border-radius:0px; background:#000;">
-            <img src="${frontImg}" alt="${this.esc(pack.name)}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover; display:block; border-radius:0px;" />
-            <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.02) 40%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.3) 100%);"></div>
-          </div>
-        ` : `
-          <!-- Crimp Top -->
-          <div style="height:16px; width:100%; background:repeating-linear-gradient(90deg, #151515 0px, #151515 2px, #3c3c3c 2px, #3c3c3c 4px); border-bottom:1.5px solid rgba(255,255,255,0.2); z-index:3; flex-shrink:0;"></div>
+      <div class="store-booster-pouch ${isMain ? 'is-main' : 'is-peek'}" style="aspect-ratio:1/1.72; width:${w}; border-radius:8px; position:relative; overflow:hidden; background:${styleInfo.bg}; border:2px solid ${borderColor}; box-shadow:${isMain ? `0 14px 32px rgba(0,0,0,0.9), 0 0 22px ${borderGlow}, inset 0 1px 0 rgba(255,255,255,0.35)` : '0 6px 18px rgba(0,0,0,0.75)'}; display:flex; flex-direction:column; user-select:none; flex-shrink:0;">
+        <!-- Top Foil Crimp -->
+        <div style="height:9px; width:100%; background:repeating-linear-gradient(90deg, #141418 0px, #141418 2px, #525260 2px, #525260 4px); border-bottom:1px solid rgba(255,255,255,0.22); z-index:3; flex-shrink:0;"></div>
 
-          <!-- Corpo do Pouch -->
-          <div style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:${styleInfo.bg};">
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:10px; width:100%; height:100%;">
-              <div style="font-size:${isMain ? '3rem' : '2rem'}; filter:drop-shadow(0 4px 10px rgba(0,0,0,0.8));">${styleInfo.icon}</div>
-              <div style="font-size:0.65rem; font-weight:950; letter-spacing:2px; color:#ffd700; text-shadow:0 2px 4px #000; margin-top:6px;">BOOSTER</div>
-              <div style="font-size:0.55rem; color:rgba(255,255,255,0.7); font-weight:700;">${styleInfo.tag}</div>
+        <!-- Corpo do Booster (com fallback visual imediato se customFront não existir no disco) -->
+        <div style="flex:1; width:100%; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:${styleInfo.bg};">
+          <div style="position:absolute; width:130%; height:55%; border-radius:50%; background:radial-gradient(circle, ${styleInfo.glow} 0%, transparent 70%); pointer-events:none;"></div>
+          <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:8px; width:100%; height:100%; position:relative; z-index:1;">
+            <div style="font-size:${isMain ? '2.6rem' : '1.8rem'}; filter:drop-shadow(0 6px 12px rgba(0,0,0,0.85));">${styleInfo.icon}</div>
+            <div style="font-size:0.6rem; font-weight:950; letter-spacing:1.5px; color:#ffd700; text-shadow:0 2px 4px #000; margin-top:4px; line-height:1.15; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${this.esc(pack.name)}</div>
+          </div>
+          ${frontImg ? `
+            <img src="${frontImg}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; z-index:2;" />
+          ` : ''}
+          <div style="position:absolute; inset:0; pointer-events:none; z-index:3; background:linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.03) 38%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.4) 100%);"></div>
+          ${isMain ? `
+            <div style="position:absolute; bottom:6px; right:6px; z-index:4; background:rgba(8,10,16,0.88); border:1px solid ${borderColor}; border-radius:999px; padding:2px 7px; font-size:0.48rem; font-weight:950; color:#ffd76a; letter-spacing:0.5px; box-shadow:0 2px 6px rgba(0,0,0,0.8);">
+              ${cardsCount} CARTAS
             </div>
-            <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.06) 38%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.35) 100%);"></div>
-          </div>
+          ` : ''}
+        </div>
 
-          <!-- Crimp Bottom -->
-          <div style="height:16px; width:100%; background:repeating-linear-gradient(90deg, #151515 0px, #151515 2px, #3c3c3c 2px, #3c3c3c 4px); border-top:1.5px solid rgba(255,255,255,0.2); z-index:3; flex-shrink:0;"></div>
-        `}
-      </div>
-    `;
-  }
-
-  private renderCircularPackSelectors(packs: any[], activeIdx: number): string {
-    return `
-      <div style="display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap;">
-        ${packs.map((p, i) => {
-          const isActive = i === activeIdx;
-          const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
-          return `
-            <button class="store-booster-circle-btn" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
-              ${p.customFront ? `
-                <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-              ` : `
-                <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-              `}
-            </button>
-          `;
-        }).join('')}
+        <!-- Bottom Foil Crimp -->
+        <div style="height:9px; width:100%; background:repeating-linear-gradient(90deg, #141418 0px, #141418 2px, #525260 2px, #525260 4px); border-top:1px solid rgba(255,255,255,0.22); z-index:3; flex-shrink:0;"></div>
       </div>
     `;
   }
@@ -396,153 +418,72 @@ export class StoreScreen {
   private renderBoosterRatesHtml(pack: any, compact: boolean = false): string {
     if (pack.mode === 'special') {
       return `
-        <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:4px; padding:${compact ? '2px 6px' : '3px 10px'}; font-size:${compact ? '0.55rem' : '0.62rem'}; color:#d8b4fe; font-weight:900; letter-spacing:0.5px;">
-          ⭐ ${t('st.specialPool')} (${(pack.fixedCards || []).length} ${t('store2.cards')})
-        </span>
-      `;
-    }
-    const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
-    if (compact) {
-      return `
-        <div style="display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-start; align-items:center;">
-          <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
-          <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
-          <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
-          <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 3}</span>
+        <div style="display:flex; gap:5px; flex-wrap:wrap; justify-content:${compact ? 'flex-start' : 'center'}; align-items:center;">
+          <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:6px; padding:2px 8px; font-size:0.56rem; color:#e9d5ff; font-weight:900;">
+            ⭐ ${t('st.specialPool')} (${(pack.fixedCards || []).length} ${t('store2.cards')})
+          </span>
         </div>
       `;
     }
+    const r = pack.rates || {};
+    const common = r.common ?? 60;
+    const rare = r.rare ?? 20;
+    const epic = r.epic ?? (r.common === 70 && r.rare === 25 ? 0 : 10);
+    const legendary = r.legendary ?? 7;
+    const mythic = r.mythic ?? (r.common === 70 && r.rare === 25 ? 0 : 3);
+    const limited = r.limited ?? 0;
+
+    const pills: { label: string; val: number; color: string; bg: string; border: string }[] = [
+      { label: 'Comum', val: common, color: '#e2e8f0', bg: 'rgba(148,163,184,0.14)', border: 'rgba(148,163,184,0.35)' },
+      { label: 'Rara', val: rare, color: '#38bdf8', bg: 'rgba(56,189,248,0.14)', border: 'rgba(56,189,248,0.4)' },
+      { label: 'Épica', val: epic, color: '#c084fc', bg: 'rgba(192,132,252,0.14)', border: 'rgba(192,132,252,0.4)' },
+      { label: 'Lendária', val: legendary, color: '#fbbf24', bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.45)' },
+      { label: 'Mítica', val: mythic, color: '#f87171', bg: 'rgba(248,113,113,0.15)', border: 'rgba(248,113,113,0.45)' },
+      { label: 'Limitada', val: limited, color: '#2dd4bf', bg: 'rgba(45,212,191,0.15)', border: 'rgba(45,212,191,0.45)' },
+    ].filter((p) => p.val > 0);
+
     return `
-      <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; align-items:center;">
-        <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
-        <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
-        <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
-        <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 3} ${t('st.cardsCount')}</span>
+      <div style="display:flex; gap:4px; flex-wrap:wrap; justify-content:${compact ? 'flex-start' : 'center'}; align-items:center;">
+        ${pills.map((p) => `
+          <span style="background:${p.bg}; border:1px solid ${p.border}; border-radius:5px; padding:2px 6px; font-size:0.54rem; color:${p.color}; font-weight:900; letter-spacing:0.2px; white-space:nowrap;">
+            ${p.label} ${p.val}%
+          </span>
+        `).join('')}
       </div>
     `;
+  }
+
+  private cleanPackLore(desc?: string): string {
+    if (!desc) return '';
+    return desc.replace(/\s*Taxas:.*$/i, '').trim();
   }
 
   private renderBoosterActionBarHtml(activePack: any): string {
     const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
     const unitPrice = Number(activePack.price) || 0;
     const totalPrice = unitPrice * this.boosterQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
+    const btnText =
+      totalPrice === 0
+        ? `ABRIR ${this.boosterQty > 1 ? `${this.boosterQty}x ` : ''}GRÁTIS`
+        : `ABRIR ${this.boosterQty > 1 ? `${this.boosterQty}x ` : ''}· ${curIcon} ${totalPrice}`;
 
     return `
-      <div style="display:flex; align-items:center; justify-content:center; gap:10px; width:100%; max-width:320px; margin:14px auto 0 auto; box-sizing:border-box;">
-        <!-- Botão Quantidade Circular Gamer -->
-        <button id="btn-booster-qty" title="Alternar quantidade" style="width:44px; height:44px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.85rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 12px rgba(255,215,0,0.3); flex-shrink:0; transition:transform 0.1s;">
+      <div class="store-booster-action-bar" style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; max-width:320px; margin:4px auto 0 auto; box-sizing:border-box;">
+        <!-- Botão Quantidade Circular (1x / 3x / 6x / 12x) -->
+        <button id="btn-booster-qty" title="Alternar quantidade (1x, 3x, 6x, 12x)" style="width:40px; height:40px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.8rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(255,215,0,0.3); flex-shrink:0;">
           x${this.boosterQty}
         </button>
 
-        <!-- Cápsula Gamer de Compra / Abertura -->
-        <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:44px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.75rem; letter-spacing:1.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 0 16px rgba(0,180,216,0.4), inset 0 1px 0 rgba(255,255,255,0.3); white-space:nowrap; padding:0 16px;">
-          <span>${btnText}</span>
+        <!-- Cápsula de Compra / Abertura -->
+        <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:40px; border-radius:999px; border:2px solid #38bdf8; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 55%, #023e8a 100%); color:#ffffff; font-weight:950; font-size:0.74rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 4px 16px rgba(0,180,216,0.4), inset 0 1.5px 0 rgba(255,255,255,0.35); white-space:nowrap; padding:0 14px; overflow:hidden;">
+          <span style="overflow:hidden; text-overflow:ellipsis;">✨ ${btnText}</span>
         </button>
-      </div>
-    `;
-  }
-
-  // 1: MODO 1: CARROSSEL HORIZONTAL (CONFORME WIREFRAME DA IMAGEM 2)
-  private renderBoosterCarouselModeHtml(packs: any[], activePack: any, activeIdx: number): string {
-    const prevIdx = (activeIdx - 1 + packs.length) % packs.length;
-    const nextIdx = (activeIdx + 1) % packs.length;
-    const prevPack = packs[prevIdx];
-    const nextPack = packs[nextIdx];
-
-    return `
-      <div style="display:flex; flex-direction:column; align-items:center; width:100%; padding:0 0 16px 0; box-sizing:border-box;">
-        <!-- 1. ACIMA: 3 Círculos seletores dos packs (● ● ●) alinhados ao centro -->
-        ${this.renderCircularPackSelectors(packs, activeIdx)}
-
-        <!-- 2. CENTRO: Carrossel com 3 Retângulos Verticais Rígidos (Esquerdo, Centro, Direito) -->
-        <div style="width:100%; position:relative; overflow:hidden; display:flex; justify-content:center; align-items:center; margin:14px 0; min-height:335px;">
-          ${packs.length > 1 ? `
-            <!-- Booster Anterior (Peeking Esquerdo) -->
-            <div class="store-booster-circle-btn" data-idx="${prevIdx}" title="${this.esc(prevPack.name)}" style="position:absolute; left:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:all 0.2s ease;">
-              ${this.renderBoosterPouchHtml(prevPack, false, '140px')}
-            </div>
-          ` : ''}
-
-          <!-- Booster Central Ativo (Alongado, Quinas Rígidas) -->
-          <div style="z-index:3; transform:scale(1); transition:all 0.2s ease; box-shadow:0 0 30px rgba(0,0,0,0.85);">
-            ${this.renderBoosterPouchHtml(activePack, true, '185px')}
-          </div>
-
-          ${packs.length > 1 ? `
-            <!-- Booster Próximo (Peeking Direito) -->
-            <div class="store-booster-circle-btn" data-idx="${nextIdx}" title="${this.esc(nextPack.name)}" style="position:absolute; right:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:all 0.2s ease;">
-              ${this.renderBoosterPouchHtml(nextPack, false, '140px')}
-            </div>
-          ` : ''}
-        </div>
-
-        <!-- 3. ABAIXO: Título, Taxas e Descrição em texto limpo (sem caixa de fundo) -->
-        <div style="display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; max-width:320px; width:100%; padding:0 8px;">
-          <div style="font-size:1.15rem; font-weight:950; letter-spacing:1.5px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4);">
-            ${this.esc(activePack.name).toUpperCase()}
-          </div>
-          ${this.renderBoosterRatesHtml(activePack)}
-          <div style="font-size:0.72rem; color:rgba(255,255,255,0.7); line-height:1.45; margin-top:2px;">
-            ${this.esc(activePack.desc || '')}
-          </div>
-        </div>
-
-        <!-- 4. ABAIXO: Botão circular quantidade à esquerda + Cápsula de compra à direita -->
-        ${this.renderBoosterActionBarHtml(activePack)}
-      </div>
-    `;
-  }
-
-  // 2: MODO 2: SPLIT LATERAL (CONFORME WIREFRAME DO SEGUNDO MODO)
-  private renderBoosterSplitModeHtml(packs: any[], activePack: any, activeIdx: number): string {
-    const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
-    const unitPrice = Number(activePack.price) || 0;
-    const totalPrice = unitPrice * this.boosterQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
-
-    return `
-      <div style="display:flex; flex-direction:row; align-items:center; justify-content:center; gap:14px; width:100%; padding:4px 0 16px 0; box-sizing:border-box;">
-        <!-- Lado Esquerdo: Booster Alongado com Quinas Rígidas -->
-        <div style="flex-shrink:0;">
-          ${this.renderBoosterPouchHtml(activePack, true, '140px')}
-        </div>
-
-        <!-- Lado Direito: Círculos no topo, Texto no meio, Botões embaixo -->
-        <div style="flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;">
-          <!-- 1. ACIMA: 3 Seletores circulares de packs -->
-          <div style="display:flex; align-items:center; gap:8px;">
-            ${this.renderCircularPackSelectors(packs, activeIdx)}
-          </div>
-
-          <!-- 2. MEIO: Título e Descrição (texto limpo, sem caixa de fundo) -->
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <div style="font-size:1.05rem; font-weight:950; letter-spacing:1px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4); line-height:1.2;">
-              ${this.esc(activePack.name).toUpperCase()}
-            </div>
-            ${this.renderBoosterRatesHtml(activePack)}
-            <div style="font-size:0.68rem; color:rgba(255,255,255,0.7); line-height:1.35; margin-top:2px;">
-              ${this.esc(activePack.desc || '')}
-            </div>
-          </div>
-
-          <!-- 3. EMBAIXO: Botão circular quantidade à esquerda + Cápsula à direita -->
-          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-            <button id="btn-booster-qty" title="Alternar quantidade" style="width:40px; height:40px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.8rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(255,215,0,0.3); flex-shrink:0;">
-              x${this.boosterQty}
-            </button>
-
-            <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:40px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.7rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 14px rgba(0,180,216,0.4); white-space:nowrap; padding:0 12px;">
-              <span>${btnText}</span>
-            </button>
-          </div>
-        </div>
       </div>
     `;
   }
 
   // =========================================================================
-  // MÓDULO 1: CARROSSEL HORIZONTAL DE BOOSTERS (COM ANIMAÇÃO ELEGANTE DE DESLIZAR)
+  // MÓDULO 1: VITRINE PRINCIPAL DE BOOSTERS (CARROSSEL)
   // =========================================================================
   private packBoosterCarouselSectionHtml(): string {
     const allPacks = this.data.packs || [];
@@ -563,66 +504,71 @@ export class StoreScreen {
     const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
     const prevPack = packs[prevIdx];
     const nextPack = packs[nextIdx];
+    const styleInfo = this.themeGradients[activePack.theme || 'charizard'] || this.themeGradients.charizard;
+    const cleanLore = this.cleanPackLore(activePack.desc);
 
     return `
-      <!-- CABEÇALHO LIMPO DA SECÇÃO MÓDULO 1 -->
-      <div style="margin:20px 16px 8px 16px;">
-        ${this.secTitle(this.title('packs', 'PACOTES & BOOSTERS (CARROSSEL)'))}
+      <div style="margin:14px 16px 8px 16px;">
+        ${this.secTitle(this.title('packs', 'PACOTES & BOOSTERS'))}
       </div>
 
-      <div id="store-booster-viewport" style="display:flex; flex-direction:column; align-items:center; width:100%; padding:0 0 16px 0; box-sizing:border-box;">
-        <!-- 1. ACIMA: 3 Círculos seletores dos packs (● ● ●) alinhados ao centro -->
-        <div style="display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          ${packs.map((p: any, i: number) => {
-            const isActive = i === this.boosterActiveIdx;
-            const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
-            return `
-              <button class="store-carousel-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
-                ${p.customFront ? `
-                  <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-                ` : `
-                  <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-                `}
-              </button>
-            `;
-          }).join('')}
-        </div>
+      <div id="store-booster-viewport" class="store-booster-hero-card" style="margin:0 12px 12px 12px; border-radius:16px; border:1.5px solid rgba(255,215,0,0.22); background:radial-gradient(circle at 50% 32%, ${styleInfo.glow} 0%, rgba(15,19,30,0.94) 65%, rgba(8,10,16,0.98) 100%); box-shadow:0 8px 24px rgba(0,0,0,0.65); padding:12px; box-sizing:border-box; overflow:hidden;">
+        <div class="store-booster-hero-grid">
+          <!-- PALCO DO CARROSSEL COM 3 ENVELOPES + SETAS -->
+          <div id="booster-carousel-track" class="store-booster-stage" style="position:relative; display:flex; flex-direction:column; justify-content:center; align-items:center; touch-action:pan-y; padding:4px 0;">
+            <div class="store-booster-stage-inner" style="position:relative; width:100%; display:flex; justify-content:center; align-items:center; min-height:240px;">
+              ${packs.length > 1 ? `
+                <button type="button" id="booster-arrow-prev" class="store-booster-nav-arrow" aria-label="Booster Anterior" style="position:absolute; left:2px; top:50%; transform:translateY(-50%); z-index:5; width:34px; height:34px; border-radius:50%; border:1.5px solid rgba(255,215,0,0.6); background:rgba(8,10,16,0.9); color:#ffd700; font-size:1.15rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,0.7);">‹</button>
 
-        <!-- 2. CENTRO: Pista do Carrossel com deslize elegante (Esquerdo, Centro, Direito) -->
-        <div id="booster-carousel-track" style="width:100%; position:relative; overflow:hidden; display:flex; justify-content:center; align-items:center; margin:8px 0; min-height:335px; touch-action:pan-y;">
-          ${packs.length > 1 ? `
-            <!-- Booster Anterior (Peeking Esquerdo) -->
-            <div id="booster-peek-left" title="${this.esc(prevPack.name)}" style="position:absolute; left:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:opacity 0.2s ease;">
-              ${this.renderBoosterPouchHtml(prevPack, false, '140px')}
+                <div id="booster-peek-left" class="store-booster-peek-left" title="${this.esc(prevPack.name)}" style="position:absolute; left:calc(50% - 125px); top:50%; transform:translateY(-50%) scale(0.82) rotate(-6deg); opacity:0.48; filter:brightness(0.55); cursor:pointer; z-index:1; transition:all 0.25s ease;">
+                  ${this.renderBoosterPouchHtml(prevPack, false, '108px')}
+                </div>
+              ` : ''}
+
+              <!-- Booster Central Ativo -->
+              <div id="booster-center-card" class="store-booster-center-wrap" style="z-index:3; transform:scale(1); transition:transform 0.25s ease; cursor:pointer;" title="Toque para abrir ${this.esc(activePack.name)}">
+                ${this.renderBoosterPouchHtml(activePack, true, '138px')}
+              </div>
+
+              ${packs.length > 1 ? `
+                <div id="booster-peek-right" class="store-booster-peek-right" title="${this.esc(nextPack.name)}" style="position:absolute; right:calc(50% - 125px); top:50%; transform:translateY(-50%) scale(0.82) rotate(6deg); opacity:0.48; filter:brightness(0.55); cursor:pointer; z-index:1; transition:all 0.25s ease;">
+                  ${this.renderBoosterPouchHtml(nextPack, false, '108px')}
+                </div>
+
+                <button type="button" id="booster-arrow-next" class="store-booster-nav-arrow" aria-label="Próximo Booster" style="position:absolute; right:2px; top:50%; transform:translateY(-50%); z-index:5; width:34px; height:34px; border-radius:50%; border:1.5px solid rgba(255,215,0,0.6); background:rgba(8,10,16,0.9); color:#ffd700; font-size:1.15rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,0.7);">›</button>
+              ` : ''}
             </div>
-          ` : ''}
 
-          <!-- Booster Central Ativo (Alongado, Quinas Rígidas) -->
-          <div id="booster-center-card" style="z-index:3; transform:scale(1); box-shadow:0 0 32px rgba(0,0,0,0.9);">
-            ${this.renderBoosterPouchHtml(activePack, true, '185px')}
+            <!-- Indicadores discretos de página (Bolinhas) -->
+            ${packs.length > 1 ? `
+              <div style="display:flex; justify-content:center; align-items:center; gap:6px; margin-top:6px;">
+                ${packs.map((p: any, i: number) => {
+                  const isAct = i === this.boosterActiveIdx;
+                  return `<button type="button" class="store-carousel-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:${isAct ? '20px' : '7px'}; height:7px; border-radius:999px; border:none; background:${isAct ? '#ffd700' : 'rgba(255,255,255,0.25)'}; cursor:pointer; padding:0; transition:all 0.2s;"></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
 
-          ${packs.length > 1 ? `
-            <!-- Booster Próximo (Peeking Direito) -->
-            <div id="booster-peek-right" title="${this.esc(nextPack.name)}" style="position:absolute; right:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:opacity 0.2s ease;">
-              ${this.renderBoosterPouchHtml(nextPack, false, '140px')}
+          <!-- DETALHES COMPACTOS + BOTÃO DE ABERTURA -->
+          <div id="booster-carousel-info" class="store-booster-details" style="display:flex; flex-direction:column; justify-content:center; gap:6px; width:100%; min-width:0; box-sizing:border-box;">
+            <div style="display:flex; flex-direction:column; gap:5px; text-align:center;" class="store-booster-text-block">
+              <div style="font-size:1.02rem; font-weight:950; letter-spacing:1px; color:#ffd76a; text-shadow:0 2px 8px rgba(0,0,0,0.85); line-height:1.2;">
+                ${this.esc(activePack.name).toUpperCase()}
+              </div>
+
+              ${this.renderBoosterRatesHtml(activePack)}
+
+              ${cleanLore ? `
+                <div style="font-size:0.66rem; color:rgba(255,255,255,0.72); line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                  ${this.esc(cleanLore)}
+                </div>
+              ` : ''}
             </div>
-          ` : ''}
-        </div>
 
-        <!-- 3. ABAIXO: Título, Taxas e Descrição em texto limpo com fade -->
-        <div id="booster-carousel-info" style="display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; max-width:320px; width:100%; padding:0 8px;">
-          <div style="font-size:1.15rem; font-weight:950; letter-spacing:1.5px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4);">
-            ${this.esc(activePack.name).toUpperCase()}
-          </div>
-          ${this.renderBoosterRatesHtml(activePack)}
-          <div style="font-size:0.72rem; color:rgba(255,255,255,0.7); line-height:1.45; margin-top:2px;">
-            ${this.esc(activePack.desc || '')}
+            ${this.renderBoosterActionBarHtml(activePack)}
           </div>
         </div>
-
-        <!-- 4. ABAIXO: Botão circular quantidade à esquerda + Cápsula de compra à direita -->
-        ${this.renderBoosterActionBarHtml(activePack)}
       </div>
     `;
   }
@@ -638,7 +584,6 @@ export class StoreScreen {
     if (!wrap) return;
 
     const track = wrap.querySelector('#booster-carousel-track') as HTMLElement | null;
-    const info = wrap.querySelector('#booster-carousel-info') as HTMLElement | null;
 
     let dir = 1;
     if (direction === 'left') dir = -1;
@@ -646,12 +591,11 @@ export class StoreScreen {
     else dir = targetIdx > this.boosterActiveIdx ? 1 : -1;
 
     if (track) {
-      // Elegante deslizar saindo para o lado com GSAP
       gsap.to(track, {
-        x: -dir * 110,
-        opacity: 0.15,
-        scale: 0.94,
-        duration: 0.22,
+        x: -dir * 60,
+        opacity: 0.25,
+        scale: 0.96,
+        duration: 0.16,
         ease: 'power2.in',
         onComplete: () => {
           this.boosterActiveIdx = targetIdx;
@@ -661,14 +605,14 @@ export class StoreScreen {
           const newInfo = container.querySelector('#store-boosters-wrapper #booster-carousel-info') as HTMLElement | null;
           if (newTrack) {
             gsap.fromTo(newTrack,
-              { x: dir * 110, opacity: 0.15, scale: 0.94 },
-              { x: 0, opacity: 1, scale: 1, duration: 0.35, ease: 'power2.out' }
+              { x: dir * 60, opacity: 0.25, scale: 0.96 },
+              { x: 0, opacity: 1, scale: 1, duration: 0.24, ease: 'power2.out' }
             );
           }
           if (newInfo) {
             gsap.fromTo(newInfo,
-              { y: 12, opacity: 0 },
-              { y: 0, opacity: 1, duration: 0.28, ease: 'power2.out' }
+              { y: 6, opacity: 0 },
+              { y: 0, opacity: 1, duration: 0.2, ease: 'power2.out' }
             );
           }
         }
@@ -691,7 +635,6 @@ export class StoreScreen {
     if (!wrap) return;
     const packs = (this.data.packs || []).filter((p: any) => p.published !== false && p.active !== false);
 
-    // Seletores circulares
     wrap.querySelectorAll('.store-carousel-pack-circle').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -702,21 +645,30 @@ export class StoreScreen {
       });
     });
 
-    // Peeking Esquerdo (Desliza para trás)
-    wrap.querySelector('#booster-peek-left')?.addEventListener('click', (e) => {
+    const goPrev = (e: Event) => {
       e.stopPropagation();
       const prevIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
       this.switchBoosterCarousel(container, prevIdx, 'left');
-    });
+    };
+    wrap.querySelector('#booster-peek-left')?.addEventListener('click', goPrev);
+    wrap.querySelector('#booster-arrow-prev')?.addEventListener('click', goPrev);
 
-    // Peeking Direito (Desliza para frente)
-    wrap.querySelector('#booster-peek-right')?.addEventListener('click', (e) => {
+    const goNext = (e: Event) => {
       e.stopPropagation();
       const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
       this.switchBoosterCarousel(container, nextIdx, 'right');
+    };
+    wrap.querySelector('#booster-peek-right')?.addEventListener('click', goNext);
+    wrap.querySelector('#booster-arrow-next')?.addEventListener('click', goNext);
+
+    wrap.querySelector('#booster-center-card')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const activePack = packs[this.boosterActiveIdx] || packs[0];
+      if (activePack) {
+        this.openBoosterModal(container, activePack.id, this.boosterQty);
+      }
     });
 
-    // Gesto de Swipe Touch no Carrossel para Celular
     const track = wrap.querySelector('#booster-carousel-track') as HTMLElement | null;
     if (track) {
       let touchStartX = 0;
@@ -731,11 +683,9 @@ export class StoreScreen {
         const dy = e.changedTouches[0].clientY - touchStartY;
         if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy)) {
           if (dx < 0) {
-            // Swipe esquerda -> próximo
             const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
             this.switchBoosterCarousel(container, nextIdx, 'right');
           } else {
-            // Swipe direita -> anterior
             const prevIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
             this.switchBoosterCarousel(container, prevIdx, 'left');
           }
@@ -743,15 +693,13 @@ export class StoreScreen {
       }, { passive: true });
     }
 
-    // Botão Quantidade Circular (cicla: 1 -> 3 -> 5 -> 10 -> 1)
     wrap.querySelector('#btn-booster-qty')?.addEventListener('click', () => {
-      const opts = [1, 3, 5, 10];
+      const opts = [1, 3, 6, 12];
       const curIdx = opts.indexOf(this.boosterQty);
       this.boosterQty = opts[(curIdx + 1) % opts.length];
       this.updateBoosterCarousel(container);
     });
 
-    // Cápsula de Compra / Abertura em 3D
     wrap.querySelector('#btn-booster-buy-capsule')?.addEventListener('click', (e) => {
       e.stopPropagation();
       const packId = (wrap.querySelector('#btn-booster-buy-capsule') as HTMLElement)?.dataset.packId;
@@ -761,7 +709,7 @@ export class StoreScreen {
   }
 
   // =========================================================================
-  // MÓDULO 2: SPLIT LATERAL DE BOOSTERS (SEÇÃO DEDICADA INDEPENDENTE)
+  // MÓDULO 2: VITRINE SPLIT LATERAL (COMPACTA E SEM POLUIÇÃO VISUAL)
   // =========================================================================
   private packBoosterSplitSectionHtml(): string {
     const allPacks = this.data.packs || [];
@@ -772,62 +720,70 @@ export class StoreScreen {
       this.boosterSplitIdx = 0;
     }
     const activePack = packs[this.boosterSplitIdx] || packs[0];
+    const styleInfo = this.themeGradients[activePack.theme || 'charizard'] || this.themeGradients.charizard;
     const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
     const unitPrice = Number(activePack.price) || 0;
     const totalPrice = unitPrice * this.boosterSplitQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
+    const cleanLore = this.cleanPackLore(activePack.desc);
+    const btnText =
+      totalPrice === 0
+        ? `ABRIR ${this.boosterSplitQty > 1 ? `${this.boosterSplitQty}x ` : ''}GRÁTIS`
+        : `COMPRAR ${this.boosterSplitQty > 1 ? `${this.boosterSplitQty}x ` : ''}· ${curIcon} ${totalPrice}`;
 
     return `
-      <!-- CABEÇALHO DA SECÇÃO MÓDULO 2 (SPLIT) -->
-      <div style="margin:20px 10px 6px 10px;">
-        ${this.secTitle(this.title('packs_split', 'DESTAQUES ESPECIAIS (SPLIT)'))}
+      <div style="margin:16px 16px 8px 16px;">
+        ${this.secTitle(this.title('packs_split', 'DESTAQUES ESPECIAIS'))}
       </div>
 
-      <div id="store-booster-split-body" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:10px; width:100%; max-width:100%; padding:4px 10px 14px 10px; box-sizing:border-box; overflow-x:hidden;">
-        <!-- Lado Esquerdo: Booster Alongado Proporcional ao Mobile -->
-        <div id="booster-split-card-pouch" style="flex-shrink:0;">
-          ${this.renderBoosterPouchHtml(activePack, true, '110px')}
-        </div>
-
-        <!-- Lado Direito: Círculos no topo, Texto no meio, Botões embaixo -->
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; overflow:hidden;">
-          <!-- 1. ACIMA: Seletores circulares de packs -->
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+      <div class="store-split-showcase-card" style="margin:0 12px 12px 12px; border-radius:16px; border:1.5px solid ${styleInfo.border}; background:linear-gradient(135deg, rgba(16,22,36,0.95) 0%, rgba(10,12,20,0.98) 100%); box-shadow:0 8px 24px rgba(0,0,0,0.65); padding:12px; box-sizing:border-box; overflow:hidden;">
+        <!-- Abas Horizontais Compactas (nunca empilha em lista vertical gigante e sem ícone quebrado) -->
+        ${packs.length > 1 ? `
+          <div style="display:flex; align-items:center; gap:6px; overflow-x:auto; flex-wrap:nowrap; padding-bottom:8px; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.08); scrollbar-width:none; -webkit-overflow-scrolling:touch;">
             ${packs.map((p: any, i: number) => {
               const isActive = i === this.boosterSplitIdx;
-              const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
+              const pStyle = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
+              const shortName = String(p.name || '').replace(/^Booster\s+/i, '');
               return `
-                <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:28px; height:28px; border-radius:50%; border:${isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.1)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 10px rgba(56,189,248,0.7)' : '0 2px 4px rgba(0,0,0,0.4)'}; transition:all 0.15s ease; flex-shrink:0;">
-                  ${p.customFront ? `
-                    <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-                  ` : `
-                    <span style="font-size:0.85rem; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-                  `}
+                <button type="button" class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="height:28px; border-radius:8px; border:${isActive ? `1.5px solid ${pStyle.border}` : '1px solid rgba(255,255,255,0.14)'}; background:${isActive ? 'rgba(255,215,0,0.16)' : 'rgba(255,255,255,0.04)'}; cursor:pointer; padding:0 10px; display:flex; align-items:center; gap:5px; flex-shrink:0; transition:all 0.15s ease;">
+                  <span style="font-size:0.72rem;">${pStyle.icon}</span>
+                  <span style="font-size:0.6rem; font-weight:900; color:${isActive ? '#ffd76a' : '#cbd5e1'}; white-space:nowrap;">
+                    ${this.esc(shortName)}
+                  </span>
                 </button>
               `;
             }).join('')}
           </div>
+        ` : ''}
 
-          <!-- 2. MEIO: Título e Descrição (texto limpo, sem estourar laterais) -->
-          <div id="booster-split-info-area" style="display:flex; flex-direction:column; gap:3px; min-width:0; overflow:hidden;">
-            <div style="font-size:0.85rem; font-weight:950; letter-spacing:0.5px; color:#ffd76a; text-shadow:0 0 8px rgba(255,215,0,0.4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-              ${this.esc(activePack.name).toUpperCase()}
-            </div>
-            ${this.renderBoosterRatesHtml(activePack, true)}
-            <div style="font-size:0.6rem; color:rgba(255,255,255,0.7); line-height:1.25; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis;">
-              ${this.esc(activePack.desc || '')}
-            </div>
+        <div id="store-booster-split-body" class="store-split-responsive-row">
+          <!-- Lado Esquerdo: Booster em Destaque -->
+          <div id="booster-split-card-pouch" style="flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer;" title="Toque para abrir ${this.esc(activePack.name)}">
+            ${this.renderBoosterPouchHtml(activePack, true, '104px')}
           </div>
 
-          <!-- 3. EMBAIXO: Botão circular quantidade + Cápsula de compra sem estourar tela -->
-          <div style="display:flex; align-items:center; gap:6px; margin-top:2px; width:100%; min-width:0;">
-            <button id="btn-booster-split-qty" title="Alternar quantidade" style="width:32px; height:32px; border-radius:50%; border:1.5px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.75rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(255,215,0,0.3); flex-shrink:0;">
-              x${this.boosterSplitQty}
-            </button>
+          <!-- Lado Direito: Título, Todas as Raridades, Lore e Compra -->
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; overflow:hidden;">
+            <div style="font-size:0.92rem; font-weight:950; letter-spacing:0.6px; color:#ffd76a; text-shadow:0 2px 6px rgba(0,0,0,0.8); line-height:1.2;">
+              ${this.esc(activePack.name).toUpperCase()}
+            </div>
 
-            <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:34px; border-radius:999px; border:1.5px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.65rem; letter-spacing:0.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 0 10px rgba(0,180,216,0.35); white-space:nowrap; padding:0 8px; overflow:hidden;">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${btnText}</span>
-            </button>
+            ${this.renderBoosterRatesHtml(activePack, true)}
+
+            ${cleanLore ? `
+              <div style="font-size:0.64rem; color:rgba(255,255,255,0.72); line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+                ${this.esc(cleanLore)}
+              </div>
+            ` : ''}
+
+            <div style="display:flex; align-items:center; gap:8px; margin-top:4px; width:100%; min-width:0;">
+              <button id="btn-booster-split-qty" title="Alternar quantidade" style="width:36px; height:36px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.76rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(255,215,0,0.3); flex-shrink:0;">
+                x${this.boosterSplitQty}
+              </button>
+
+              <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:36px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.68rem; letter-spacing:0.6px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px; box-shadow:0 4px 12px rgba(0,180,216,0.4); white-space:nowrap; padding:0 10px; overflow:hidden;">
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">⚡ ${btnText}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -837,6 +793,7 @@ export class StoreScreen {
   private bindBoosterSplit(container: HTMLElement) {
     const wrap = container.querySelector('#store-boosters-split-wrapper');
     if (!wrap) return;
+    const packs = (this.data.packs || []).filter((p: any) => p.published !== false && p.active !== false);
 
     wrap.querySelectorAll('.store-split-pack-circle').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -844,7 +801,6 @@ export class StoreScreen {
         const idx = parseInt((btn as HTMLElement).dataset.idx || '0');
         if (!isNaN(idx) && idx !== this.boosterSplitIdx) {
           const pouch = wrap.querySelector('#booster-split-card-pouch') as HTMLElement | null;
-          const info = wrap.querySelector('#booster-split-info-area') as HTMLElement | null;
           if (pouch) {
             gsap.to(pouch, { opacity: 0.2, scale: 0.95, duration: 0.15, onComplete: () => {
               this.boosterSplitIdx = idx;
@@ -860,8 +816,16 @@ export class StoreScreen {
       });
     });
 
+    wrap.querySelector('#booster-split-card-pouch')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const activePack = packs[this.boosterSplitIdx] || packs[0];
+      if (activePack) {
+        this.openBoosterModal(container, activePack.id, this.boosterSplitQty);
+      }
+    });
+
     wrap.querySelector('#btn-booster-split-qty')?.addEventListener('click', () => {
-      const opts = [1, 3, 5, 10];
+      const opts = [1, 3, 6, 12];
       const curIdx = opts.indexOf(this.boosterSplitQty);
       this.boosterSplitQty = opts[(curIdx + 1) % opts.length];
       this.updateBoosterSplit(container);
@@ -1090,6 +1054,95 @@ export class StoreScreen {
       .store-buy:not(:disabled):hover { filter: brightness(1.12); }
       .store-buy:not(:disabled):active { transform: scale(0.93); }
       .store-dot { transition: background 0.3s ease, transform 0.3s ease; }
+      .store-booster-pouch:hover { transform: translateY(-3px) scale(1.02); }
+      .store-booster-preview-card:hover { transform: translateY(-2px) scale(1.04); border-color: #ffd700 !important; }
+      .store-booster-nav-arrow:hover { filter: brightness(1.2); transform: scale(1.06); }
+      .store-booster-nav-arrow:active { transform: scale(0.92); }
+
+      /* =========================================================
+         RESPONSIVO MOBILE / WEB — RETRATO E PAISAGEM (BOOSTERS)
+         ========================================================= */
+      .store-booster-hero-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .store-booster-stage {
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .store-booster-details {
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .store-split-responsive-row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      /* Mobile Paisagem (Altura reduzida + Barra Lateral Esquerda aberta) */
+      @media (orientation: landscape) and (max-height: 580px) {
+        .store-booster-hero-card {
+          padding: 8px 10px !important;
+          margin: 0 10px 10px 10px !important;
+        }
+        .store-booster-hero-grid {
+          display: grid;
+          grid-template-columns: 156px minmax(0, 1fr);
+          align-items: center;
+          gap: 12px;
+        }
+        .store-booster-stage-inner {
+          min-height: 165px !important;
+        }
+        .store-booster-center-wrap .store-booster-pouch {
+          width: 92px !important;
+        }
+        .store-booster-peek-left,
+        .store-booster-peek-right {
+          display: none !important;
+        }
+        .store-booster-text-block {
+          text-align: left !important;
+        }
+        .store-booster-text-block > div {
+          justify-content: flex-start !important;
+        }
+        .store-booster-action-bar {
+          margin: 4px 0 0 0 !important;
+          max-width: 100% !important;
+        }
+      }
+
+      /* Web / Tablet Largo */
+      @media (min-width: 860px) and (min-height: 581px) {
+        .store-booster-hero-grid {
+          display: grid;
+          grid-template-columns: 270px minmax(0, 1fr);
+          align-items: center;
+          gap: 18px;
+          padding: 4px 10px;
+        }
+        .store-booster-text-block {
+          text-align: left !important;
+        }
+        .store-booster-text-block > div {
+          justify-content: flex-start !important;
+        }
+        .store-booster-action-bar {
+          margin: 6px 0 0 0 !important;
+        }
+      }
     </style>
     `;
     this.bind(container);

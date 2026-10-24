@@ -87,6 +87,58 @@ export const LoreMagicTab: React.FC<Props> = ({ card, onChange }) => {
         </div>
       </div>
 
+      {/* Bônus de Defesa Extra (DF) para Cartas de Magia */}
+      {card.entityType === 'Magia' && (
+        <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-500/40 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-cyan-400" />
+              Defesa Extra da Magia (DF → PV do Player)
+            </span>
+            <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40">
+              {(card.pvText || 'DF300').replace(/^PV/i, 'DF')}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-snug">
+            Define quanto de <strong>Defesa Extra (DF)</strong> esta magia (passiva ou ativa) soma diretamente ao PV do Player.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={9999}
+              step={50}
+              value={card.pvNumber ?? (parseInt((card.pvText || '').replace(/\D/g, ''), 10) || 300)}
+              onChange={(e) => {
+                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                onChange({
+                  pvNumber: val,
+                  pvText: `DF${val}`,
+                });
+              }}
+              className="w-28 px-3 py-1.5 rounded-lg bg-slate-950 border border-cyan-500/40 text-sm font-mono font-bold text-cyan-300 focus:outline-none focus:border-cyan-400"
+            />
+            <div className="flex items-center gap-1 flex-wrap">
+              {[200, 300, 500, 750, 1000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      pvNumber: preset,
+                      pvText: `DF${preset}`,
+                    })
+                  }
+                  className="px-2 py-1 rounded bg-slate-900 hover:bg-cyan-900/50 border border-slate-700 hover:border-cyan-400/60 text-[10px] font-mono font-bold text-cyan-200 cursor-pointer"
+                >
+                  +{preset} DF
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Seletor Direto de Passivas / Ativas da Forja */}
       <div className="p-3.5 rounded-xl bg-slate-900/80 border border-purple-500/30 space-y-3">
         <div className="flex items-center justify-between">

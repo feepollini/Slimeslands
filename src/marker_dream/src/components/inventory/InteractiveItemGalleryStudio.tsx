@@ -40,6 +40,7 @@ import {
   ITEM_CURRENCIES_METADATA,
   getCurrencyMeta,
   resolveItemStateTags,
+  processInventoryFolderFilesToDisk,
 } from '../../utils/inventoryHelpers';
 import { InventoryManagerStudio } from './InventoryManagerStudio';
 
@@ -93,6 +94,8 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
 
   const [mainSubTab, setMainSubTab] = useState<'acervo' | 'test_spawn' | 'catalogo' | 'mochila'>(initialTab);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgressLabel, setImportProgressLabel] = useState('');
+  const [alsoAddToBackpackOnImport, setAlsoAddToBackpackOnImport] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStateTagFilter, setActiveStateTagFilter] = useState<ItemStateTag | 'all'>('all');
@@ -223,83 +226,71 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
     };
   };
 
-  // Processa lista de arquivos (de Pasta, Multi-PNG ou Drag & Drop) com auto-registro em massa
+  // Processa lista de arquivos (de Pasta, Multi-PNG ou Drag & Drop) com auto-registro em massa no Disco Local
   const processBulkFilesImport = async (files: FileList | File[], sourceLabel: string) => {
     if (!files || files.length === 0) return;
 
     setIsImporting(true);
-    const newAssets: GalleryAsset[] = [];
-    const newCatalogItems: InventoryItemDefinition[] = [];
+    setImportProgressLabel('Iniciando importação para o disco...');
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg)$/i.test(file.name);
-      if (!isImg) continue;
-
-      try {
-        const { dataUrl, width, height } = await readUploadedImage(file);
-        const cleanName = file.name.replace(/\.[^/.]+$/, '').trim() || `Item #${i + 1}`;
-        const assetId = `asset-item-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
-
-        const asset: GalleryAsset = {
-          id: assetId,
-          name: cleanName,
-          dataUrl,
-          width,
-          height,
-          category: 'Itens de Inventário/Exploração',
-          createdAt: new Date().toISOString(),
-          isPersistentPhaseAsset: true,
-        };
-
-        const catalogItem: InventoryItemDefinition = {
-          id: `item-${assetId}`,
-          name: cleanName,
-          iconPng: dataUrl,
-          iconEmoji: '📦',
-          shortDescription: `Item interativo auto-registrado via ${sourceLabel}.`,
-          category: 'collectible',
-          rarity: 'common',
-          stackable: true,
-          maxStack: 99,
-          buyPrice: 50,
-          sellPrice: 25,
-          currencyType: 'gold',
-          stateTags: ['collectible', 'storable', 'tradable', 'buyable'],
-          naturalBiomeSpawn: {
-            enabled: false,
-            biomeIds: project.biomes?.[0]?.id ? [project.biomes[0].id] : ['forest'],
-            spawnDensityPerBiome: 3,
-            spawnChancePercent: 80,
-            avoidPaths: true,
+    try {
+      const existingBackpackItems = playerInventory.items || [];
+      const { folderName, newAssets, newCatalogItems, newBackpackItems } =
+        await processInventoryFolderFilesToDisk(files, {
+          sourceLabel,
+          defaultBiomeId: project.biomes?.[0]?.id || 'forest',
+          startingSlotIndex: existingBackpackItems.length,
+          onProgress: (cur, tot, name) => {
+            setImportProgressLabel(`Salvando no disco (${cur}/${tot}): ${name}`);
           },
-          usableActions: ['use', 'inspect', 'drop'],
-          consumableEffect: { hpRestore: 20, manaRestore: 0 },
-          equipmentStats: { slot: 'weapon', attack: 10, defense: 5, speed: 0 },
+        });
+
+      if (newAssets.length > 0) {
+        const existingAssets = project.galleryAssets || [];
+        const existingCatalog = project.itemCatalog || [];
+
+        const updates: Partial<MapProject> = {
+          galleryAssets: [...newAssets, ...existingAssets],
+          itemCatalog: [...newCatalogItems, ...existingCatalog],
         };
 
-        newAssets.push(asset);
-        newCatalogItems.push(catalogItem);
-      } catch (err) {
-        console.warn('Erro ao importar arquivo em massa:', file.name, err);
+        if (alsoAddToBackpackOnImport && newBackpackItems.length > 0) {
+          const combinedBackpack = [...existingBackpackItems, ...newBackpackItems];
+          const neededSlots = Math.min(
+            60,
+            Math.max(playerInventory.maxSlots || 25, combinedBackpack.length)
+          );
+          const updatedInv: PlayerInventoryConfig = {
+            ...playerInventory,
+            maxSlots: neededSlots,
+            items: combinedBackpack,
+          };
+          updates.playerInventory = updatedInv;
+          if (project.player) {
+            updates.player = {
+              ...project.player,
+              inventory: updatedInv,
+            };
+          }
+        }
+
+        onUpdateProject(updates);
+
+        showToast(
+          `📁 Pasta "${folderName}": ${newAssets.length} itens salvos no disco local e auto-registrados no Catálogo${
+            alsoAddToBackpackOnImport ? ' & Mochila' : ''
+          }!`
+        );
+      } else {
+        showToast('⚠️ Nenhuma imagem PNG/JPG/WebP válida encontrada na seleção.');
       }
+    } catch (err) {
+      console.error('Erro na importação em massa:', err);
+      showToast('❌ Falha ao processar importação de pasta.');
+    } finally {
+      setIsImporting(false);
+      setImportProgressLabel('');
     }
-
-    if (newAssets.length > 0) {
-      const existingAssets = project.galleryAssets || [];
-      const existingCatalog = project.itemCatalog || [];
-
-      onUpdateProject({
-        galleryAssets: [...newAssets, ...existingAssets],
-        itemCatalog: [...newCatalogItems, ...existingCatalog],
-      });
-
-      showToast(`📦 ${newAssets.length} itens importados em massa e auto-registrados no projeto!`);
-    } else {
-      showToast('⚠️ Nenhuma imagem PNG/JPG/WebP válida encontrada na seleção.');
-    }
-
-    setIsImporting(false);
   };
 
   // 1. IMPORTAÇÃO DE PASTA LOCAL COMPLETA
@@ -1265,7 +1256,7 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
           const f = e.target.files?.[0];
           if (f && editingItem) {
             try {
-              const res = await readUploadedImage(f);
+              const res = await readUploadedImage(f, 'hud');
               setEditingItem({ ...editingItem, iconPng: res.dataUrl });
             } catch (err) {
               console.error(err);
@@ -1307,15 +1298,27 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
           </div>
           <div>
             <span className="text-xs font-extrabold text-white block">
-              Importação em Massa de Pastas &amp; Itens PNG (Auto-Registro com Tags de Estado)
+              Importar Pasta de Itens &amp; PNGs em Massa (Auto-Classificação + Disco Local)
             </span>
             <span className="text-[11px] text-zinc-400 block">
-              Arraste vários PNGs aqui ou importe uma pasta inteira para registrar itens com Ficha Retrátil e Pop-up Avançado.
+              {isImporting && importProgressLabel
+                ? `⚡ ${importProgressLabel}`
+                : 'Importe uma pasta inteira (ou subpastas de armas/poções/armaduras) direto para /public/assets/engine/hud/.'}
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={alsoAddToBackpackOnImport}
+              onChange={(e) => setAlsoAddToBackpackOnImport(e.target.checked)}
+              className="accent-emerald-500 rounded cursor-pointer"
+            />
+            <span>+ Enviar p/ Mochila</span>
+          </label>
+
           <button
             type="button"
             onClick={handleConnectFolder}
@@ -1323,7 +1326,7 @@ export const InteractiveItemGalleryStudio: React.FC<Props> = ({
             className="py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>Importar Pasta Inteira</span>
+            <span>{isImporting ? 'Importando Pasta...' : 'Importar Pasta Inteira'}</span>
           </button>
 
           <button

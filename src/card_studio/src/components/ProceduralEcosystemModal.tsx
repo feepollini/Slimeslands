@@ -440,72 +440,166 @@ export const ProceduralEcosystemModal: React.FC<ProceduralEcosystemModalProps> =
                 </div>
               </div>
 
-              {/* Booster Packs Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {boosterModels.map((booster) => {
+              {/* Booster Packs Grid (Responsivo Mobile/Web Retrato & Paisagem) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {boosterModels.map((booster, bIdx) => {
                   const stock = boosterStock[booster.id] ?? 0;
                   const price = booster.priceCoins ?? 150;
                   const isSelected = activeBoosterId === booster.id;
-                  const eligibleCount = getEligibleMatricesForPack(
+                  const eligibleCards = getEligibleMatricesForPack(
                     booster,
                     matrixCards,
                     balanceTables
-                  ).length;
+                  );
+                  const eligibleCount = eligibleCards.length;
+                  const previewSamples = eligibleCards.slice(0, 4);
+                  const coverCard = eligibleCards[0];
+                  const palette = [
+                    { grad: 'from-amber-600/30 via-orange-950/60 to-slate-950', border: 'border-amber-500/50', glow: 'shadow-amber-500/20', badge: 'text-amber-300 bg-amber-950/70 border-amber-500/40' },
+                    { grad: 'from-sky-600/30 via-indigo-950/60 to-slate-950', border: 'border-sky-500/50', glow: 'shadow-sky-500/20', badge: 'text-sky-300 bg-sky-950/70 border-sky-500/40' },
+                    { grad: 'from-purple-600/30 via-fuchsia-950/60 to-slate-950', border: 'border-purple-500/50', glow: 'shadow-purple-500/20', badge: 'text-purple-300 bg-purple-950/70 border-purple-500/40' },
+                  ][bIdx % 3];
 
                   return (
                     <div
                       key={booster.id}
                       onClick={() => setActiveBoosterId(booster.id)}
-                      className={`relative rounded-2xl p-4 border transition-all cursor-pointer flex flex-col justify-between ${
+                      className={`relative rounded-2xl p-4 border transition-all cursor-pointer flex flex-col justify-between overflow-hidden ${
                         isSelected
                           ? 'bg-[#141A28] border-amber-400 ring-2 ring-amber-400/40 shadow-xl'
                           : 'bg-[#101420] border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      {/* Top Badges */}
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                            {booster.themeLabel || 'Geral'}
-                          </span>
-                          <span className="text-xs font-bold text-amber-300 font-mono">
-                            {stock > 0 ? `${stock} em estoque` : `${price} Moedas`}
-                          </span>
+                      {/* Top Content: Side-by-Side Visual Pouch + Info */}
+                      <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
+                        {/* Visual Booster Foil Pack Mock */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenBoosterDirect(booster);
+                          }}
+                          title="Clique no pacote para abrir imediatamente"
+                          className={`w-28 sm:w-24 shrink-0 aspect-[9/13] rounded-xl border-2 ${palette.border} bg-gradient-to-b ${palette.grad} shadow-lg ${palette.glow} flex flex-col justify-between overflow-hidden relative group hover:scale-105 transition-transform`}
+                        >
+                          {/* Top Foil Crimp */}
+                          <div className="h-2.5 w-full bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.28)_0px,rgba(255,255,255,0.28)_2px,rgba(0,0,0,0.4)_2px,rgba(0,0,0,0.4)_4px)] border-b border-white/20 z-10" />
+
+                          {/* Cover Art or Icon */}
+                          {coverCard?.artUrl ? (
+                            <img
+                              src={coverCard.artUrl}
+                              alt={booster.name}
+                              className="absolute inset-0 w-full h-full object-cover opacity-55 group-hover:opacity-75 transition-opacity"
+                            />
+                          ) : null}
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/35 to-transparent" />
+
+                          {/* Pack Center Emblem */}
+                          <div className="relative z-10 flex flex-col items-center justify-center px-1.5 text-center my-auto">
+                            <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-black/70 border border-white/20 text-amber-300 mb-1">
+                              9 CARTAS
+                            </span>
+                            <span className="text-[10px] font-extrabold text-white leading-tight line-clamp-2 drop-shadow">
+                              {booster.name}
+                            </span>
+                          </div>
+
+                          {/* Bottom Foil Crimp */}
+                          <div className="h-2 w-full bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.28)_0px,rgba(255,255,255,0.28)_2px,rgba(0,0,0,0.4)_2px,rgba(0,0,0,0.4)_4px)] border-t border-white/20 z-10" />
                         </div>
 
-                        <h3 className="text-base font-extrabold text-white">
-                          {booster.name}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                          {booster.description}
-                        </p>
+                        {/* Pack Details */}
+                        <div className="flex-1 min-w-0 w-full">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${palette.badge}`}>
+                              {booster.themeLabel || 'Geral'}
+                            </span>
+                            <span className="text-xs font-extrabold text-amber-300 font-mono bg-amber-950/50 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                              {stock > 0 ? `📦 ${stock} em estoque` : `🪙 ${price}`}
+                            </span>
+                          </div>
 
-                        {/* Filter Badges Preview */}
-                        <div className="mt-3 flex items-center gap-1 flex-wrap text-[10px]">
-                          {booster.filters?.biomes && booster.filters.biomes.length > 0 && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-semibold">
-                              Bioma: {booster.filters.biomes.join(', ')}
-                            </span>
-                          )}
-                          {booster.filters?.families && booster.filters.families.length > 0 && (
+                          <h3 className="text-base font-extrabold text-white truncate">
+                            {booster.name}
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
+                            {booster.description}
+                          </p>
+
+                          {/* Rarity Slot Breakdown Pills */}
+                          <div className="mt-2 flex items-center gap-1 flex-wrap text-[9px] font-bold">
                             <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                              {booster.filters.families.join(', ')}
+                              4 Comuns
                             </span>
-                          )}
-                          {booster.filters?.collections &&
-                            booster.filters.collections.length > 0 && (
-                              <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-300">
-                                {booster.filters.collections.join(', ')}
+                            <span className="px-1.5 py-0.5 rounded bg-sky-950/60 border border-sky-500/30 text-sky-300">
+                              2 Raras
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/30 text-purple-300">
+                              2 Magias
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-500/40 text-amber-300">
+                              1★ Rank A/S
+                            </span>
+                          </div>
+
+                          {/* Filter Badges Preview */}
+                          <div className="mt-2 flex items-center gap-1 flex-wrap text-[10px]">
+                            {booster.filters?.biomes && booster.filters.biomes.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-semibold">
+                                🌍 {booster.filters.biomes.join(', ')}
                               </span>
                             )}
-                          <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 font-mono">
-                            {eligibleCount} matrizes elegíveis
-                          </span>
+                            {booster.filters?.families && booster.filters.families.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                                🧬 {booster.filters.families.join(', ')}
+                              </span>
+                            )}
+                            {booster.filters?.collections &&
+                              booster.filters.collections.length > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-300">
+                                  🎴 {booster.filters.collections.join(', ')}
+                                </span>
+                              )}
+                            <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-400 font-mono">
+                              {eligibleCount} matrizes
+                            </span>
+                          </div>
                         </div>
                       </div>
 
+                      {/* Mini Preview Strip of Eligible Cards */}
+                      {previewSamples.length > 0 && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-800/70 flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Possíveis Drops:
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {previewSamples.map((c) => (
+                              <div
+                                key={c.id}
+                                title={`${c.name} (${c.biome || 'Sem Bioma'})`}
+                                className="w-7 h-9 rounded border border-slate-700 bg-slate-900 overflow-hidden shrink-0"
+                              >
+                                {c.artUrl ? (
+                                  <img src={c.artUrl} alt={c.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-500">
+                                    🃏
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {eligibleCount > 4 && (
+                              <span className="text-[10px] font-mono font-bold text-slate-400 pl-0.5">
+                                +{eligibleCount - 4}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Action Buttons for this Booster */}
-                      <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center gap-2">
+                      <div className="mt-3 pt-3 border-t border-slate-800/80 flex items-center gap-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

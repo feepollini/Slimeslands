@@ -133,7 +133,9 @@ export const HeaderSidesTab: React.FC<HeaderSidesTabProps> = ({
       <div className="pt-3 border-t border-slate-800/80 space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-semibold text-slate-300">
-            Aba Lateral Esquerda (Pontos de Vida)
+            {activeCard.entityType === 'Magia'
+              ? '🛡️ Aba Lateral Esquerda (DF — Defesa Extra p/ PV do Player)'
+              : 'Aba Lateral Esquerda (Pontos de Vida - PV)'}
           </h4>
           <button
             onClick={() =>
@@ -148,25 +150,57 @@ export const HeaderSidesTab: React.FC<HeaderSidesTabProps> = ({
                 : 'bg-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
-            {activeCard.isPvChromatic ? 'PV Cromático ON' : 'PV Cromático (Opcional)'}
+            {activeCard.isPvChromatic
+              ? `${activeCard.entityType === 'Magia' ? 'DF' : 'PV'} Cromático ON`
+              : `${activeCard.entityType === 'Magia' ? 'DF' : 'PV'} Cromático (Opcional)`}
           </button>
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">
-            Texto Vertical Esquerdo (Ex: PV500)
+            {activeCard.entityType === 'Magia'
+              ? 'Texto Vertical Esquerdo (Ex: DF500 — Entra como Defesa Extra no PV do Player)'
+              : 'Texto Vertical Esquerdo (Ex: PV500)'}
           </label>
           <input
             type="text"
             maxLength={8}
-            value={activeCard.pvText}
-            onChange={(e) =>
+            value={
+              activeCard.entityType === 'Magia'
+                ? (activeCard.pvText || 'DF300').replace(/^PV/i, 'DF')
+                : activeCard.pvText
+            }
+            onChange={(e) => {
+              const rawVal = e.target.value.toUpperCase();
+              const numVal = parseInt(rawVal.replace(/\D/g, ''), 10);
               updateActiveCard((prev) => ({
                 ...prev,
-                pvText: e.target.value.toUpperCase(),
-              }))
-            }
+                pvText: rawVal,
+                ...( !isNaN(numVal) && numVal > 0 ? { pvNumber: numVal } : {} ),
+              }));
+            }}
             className="w-full px-3.5 py-2 rounded-lg bg-[#121521] border border-slate-800 text-sm font-mono text-white focus:outline-none focus:border-red-500"
           />
+          {activeCard.entityType === 'Magia' && (
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              <span className="text-[10px] text-cyan-300 font-semibold">Presets DF:</span>
+              {[200, 350, 500, 750, 1000].map((dfVal) => (
+                <button
+                  key={dfVal}
+                  type="button"
+                  onClick={() =>
+                    updateActiveCard((prev) => ({
+                      ...prev,
+                      pvNumber: dfVal,
+                      pvText: `DF${dfVal}`,
+                    }))
+                  }
+                  className="px-2 py-0.5 rounded bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/40 text-[10px] font-mono font-bold text-cyan-200 cursor-pointer"
+                >
+                  +DF{dfVal}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

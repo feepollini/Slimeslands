@@ -3,12 +3,18 @@ import type {
   PlayerInventoryConfig,
   PlayerInventoryItem,
   InventoryItemDefinition,
+  InventoryItemCategory,
+  InventoryItemRarity,
+  InventoryItemAction,
   InventoryProject,
   ItemStateTag,
   ItemCurrencyType,
   MarkerMotionLayer,
   PlayerConfig,
+  GalleryAsset,
 } from '../types/map';
+import { readUploadedImage } from './tileGenerator';
+import { dehydrateObjectAssetsToDisk } from '../../../core/DiskAssetEngine';
 
 export const INVENTORY_PROJECTS_STORAGE_KEY = 'marker_dream_inventory_projects_v1';
 
@@ -732,6 +738,15 @@ export function saveInventoryProjectsToStorage(projects: InventoryProject[]): vo
       console.warn('Erro ao salvar projetos de inventário no localStorage:', e);
     }
   }
+  dehydrateObjectAssetsToDisk(projects, 'items')
+    .then((cleanProjects) =>
+      fetch('/api/save-engine-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: INVENTORY_PROJECTS_STORAGE_KEY, data: cleanProjects }),
+      })
+    )
+    .catch(() => {});
 }
 
 export function getOrCreatePlayerInventory(project: MapProject): PlayerInventoryConfig {
@@ -1056,4 +1071,356 @@ export function buildOrUpdateMotionCatalogItem(
 
   return { updatedCatalog, itemDef };
 }
+
+/**
+ * Classifica inteligentemente um item importado de pasta pelo nome do arquivo e subpasta.
+ */
+function inferInventoryItemMetaFromPath(
+  rawFileName: string,
+  relativePath: string,
+  overrideCategory?: InventoryItemCategory | 'auto',
+  overrideRarity?: InventoryItemRarity | 'auto'
+): {
+  cleanName: string;
+  category: InventoryItemCategory;
+  rarity: InventoryItemRarity;
+  emoji: string;
+  stateTags: ItemStateTag[];
+  usableActions: InventoryItemAction[];
+  stackable: boolean;
+  maxStack: number;
+  buyPrice: number;
+  sellPrice: number;
+  attack?: number;
+  defense?: number;
+  hpRestore?: number;
+  manaRestore?: number;
+} {
+  const baseNoExt = rawFileName.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+  const cleanName = baseNoExt
+    ? baseNoExt.charAt(0).toUpperCase() + baseNoExt.slice(1)
+    : 'Item Importado';
+
+  const norm = `${relativePath} ${baseNoExt}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  // Inferir Raridade
+  let rarity: InventoryItemRarity = 'common';
+  if (overrideRarity && overrideRarity !== 'auto') {
+    rarity = overrideRarity;
+  } else if (/\b(lendari|legendary|mitic|mythic|suprem|divin|ouro|gold)\b/.test(norm)) {
+    rarity = 'legendary';
+  } else if (/\b(epic|epico|arcan|astral|sombri|dracon|real)\b/.test(norm)) {
+    rarity = 'epic';
+  } else if (/\b(raro|rare|prata|silver|cristal|runa|magic)\b/.test(norm)) {
+    rarity = 'rare';
+  } else if (/\b(incomum|uncommon|ferro|iron|aco|steel|bronze)\b/.test(norm)) {
+    rarity = 'uncommon';
+  }
+
+  // Inferir Categoria
+  let category: InventoryItemCategory = 'collectible';
+  if (overrideCategory && overrideCategory !== 'auto') {
+    category = overrideCategory;
+  } else if (
+    /\b(arma|weapon|espada|sword|arco|bow|cajado|staff|lanca|spear|machado|axe|adaga|dagger|varinha|wand|martelo|hammer|katana|clava|faca)\b/.test(
+      norm
+    )
+  ) {
+    category = 'weapon';
+  } else if (
+    /\b(armadura|armor|escudo|shield|elmo|helmet|capacete|bota|boot|peitoral|chest|manto|capa|cape|luva|glove|cinto|belt)\b/.test(
+      norm
+    )
+  ) {
+    category = 'armor';
+  } else if (
+    /\b(pocao|potion|elixir|comida|food|fruta|fruit|erva|herb|cura|heal|mana|bebida|pao|carne|maca|apple|cogumelo|mushroom|tônico|tonico)\b/.test(
+      norm
+    )
+  ) {
+    category = 'potion';
+  } else if (
+    /\b(chave|key|quest|missao|pergaminho|scroll|livro|book|carta|letter|mapa|reliquia|relic|artefato|emblema|selo)\b/.test(
+      norm
+    )
+  ) {
+    category = 'key';
+  } else if (/\b(moeda|coin|ouro|gold|gema|gem|diamante|diamond|tesouro|bau|chest| saco )\b/.test(norm)) {
+    category = 'currency';
+  } else if (/\b(drop|osso|bone|presa|fang|pele|couro|leather|asa|wing|garra|claw|olho|slime)\b/.test(norm)) {
+    category = 'drop';
+  }
+
+  const rarityMultiplier =
+    rarity === 'legendary'
+      ? 4
+      : rarity === 'epic'
+      ? 2.5
+      : rarity === 'rare'
+      ? 1.8
+      : rarity === 'uncommon'
+      ? 1.3
+      : 1;
+
+  if (category === 'weapon') {
+    return {
+      cleanName,
+      category: 'weapon',
+      rarity,
+      emoji: '⚔️',
+      stateTags: ['collectible', 'storable', 'equipable', 'buyable', 'tradable'],
+      usableActions: ['equip', 'inspect', 'drop'],
+      stackable: false,
+      maxStack: 1,
+      buyPrice: Math.round(100 * rarityMultiplier),
+      sellPrice: Math.round(50 * rarityMultiplier),
+      attack: Math.round(12 * rarityMultiplier),
+      defense: Math.round(2 * rarityMultiplier),
+    };
+  }
+
+  if (category === 'armor') {
+    return {
+      cleanName,
+      category: 'armor',
+      rarity,
+      emoji: '🛡️',
+      stateTags: ['collectible', 'storable', 'equipable', 'buyable', 'tradable'],
+      usableActions: ['equip', 'inspect', 'drop'],
+      stackable: false,
+      maxStack: 1,
+      buyPrice: Math.round(95 * rarityMultiplier),
+      sellPrice: Math.round(45 * rarityMultiplier),
+      attack: 0,
+      defense: Math.round(12 * rarityMultiplier),
+    };
+  }
+
+  if (category === 'potion' || category === 'consumable') {
+    return {
+      cleanName,
+      category: 'potion',
+      rarity,
+      emoji: '🧪',
+      stateTags: ['collectible', 'storable', 'consumable', 'buyable', 'tradable'],
+      usableActions: ['use', 'inspect', 'drop'],
+      stackable: true,
+      maxStack: 50,
+      buyPrice: Math.round(35 * rarityMultiplier),
+      sellPrice: Math.round(15 * rarityMultiplier),
+      hpRestore: Math.round(35 * rarityMultiplier),
+      manaRestore: Math.round(15 * rarityMultiplier),
+    };
+  }
+
+  if (category === 'key' || category === 'quest') {
+    return {
+      cleanName,
+      category: 'key',
+      rarity: rarity === 'common' ? 'rare' : rarity,
+      emoji: '🔑',
+      stateTags: ['collectible', 'storable', 'deliverable'],
+      usableActions: ['deliver', 'inspect', 'read'],
+      stackable: true,
+      maxStack: 10,
+      buyPrice: Math.round(120 * rarityMultiplier),
+      sellPrice: Math.round(60 * rarityMultiplier),
+    };
+  }
+
+  if (category === 'currency') {
+    return {
+      cleanName,
+      category: 'currency',
+      rarity,
+      emoji: '🪙',
+      stateTags: ['collectible', 'storable', 'tradable'],
+      usableActions: ['inspect', 'drop'],
+      stackable: true,
+      maxStack: 999,
+      buyPrice: Math.round(50 * rarityMultiplier),
+      sellPrice: Math.round(50 * rarityMultiplier),
+    };
+  }
+
+  return {
+    cleanName,
+    category,
+    rarity,
+    emoji: category === 'drop' ? '💀' : '📦',
+    stateTags: ['collectible', 'storable', 'tradable', 'buyable'],
+    usableActions: ['use', 'inspect', 'drop'],
+    stackable: true,
+    maxStack: 99,
+    buyPrice: Math.round(50 * rarityMultiplier),
+    sellPrice: Math.round(25 * rarityMultiplier),
+    hpRestore: 20,
+  };
+}
+
+/**
+ * Processa a importação de uma Pasta Inteira (ou múltiplos arquivos PNG/JPG/WebP) para o Editor de Inventários,
+ * gravando cada asset diretamente na unidade de memória local (/public/assets/engine/hud/) via DiskAssetEngine
+ * e gerando automaticamente GalleryAssets, ItemCatalog e PlayerInventoryItems.
+ */
+export async function processInventoryFolderFilesToDisk(
+  files: FileList | File[],
+  options?: {
+    sourceLabel?: string;
+    defaultBiomeId?: string;
+    overrideCategory?: InventoryItemCategory | 'auto';
+    overrideRarity?: InventoryItemRarity | 'auto';
+    startingSlotIndex?: number;
+    onProgress?: (current: number, total: number, fileName: string) => void;
+  }
+): Promise<{
+  folderName: string;
+  newAssets: GalleryAsset[];
+  newCatalogItems: InventoryItemDefinition[];
+  newBackpackItems: PlayerInventoryItem[];
+}> {
+  const fileArray = Array.from(files || []).filter((file) => {
+    if (!file || !file.name) return false;
+    if (file.name.startsWith('.')) return false;
+    return file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
+  });
+
+  // Ordenação natural por caminho/nome
+  fileArray.sort((a, b) => {
+    const pathA = (a as any).webkitRelativePath || a.name;
+    const pathB = (b as any).webkitRelativePath || b.name;
+    return pathA.localeCompare(pathB, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  let detectedFolderName = '';
+  for (const f of fileArray) {
+    const rel = ((f as any).webkitRelativePath || '') as string;
+    if (rel && rel.includes('/')) {
+      detectedFolderName = rel.split('/')[0].replace(/[_-]+/g, ' ').trim();
+      if (detectedFolderName) break;
+    }
+  }
+  if (!detectedFolderName) {
+    detectedFolderName = 'Pack de Itens Importado';
+  }
+
+  const newAssets: GalleryAsset[] = [];
+  const newCatalogItems: InventoryItemDefinition[] = [];
+  const newBackpackItems: PlayerInventoryItem[] = [];
+  const sourceLabel = options?.sourceLabel || `pasta "${detectedFolderName}"`;
+  const defaultBiomeId = options?.defaultBiomeId || 'forest';
+  const baseSlotIdx = options?.startingSlotIndex ?? 0;
+
+  for (let i = 0; i < fileArray.length; i++) {
+    const file = fileArray[i];
+    const relPath = ((file as any).webkitRelativePath || file.name) as string;
+    options?.onProgress?.(i + 1, fileArray.length, file.name);
+
+    try {
+      // Salva diretamente no disco em /public/assets/engine/hud/ (Zero Base64 na RAM)
+      const { dataUrl, width, height } = await readUploadedImage(file, 'hud');
+
+      const meta = inferInventoryItemMetaFromPath(
+        file.name,
+        relPath,
+        options?.overrideCategory,
+        options?.overrideRarity
+      );
+
+      const stamp = `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
+      const assetId = `asset-item-${stamp}`;
+      const itemId = `item-${assetId}`;
+
+      const asset: GalleryAsset = {
+        id: assetId,
+        name: meta.cleanName,
+        dataUrl,
+        width,
+        height,
+        category: 'Itens de Inventário/Exploração',
+        createdAt: new Date().toISOString(),
+        isPersistentPhaseAsset: true,
+      };
+
+      const catalogItem: InventoryItemDefinition = {
+        id: itemId,
+        name: meta.cleanName,
+        iconPng: dataUrl,
+        iconEmoji: meta.emoji,
+        shortDescription: `Item importado via ${sourceLabel} (salvo em disco local).`,
+        category: meta.category,
+        rarity: meta.rarity,
+        stackable: meta.stackable,
+        maxStack: meta.maxStack,
+        buyPrice: meta.buyPrice,
+        sellPrice: meta.sellPrice,
+        currencyType: 'gold',
+        stateTags: meta.stateTags,
+        naturalBiomeSpawn: {
+          enabled: false,
+          biomeIds: [defaultBiomeId],
+          spawnDensityPerBiome: 3,
+          spawnChancePercent: 80,
+          avoidPaths: true,
+        },
+        usableActions: meta.usableActions,
+        consumableEffect: {
+          hpRestore: meta.hpRestore ?? 20,
+          manaRestore: meta.manaRestore ?? 0,
+        },
+        equipmentStats: {
+          slot: meta.category === 'armor' ? 'armor' : 'weapon',
+          attack: meta.attack ?? 10,
+          defense: meta.defense ?? 5,
+          speed: 0,
+        },
+      };
+
+      const backpackItem: PlayerInventoryItem = {
+        id: `inv-${itemId}`,
+        definitionId: itemId,
+        name: meta.cleanName,
+        description: catalogItem.shortDescription,
+        iconPng: dataUrl,
+        iconEmoji: meta.emoji,
+        quantity: 1,
+        maxStack: meta.maxStack,
+        type: meta.category,
+        category: meta.category,
+        rarity: meta.rarity,
+        equipped: false,
+        slotIndex: baseSlotIdx + newBackpackItems.length,
+        buyPrice: meta.buyPrice,
+        sellPrice: meta.sellPrice,
+        currencyType: 'gold',
+        stateTags: meta.stateTags,
+        naturalBiomeSpawn: catalogItem.naturalBiomeSpawn,
+        usableActions: meta.usableActions,
+        consumableEffect: catalogItem.consumableEffect,
+        stats: {
+          attack: meta.attack,
+          defense: meta.defense,
+          healthRestore: meta.hpRestore,
+        },
+      };
+
+      newAssets.push(asset);
+      newCatalogItems.push(catalogItem);
+      newBackpackItems.push(backpackItem);
+    } catch (err) {
+      console.warn('Falha ao importar item da pasta para o disco:', file.name, err);
+    }
+  }
+
+  return {
+    folderName: detectedFolderName,
+    newAssets,
+    newCatalogItems,
+    newBackpackItems,
+  };
+}
+
 

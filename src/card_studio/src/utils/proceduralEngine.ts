@@ -89,29 +89,47 @@ export const DEFAULT_SUBGROUP_CATALOG: SubgroupCatalog = {
 
 export const DEFAULT_DECK_CATEGORIES: DeckCategory[] = [
   {
-    id: 'deck-main',
-    name: 'Matriz Principal',
-    description: 'Modelos originais cadastrados na Matriz de Cartas.',
-    accentColor: '#10B981',
+    "id": "deck-divinos",
+    "name": "Panteão Divino & Celestiais",
+    "description": "Deuses ancestrais, constelações do zodíaco, regentes celestiais e titãs cósmicos.",
+    "accentColor": "#EAB308"
   },
   {
-    id: 'deck-slimes',
-    name: 'Slimes Ancestrais',
-    description: 'Criaturas elementais organizadas por família e bioma.',
-    accentColor: '#3B82F6',
+    "id": "deck-elementais",
+    "name": "Guardiões Elementais & Natureza",
+    "description": "Titãs de fogo, magma, oceano, rocha, raízes, tempestades e montanhas.",
+    "accentColor": "#06B6D4"
   },
   {
-    id: 'deck-grimoire',
-    name: 'Grimório de Magias',
-    description: 'Feitiços e encantamentos arcanos de suporte e reação.',
-    accentColor: '#A855F7',
+    "id": "deck-sombras",
+    "name": "Cripta das Sombras & Necromancia",
+    "description": "Necromantes, ceifadores, vampiros, múmias e horrores das profundezas.",
+    "accentColor": "#9333EA"
   },
   {
-    id: 'deck-mythic',
-    name: 'Relíquias & Míticas',
-    description: 'Matrizes e versões de alto poder (Lendárias, Míticas e Limitadas).',
-    accentColor: '#F59E0B',
+    "id": "deck-guerreiros",
+    "name": "Clã dos Ronins & Guerreiros",
+    "description": "Samurais honrados, shoguns, ninjas furtivos, vikings nórdicos e mestres marciais.",
+    "accentColor": "#EF4444"
   },
+  {
+    "id": "deck-gourmet",
+    "name": "Reino Gourmet & Travessos",
+    "description": "Pudins lendários, panquecas de mel, doces encantados e pequeninos ajudantes.",
+    "accentColor": "#EC4899"
+  },
+  {
+    "id": "deck-grimorio",
+    "name": "Grimório Arcano & Relíquias",
+    "description": "Poções mágicas, elixires lunares, ampulhetas do tempo, armas e feitiços.",
+    "accentColor": "#6366F1"
+  },
+  {
+    "id": "deck-main",
+    "name": "Matriz Geral",
+    "description": "Acervo completo de cartas ativas.",
+    "accentColor": "#10B981"
+  }
 ];
 
 /**

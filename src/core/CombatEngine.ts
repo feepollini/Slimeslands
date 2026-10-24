@@ -26,8 +26,8 @@ export function computeAttack(
     _hp: { p: number; e: number },
     atkDef?: AttackDef
 ): AttackResult {
-    const isDamage = !atkDef || atkDef.type === 'damage';
-    const baseAtk = isDamage ? (atkDef?.damage || atk.atk) : 0;
+    const hasDamage = (atkDef?.damage !== undefined && atkDef.damage > 0) || !atkDef || atkDef.type === 'damage';
+    const baseAtk = hasDamage ? (atkDef?.damage ?? atk.atk) : 0;
     const triggers: AbilityTriggered[] = [];
     const atkIdx = -1; // placeholder — GameEngine knows the real idx
 
@@ -64,8 +64,8 @@ export function computeAttack(
     // ── Guard: stunned or flipped attacker can't act ─────────────────────────
     if (atk.isStunned || atk.isFlipped) return { ...zero, abilityTriggers: [] };
 
-    // ── Pure enchantment or Empty slot direct attack ─────────────────────────
-    if (!isDamage) {
+    // ── Pure enchantment or Zero-damage action: return zero damage but keep triggers ──
+    if (baseAtk <= 0) {
         return zero;
     }
     if (!def) {

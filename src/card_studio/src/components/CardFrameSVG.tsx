@@ -901,8 +901,8 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
             )}
         </g>
 
-        {/* PREMIUM PRISMATIC HOLOGRAPHIC REFLECTION OVER THE ARTWORK (Retracts in Full Mode so only pure image/video remains) */}
-        {card.isPremium && prismaticAlpha > 0 && !artOnlyShowcase && (
+        {/* PREMIUM PRISMATIC HOLOGRAPHIC REFLECTION OVER THE ARTWORK (Apenas quando animado; evita overlay travado em frame 0 no canvas 3D) */}
+        {animateChroma && card.isPremium && prismaticAlpha > 0 && !artOnlyShowcase && (
           <rect
             x="0"
             y="0"
@@ -1120,7 +1120,7 @@ export const CardFrameSVG: React.FC<CardFrameSVGProps> = React.memo(({
             clipPath={`url(#outer-frame-clip-${scope})`}
             pointerEvents="none"
           >
-            {prismaticAlpha > 0 && (
+            {animateChroma && prismaticAlpha > 0 && (
               <rect
                 x="0"
                 y="0"

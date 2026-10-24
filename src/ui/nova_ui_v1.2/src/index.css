@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Cinzel', Georgia, serif;
+    --font-ui: 'Marcellus', 'Cinzel', Georgia, serif;
+    --font-serif-num: 'EB Garamond', 'Cinzel', Georgia, serif;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #021226;
+    color: #0f1d2e;
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    overflow-x: hidden;
+  }
+}
+
+/* Deep Royal Navy Backdrop matching the 4 structural sheets */
+.navy-backdrop {
+  background:
+    radial-gradient(ellipse 90% 80% at 50% 38%, #0a2e5c 0%, #051d3d 48%, #021024 85%, #010914 100%);
+}
+
+/* Pearl parchment panel surface */
+.pearl-surface {
+  background:
+    radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(255, 255, 255, 0.92),
+    inset 0 -8px 20px rgba(166, 136, 86, 0.18),
+    inset 0 0 0 1.5px rgba(255, 250, 238, 0.85);
+}
+
+/* Primary Royal Sapphire Blue + Gold Button / Active Tab */
+.btn-royal-gold {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    #f2d68b 0%,
+    #fff7d6 18%,
+    #c29842 50%,
+    #7d5b19 82%,
+    #dbb868 100%
+  );
+  padding: 2px;
+  border-radius: 9999px;
+  box-shadow:
+    0 3px 8px rgba(4, 12, 28, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), filter 140ms ease;
+}
+
+.btn-royal-gold:hover {
+  filter: brightness(1.07);
+}
+
+.btn-royal-gold:active {
+  transform: scale(0.985);
+}
+
+.btn-royal-inner {
+  background:
+    radial-gradient(ellipse 85% 55% at 50% 14%, rgba(38, 108, 212, 0.6) 0%, rgba(8, 38, 92, 0) 70%),
+    linear-gradient(180deg, #0b3778 0%, #041f4a 52%, #02122e 90%, #051b42 100%);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1.5px 2px rgba(145, 198, 255, 0.42),
+    inset 0 -3px 6px rgba(1, 8, 22, 0.88),
+    inset 0 0 0 1px rgba(212, 175, 85, 0.3);
+}
+
+/* Secondary Pearl-Ivory 3D Button */
+.btn-pearl-gold {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    #f5dfa3 0%,
+    #c6a052 35%,
+    #886522 70%,
+    #dec07c 100%
+  );
+  padding: 2px;
+  border-radius: 9999px;
+  box-shadow:
+    0 3px 7px rgba(85, 62, 24, 0.25),
+    0 1px 2px rgba(45, 32, 10, 0.3);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), filter 140ms ease;
+}
+
+.btn-pearl-gold:hover {
+  filter: brightness(1.03);
+}
+
+.btn-pearl-gold:active {
+  transform: scale(0.985);
+}
+
+.btn-pearl-inner {
+  background:
+    radial-gradient(ellipse 85% 60% at 50% 15%, #ffffff 0%, rgba(255, 255, 255, 0) 70%),
+    linear-gradient(180deg, #fbf7ef 0%, #f1e8d7 54%, #e3d5bc 92%, #ece0ca 100%);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.95),
+    inset 0 -2px 4px rgba(164, 138, 94, 0.38),
+    inset 0 0 0 1px rgba(255, 252, 242, 0.8);
+}
+
+/* Subtle Pearl Pill (for inactive tabs / secondary controls) */
+.pearl-pill {
+  background: linear-gradient(180deg, #f8f2e4 0%, #ebe0cc 100%);
+  border: 1px solid #cdb482;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(120, 95, 45, 0.12);
+}
+
+/* Empty Grey Asset Placeholder Box ("sem assets") */
+.wire-slot {
+  background: linear-gradient(180deg, #d3d6da 0%, #c9cdd2 100%);
+  border: 1.5px solid #b5bac0;
+  color: #4a5158;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Skeleton Bar inside Structural Cards */
+.wire-bar {
+  background: #c5c9ce;
+  border-radius: 9999px;
+}
+
+/* Soft Pearl Inner Sub-Card */
+.pearl-subcard {
+  background: rgba(247, 241, 229, 0.78);
+  border: 1px solid #d8c398;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* Circular Pearl & Gold Close Button */
+.close-btn-outer {
+  background: linear-gradient(
+    145deg,
+    #fff3c4 0%,
+    #d4af59 38%,
+    #8c6720 75%,
+    #e6c779 100%
+  );
+  padding: 2px;
+  border-radius: 9999px;
+  box-shadow:
+    0 3px 6px rgba(20, 14, 4, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.close-btn-outer:hover {
+  filter: brightness(1.06);
+  transform: scale(1.04);
+}
+
+.close-btn-inner {
+  background: radial-gradient(circle at 38% 30%, #ffffff 0%, #f4ecdc 55%, #decbb0 100%);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.95),
+    inset 0 -2px 4px rgba(155, 126, 80, 0.45);
+}

@@ -753,7 +753,7 @@ export class TabStore {
                   <div style="width:26px; height:38px; border-radius:2px; border:1px solid #ffd700; ${pack.customFront ? `background:url('${pack.customFront}') center/cover;` : 'background:#222;'} flex-shrink:0;"></div>
                   <div style="display:flex; flex-direction:column; min-width:0;">
                     <span style="font-size:0.75rem; font-weight:900; color:#ffd700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(pack.name)}</span>
-                    <span style="font-size:0.6rem; color:#aaa;">Preço: ${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 3} cartas</span>
+                    <span style="font-size:0.6rem; color:#aaa;">Preço: ${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 9} cartas</span>
                   </div>
                 </div>
 
@@ -805,7 +805,7 @@ export class TabStore {
                   <div style="width:26px; height:38px; border-radius:2px; border:1px solid #38bdf8; ${pack.customFront ? `background:url('${pack.customFront}') center/cover;` : 'background:#222;'} flex-shrink:0;"></div>
                   <div style="display:flex; flex-direction:column; min-width:0;">
                     <span style="font-size:0.75rem; font-weight:900; color:#38bdf8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(pack.name)}</span>
-                    <span style="font-size:0.6rem; color:#aaa;">${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 3} cartas</span>
+                    <span style="font-size:0.6rem; color:#aaa;">${pack.currency === 'gems' ? '💎' : '🪙'} ${pack.price} · ${pack.cardsCount || 9} cartas</span>
                   </div>
                 </div>
 

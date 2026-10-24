@@ -21,7 +21,22 @@ function readSnapshotFromLocalStorage(): SlimelandsGameMatrixSnapshot | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
     const raw = window.localStorage.getItem(SNAPSHOT_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as SlimelandsGameMatrixSnapshot;
+    if (raw) {
+      const snap = JSON.parse(raw) as SlimelandsGameMatrixSnapshot;
+      if (snap && (!snap.version || snap.version < 3)) {
+        return null;
+      }
+      if (snap && Array.isArray(snap.cards)) {
+        snap.cards = snap.cards.map((c) => {
+          if (c.imageUrl?.startsWith('data:') && c.imageUrl.length > 512) {
+            const cleanTitle = (c.title || 'card').replace(/[^a-zA-Z0-9_-]/g, '_');
+            return { ...c, imageUrl: `/cards/${cleanTitle}.png` };
+          }
+          return c;
+        });
+      }
+      return snap;
+    }
   } catch {}
   return null;
 }
@@ -136,6 +151,22 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     ? 0
     : Math.max(1, Math.min(4, cd.pillCount || genAbilities.length || 4));
 
+  // Sanitize action-based titles into proper creature entity titles
+  let cleanTitle = cd.title || 'Criatura Ancestral';
+  if (/^esquiva\s+/i.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(/^esquiva\s+(sombria\s+)?do\s+/i, 'Lorde ');
+    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+    if (!/slime/i.test(cleanTitle)) cleanTitle += ' Slime';
+  } else if (/^ataque\s+/i.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(/^ataque\s+(devastador\s+)?(de|do|da)\s+/i, 'Guardião ');
+  } else if (/^investida\s+/i.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(/^investida\s+(de|do|da)\s+/i, 'Campeão ');
+  } else if (/^golpe\s+/i.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(/^golpe\s+(de|do|da)\s+/i, 'Mestre ');
+  } else if (/^fuga\s+/i.test(cleanTitle)) {
+    cleanTitle = cleanTitle.replace(/^fuga\s+(de|do|da)\s+/i, 'Ágil ');
+  }
+
   const realAttacks: any[] = [];
   for (let idx = 0; idx < pillCount; idx++) {
     const pill = cd.pills?.[idx];
@@ -146,15 +177,14 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     const encId = pill?.enchantmentId || genAb?.enchantmentId;
     const encDef = encId ? ENCHANTMENT_REGISTRY.find((e) => e.id === encId) : undefined;
     const attackType: 'damage' | 'enchantment' =
-      pill?.attackType || genAb?.attackType || 'damage';
+      pill?.attackType || genAb?.attackType || (encDef ? 'enchantment' : 'damage');
 
+    // All attacks deal their real base damage, even when applying an enchantment
     const rawDmg = parseInt((pill?.mainText || '').replace(/\D/g, ''), 10);
     const damage =
-      attackType === 'enchantment'
-        ? encDef?.defaultValue || 0
-        : !isNaN(rawDmg) && rawDmg > 0
+      !isNaN(rawDmg) && rawDmg > 0
         ? rawDmg
-        : genAb?.damage || (idx + 1) * 200;
+        : genAb?.damage || encDef?.defaultValue || (idx + 1) * 200;
 
     const rawCost = parseInt((pill?.badgeValue || '').replace(/\D/g, ''), 10);
     const cost = isChromatic
@@ -166,10 +196,29 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     const costType: 'stamina' | 'mana' =
       pill?.costResource || genAb?.costResource || (idx >= 2 ? 'mana' : 'stamina');
 
-    const vfxId =
-      pill?.vfxId ||
-      genAb?.vfxId ||
-      getDefaultVfxForSlot(idx, attackType === 'enchantment' || Boolean(encDef));
+    // Map specific cinematic VFX for enchantments and ultimate 4th move
+    let resolvedVfx = pill?.vfxId || genAb?.vfxId;
+    if (!resolvedVfx) {
+      if (idx === 3) {
+        const el = (cd.elementText || 'ARCANO').toUpperCase();
+        if (el === 'FOGO' || el === 'LAVA') resolvedVfx = 'vfx_fire_cataclysm';
+        else if (el === 'TREVAS' || el === 'SOMBRA') resolvedVfx = 'vfx_void_implosion';
+        else if (el === 'AGUA' || el === 'MAR') resolvedVfx = 'vfx_tsunami_crush';
+        else if (el === 'GELO' || el === 'NEVE') resolvedVfx = 'vfx_time_fracture';
+        else if (el === 'TERRA' || el === 'ROCHA') resolvedVfx = 'vfx_meteor_strike';
+        else resolvedVfx = 'vfx_celestial_judgment';
+      } else if (encId) {
+        if (encId === 'sangramento') resolvedVfx = 'vfx_blood_drain';
+        else if (encId === 'veneno') resolvedVfx = 'vfx_toxic_miasma';
+        else if (encId === 'queimadura') resolvedVfx = 'vfx_fire_persistent';
+        else if (encId === 'congelamento') resolvedVfx = 'vfx_ice_prison';
+        else if (encId === 'atordoamento') resolvedVfx = 'vfx_electro_shock';
+        else if (encId === 'cura' || encId === 'regeneracao') resolvedVfx = 'vfx_nature_blessing';
+        else resolvedVfx = getDefaultVfxForSlot(idx, true);
+      } else {
+        resolvedVfx = getDefaultVfxForSlot(idx, false);
+      }
+    }
 
     const defaultAttackTitle =
       idx === 0
@@ -192,7 +241,7 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
       cost,
       costType,
       isFreeChromatic: isChromatic,
-      vfxId,
+      vfxId: resolvedVfx,
       description: genAb?.description || encDef?.description || '',
       ...(encDef
         ? {
@@ -226,7 +275,7 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
 
   return {
     id: cd.id,
-    name: cd.title,
+    name: cleanTitle,
     image: resolvedImage,
     imageUrl: resolvedImage,
     animationUrl: cd.videoUrl || undefined,
@@ -244,6 +293,8 @@ export function convertMatrixCardToGameTemplate(cd: CardData): any {
     entityType: cd.entityType || 'Criatura',
     preferredRarity,
     rarity: preferredRarity,
+    cardRank: cd.cardRank || (cd as any).rank || hydratedCd?.cardRank || (preferredRarity === 'legendary' ? 'S' : preferredRarity === 'epic' ? 'A' : preferredRarity === 'rare' ? 'B' : 'C'),
+    rank: cd.cardRank || (cd as any).rank || hydratedCd?.cardRank || (preferredRarity === 'legendary' ? 'S' : preferredRarity === 'epic' ? 'A' : preferredRarity === 'rare' ? 'B' : 'C'),
     classId: (cd.elementText || 'FERRO').toLowerCase(),
     abilityId: cd.linkedPassiveId || 'none',
     linkedActiveSkillId: cd.linkedActiveSkillId,
@@ -332,32 +383,102 @@ export interface CustomDeckData {
   updatedAt?: string;
 }
 
-const CUSTOM_DECKS_STORAGE_KEY = 'slimelands_custom_decks_v1';
+const CUSTOM_DECKS_STORAGE_KEY = 'slimelands_custom_decks_v4';
+
+export function createDefaultThematicDecks(cardsPool: CardData[] = INITIAL_CARDS): CustomDeckData[] {
+  const getDeckCards = (deckId: string): string[] => {
+    return cardsPool
+      .filter((c) => c && c.deckId === deckId)
+      .map((c) => c.id || c.title || '');
+  };
+
+  const decksDef = [
+    {
+      id: 'deck-divinos',
+      name: 'Panteão Divino & Celestiais',
+      archetype: 'Divino / Celestial',
+      accentColor: '#EAB308',
+      board: 'celestial',
+      isActive: true,
+      isAvailable: true,
+    },
+    {
+      id: 'deck-elementais',
+      name: 'Guardiões Elementais & Natureza',
+      archetype: 'Elementar',
+      accentColor: '#06B6D4',
+      board: 'vulcão',
+      isActive: false,
+      isAvailable: true,
+    },
+    {
+      id: 'deck-sombras',
+      name: 'Cripta das Sombras & Necromancia',
+      archetype: 'Trevas / Necromante',
+      accentColor: '#9333EA',
+      board: 'cripta',
+      isActive: false,
+      isAvailable: true,
+    },
+    {
+      id: 'deck-guerreiros',
+      name: 'Clã dos Ronins & Guerreiros',
+      archetype: 'Guerreiro',
+      accentColor: '#EF4444',
+      board: 'dojo',
+      isActive: false,
+      isAvailable: true,
+    },
+    {
+      id: 'deck-gourmet',
+      name: 'Reino Gourmet & Travessos',
+      archetype: 'Gourmet',
+      accentColor: '#EC4899',
+      board: 'doce',
+      isActive: false,
+      isAvailable: true,
+    },
+    {
+      id: 'deck-grimorio',
+      name: 'Grimório Arcano & Relíquias',
+      archetype: 'Mago / Arcano',
+      accentColor: '#6366F1',
+      board: 'arcano',
+      isActive: false,
+      isAvailable: true,
+    },
+  ];
+
+  return decksDef.map((d) => ({
+    ...d,
+    cards: getDeckCards(d.id),
+    artifacts: ['art_escudo', 'art_golpe', 'art_queimadura'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+}
 
 export function getCustomDecks(): CustomDeckData[] {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
+  if (typeof window === 'undefined' || !window.localStorage) return createDefaultThematicDecks();
   try {
     const raw = window.localStorage.getItem(CUSTOM_DECKS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length >= 6) {
+        const hasValidCards = parsed.some((d) => Array.isArray(d.cards) && d.cards.length > 5);
+        if (hasValidCards) {
+          return parsed;
+        }
+      }
     }
   } catch {}
-  const defaultDeck: CustomDeckData = {
-    id: 'deck_main_1',
-    name: 'Deck 1 (Principal)',
-    archetype: 'Guerreiro',
-    accentColor: '#10B981',
-    cards: [],
-    artifacts: ['art_escudo', 'art_golpe', 'art_queimadura'],
-    board: 'floresta',
-    isActive: true,
-    isAvailable: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  saveCustomDecks([defaultDeck]);
-  return [defaultDeck];
+
+  const defaultThematicDecks = createDefaultThematicDecks();
+  saveCustomDecks(defaultThematicDecks);
+  if (defaultThematicDecks[0]) {
+    syncActiveDeckWithArsenal(defaultThematicDecks[0]);
+  }
+  return defaultThematicDecks;
 }
 
 export function saveCustomDecks(decks: CustomDeckData[]): void {
@@ -657,21 +778,33 @@ export function toMatrixCardData(raw: any): CardData {
       mode: 'stat',
       badgeValue: String(rawAttacks[0]?.cost ?? staminaCost),
       badgeColor: '#0084FF',
-      mainText: String(rawAttacks[0]?.damage ?? atkNum)
+      mainText: String(rawAttacks[0]?.damage ?? atkNum),
+      attackName: rawAttacks[0]?.name || 'Golpe Básico',
+      attackType: rawAttacks[0]?.type || (rawAttacks[0]?.enchantment ? 'enchantment' : 'damage'),
+      enchantmentId: rawAttacks[0]?.enchantment?.id || rawAttacks[0]?.enchantment || undefined,
+      vfxId: rawAttacks[0]?.vfxId,
     },
     {
       id: 'p2',
       mode: 'stat',
       badgeValue: String(rawAttacks[1]?.cost ?? (staminaCost + 1)),
       badgeColor: '#10B981',
-      mainText: String(rawAttacks[1]?.damage ?? Math.round(atkNum * 1.35))
+      mainText: String(rawAttacks[1]?.damage ?? Math.round(atkNum * 1.35)),
+      attackName: rawAttacks[1]?.name || 'Investida Elemental',
+      attackType: rawAttacks[1]?.type || (rawAttacks[1]?.enchantment ? 'enchantment' : 'damage'),
+      enchantmentId: rawAttacks[1]?.enchantment?.id || rawAttacks[1]?.enchantment || undefined,
+      vfxId: rawAttacks[1]?.vfxId,
     },
     {
       id: 'p3',
       mode: 'stat',
       badgeValue: String(rawAttacks[2]?.cost ?? (manaCost)),
       badgeColor: '#9333EA',
-      mainText: String(rawAttacks[2]?.damage ?? Math.round(atkNum * 1.7))
+      mainText: String(rawAttacks[2]?.damage ?? Math.round(atkNum * 1.7)),
+      attackName: rawAttacks[2]?.name || 'Explosão de Núcleo',
+      attackType: rawAttacks[2]?.type || (rawAttacks[2]?.enchantment ? 'enchantment' : 'damage'),
+      enchantmentId: rawAttacks[2]?.enchantment?.id || rawAttacks[2]?.enchantment || undefined,
+      vfxId: rawAttacks[2]?.vfxId,
     },
     {
       id: 'p4',
@@ -679,7 +812,12 @@ export function toMatrixCardData(raw: any): CardData {
       badgeValue: '∞',
       badgeColor: '#DF9A1E',
       mainText: String(raw.specialAttack?.damage ?? Math.round(atkNum * 2.2)),
-      isChromaticSpecial: true
+      attackName: raw.specialAttack?.name || 'Supremacia Ancestral',
+      attackType: raw.specialAttack?.type || (raw.specialAttack?.enchantment ? 'enchantment' : 'damage'),
+      enchantmentId: raw.specialAttack?.enchantment?.id || raw.specialAttack?.enchantment || undefined,
+      vfxId: raw.specialAttack?.vfxId || 'vfx_celestial_judgment',
+      isChromaticSpecial: true,
+      isSpecialUltimate: true,
     }
   ];
 

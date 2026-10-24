@@ -1,0 +1,6 @@
+{
+  "name": "Pearl & Gold RPG UI",
+  "description": "Interface de RPG premium em pérola, ouro e esmeralda com inventário, menu e biblioteca de componentes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

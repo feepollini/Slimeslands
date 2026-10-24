@@ -58,7 +58,6 @@ import { VfxSelectorPanel } from './components/VfxSelectorPanel';
 import { GalleryProductionDrawer } from './components/GalleryProductionDrawer';
 import { ProceduralEcosystemModal } from './components/ProceduralEcosystemModal';
 import { CardInfoPopover } from './components/CardInfoPopover';
-import { uploadFileToDisk, uploadDataUrlToDisk } from '../../core/DiskAssetEngine';
 import { HeaderSidesTab } from './components/inspector/HeaderSidesTab';
 import { LoreMagicTab } from './components/inspector/LoreMagicTab';
 import { BottomStatsTab } from './components/inspector/BottomStatsTab';
@@ -67,6 +66,7 @@ import {
   loadGameMatrixSnapshot,
   saveGameMatrixSnapshot,
 } from './utils/matrixPersistence';
+import { uploadMediaFile } from './utils/mediaUpload';
 
 type EditorTab = 'art-colors' | 'header-sides' | 'lore-magic' | 'bottom-stats';
 
@@ -151,6 +151,22 @@ export default function App() {
     return () => window.removeEventListener('slimelands:mobby-card-link-updated', onMobbyLinkUpdated);
   }, []);
 
+  useEffect(() => {
+    const onSelectCardToEdit = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const cardId = detail?.cardId;
+      if (cardId) {
+        setActiveCardId(cardId);
+        const found = cards.find((c) => c.id === cardId || c.title === cardId);
+        if (found) {
+          setStageDraftCard(found);
+        }
+      }
+    };
+    window.addEventListener('slimelands:select-card-for-edit', onSelectCardToEdit);
+    return () => window.removeEventListener('slimelands:select-card-for-edit', onSelectCardToEdit);
+  }, [cards]);
+
   // Hydrate persistent Game Matrix on startup so nothing is lost on reload
   useEffect(() => {
     let cancelled = false;
@@ -171,11 +187,21 @@ export default function App() {
             setBaseCharacters(snapshot.baseCharacters);
           }
         }
-        if (snapshot.stageDraftCard) {
-          setStageDraftCard(snapshot.stageDraftCard);
-        }
-        if (snapshot.activeCardId) {
-          setActiveCardId(snapshot.activeCardId);
+        const editCardId = localStorage.getItem('forge_editing_card_id');
+        if (editCardId) {
+          setActiveCardId(editCardId);
+          const found = (snapshot.cards || []).find((c: any) => c.id === editCardId || c.title === editCardId);
+          if (found) {
+            setStageDraftCard(found);
+          }
+          localStorage.removeItem('forge_editing_card_id');
+        } else {
+          if (snapshot.stageDraftCard) {
+            setStageDraftCard(snapshot.stageDraftCard);
+          }
+          if (snapshot.activeCardId) {
+            setActiveCardId(snapshot.activeCardId);
+          }
         }
         if (snapshot.globalBackImageUrl !== undefined) {
           setGlobalBackImageUrl(snapshot.globalBackImageUrl);
@@ -507,16 +533,17 @@ export default function App() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = '';
 
     if (file.type.startsWith('video/')) {
-      const diskVideoUrl = await uploadFileToDisk(file, 'cards');
-      await handleLoadVideoUrl(diskVideoUrl);
+      const uploadedUrl = await uploadMediaFile(file);
+      handleLoadVideoUrl(uploadedUrl);
+      e.target.value = '';
       return;
     }
 
-    const diskImageUrl = await uploadFileToDisk(file, 'cards');
-    await handleLoadImageUrl(diskImageUrl);
+    const uploadedUrl = await uploadMediaFile(file);
+    handleLoadImageUrl(uploadedUrl);
+    e.target.value = '';
   };
 
   const handleGenerateAnimatedVideo = async () => {
@@ -527,15 +554,7 @@ export default function App() {
         activeCard.elementText.includes('AGUA') ? 'sapphire' : 'crimson';
       const videoBlobUrl = await createSampleAnimatedVideoBlobUrl(theme);
       if (videoBlobUrl) {
-        const diskVideoUrl = await uploadDataUrlToDisk(
-          videoBlobUrl,
-          `animated_card_${theme}`,
-          'cards'
-        );
-        try {
-          if (videoBlobUrl.startsWith('blob:')) URL.revokeObjectURL(videoBlobUrl);
-        } catch {}
-        await handleLoadVideoUrl(diskVideoUrl);
+        await handleLoadVideoUrl(videoBlobUrl);
       }
     } finally {
       setIsGeneratingDemoVideo(false);
@@ -654,9 +673,7 @@ export default function App() {
   const handleBackFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    e.target.value = '';
-
-    const uploadedUrl = await uploadFileToDisk(file, 'cards', `verso_global_${file.name}`);
+    const uploadedUrl = await uploadMediaFile(file);
     // Set as Global Card Back (Verso Global) AND apply to all cards!
     setGlobalBackImageUrl(uploadedUrl);
     setStageDraftCard((prev) => ({
@@ -678,6 +695,7 @@ export default function App() {
     if (!isFlipped) {
       handleTriggerFlip();
     }
+    e.target.value = '';
   };
 
   const handleClearGlobalBack = () => {
@@ -943,22 +961,22 @@ export default function App() {
           TOP BAR (Retracts completely in Full Mode)
          ===================================================================== */}
       <header
-        className={`border-b bg-[#0D0F14] px-3 flex items-center justify-between gap-4 shrink-0 z-30 transition-all duration-500 ease-out ${
+        className={`border-b bg-[#0D0F14] px-5 flex items-center justify-between gap-8 shrink-0 z-30 transition-all duration-500 ease-out ${
           isFullscreenShowcase
             ? 'h-0 max-h-0 py-0 opacity-0 -translate-y-full border-transparent pointer-events-none overflow-hidden'
-            : 'h-9 border-slate-800/80 opacity-100 translate-y-0'
+            : 'h-14 border-slate-800/80 opacity-100 translate-y-0'
         }`}
       >
         {/* Zone 1: Brand Title & Cohesion Deck Pill */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs font-bold tracking-tight text-white whitespace-nowrap font-['Outfit',sans-serif]">
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-base font-bold tracking-tight text-white whitespace-nowrap font-['Outfit',sans-serif]">
             Worlds of Slimelands
           </span>
           <button
             onClick={() => {
               window.dispatchEvent(new CustomEvent('forge:switch-tab', { detail: 'decks' }));
             }}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-all text-[11px] font-bold cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-all text-xs font-bold cursor-pointer"
             title="Voltar para a Galeria de Decks"
           >
             <span>🎴</span>
@@ -1011,7 +1029,7 @@ export default function App() {
               setEcosystemModalSection('boosters');
               setEcosystemModalOpen(true);
             }}
-            className="px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-[11px] font-extrabold text-slate-950 transition-colors whitespace-nowrap shrink-0"
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-xs font-extrabold text-slate-950 transition-colors whitespace-nowrap shrink-0"
           >
             Abrir Booster (9 Cartas)
           </button>
@@ -1441,244 +1459,6 @@ export default function App() {
               : 'w-[360px] xl:w-[390px] opacity-100 translate-x-0 border-l border-slate-800/80'
           }`}
         >
-          {/* ALWAYS-VISIBLE QUICK IDENTITY & NAVIGATION HEADER */}
-          <div className="p-2.5 border-b border-slate-800/80 bg-[#0A0C12] space-y-2 shrink-0">
-            {/* Row 1: Prev / Card Index / Next + Quick Entity Type */}
-            <div className="flex items-center justify-between gap-1.5">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (cards.length === 0) return;
-                    const idx = cards.findIndex((c) => c.id === activeCard.id);
-                    const prevIdx = idx > 0 ? idx - 1 : cards.length - 1;
-                    setActiveCardId(cards[prevIdx].id);
-                  }}
-                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200"
-                  title="Carta Anterior"
-                >
-                  ◀
-                </button>
-                <span className="text-[11px] font-mono text-slate-400 px-1">
-                  {cards.length > 0
-                    ? `${Math.max(1, cards.findIndex((c) => c.id === activeCard.id) + 1)}/${cards.length}`
-                    : '0/0'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (cards.length === 0) return;
-                    const idx = cards.findIndex((c) => c.id === activeCard.id);
-                    const nextIdx = idx >= 0 && idx < cards.length - 1 ? idx + 1 : 0;
-                    setActiveCardId(cards[nextIdx].id);
-                  }}
-                  className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200"
-                  title="Próxima Carta"
-                >
-                  ▶
-                </button>
-              </div>
-
-              {/* 1-Click Entity Type Switcher */}
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
-                {(['Criatura', 'Magia', 'Item'] as const).map((eType) => {
-                  const isActiveType = (activeCard.entityType || 'Criatura') === eType;
-                  return (
-                    <button
-                      key={eType}
-                      type="button"
-                      onClick={() =>
-                        updateActiveCard((prev) => {
-                          if (eType === 'Magia') {
-                            const mana = prev.magicManaCost ?? 3;
-                            const numVal =
-                              prev.pvNumber ||
-                              parseInt((prev.pvText || '').replace(/\D/g, ''), 10) ||
-                              300;
-                            return {
-                              ...prev,
-                              entityType: 'Magia',
-                              pvNumber: numVal,
-                              pvText: prev.isNeutralMatrix ? 'DF—' : `DF${numVal}`,
-                              magicManaCost: mana,
-                              summonStaminaCost: undefined,
-                              showSummonCostPill: true,
-                              summonCostPill: {
-                                id: 'pill-summon-cost',
-                                mode: 'stat',
-                                badgeValue: String(mana),
-                                badgeColor: '#0084FF',
-                                mainText: 'MANA',
-                                isSummonCost: true,
-                                costResource: 'mana',
-                              },
-                            };
-                          }
-                          if (eType === 'Item') {
-                            return {
-                              ...prev,
-                              entityType: 'Item',
-                              pvNumber: undefined,
-                              summonStaminaCost: undefined,
-                              showSummonCostPill: false,
-                              pvText: 'ITEM',
-                            };
-                          }
-                          const stam = prev.summonStaminaCost ?? 2;
-                          const numPv =
-                            prev.pvNumber ||
-                            parseInt((prev.pvText || '').replace(/\D/g, ''), 10) ||
-                            300;
-                          return {
-                            ...prev,
-                            entityType: 'Criatura',
-                            pvNumber: numPv,
-                            pvText: prev.isNeutralMatrix ? 'PV—' : `PV${numPv}`,
-                            summonStaminaCost: stam,
-                            showSummonCostPill: true,
-                            summonCostPill: {
-                              id: 'pill-summon-cost',
-                              mode: 'stat',
-                              badgeValue: String(stam),
-                              badgeColor: '#F59E0B',
-                              mainText: 'EST',
-                              isSummonCost: true,
-                              costResource: 'stamina',
-                            },
-                          };
-                        })
-                      }
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                        isActiveType
-                          ? eType === 'Magia'
-                            ? 'bg-purple-600 text-white'
-                            : eType === 'Item'
-                            ? 'bg-sky-600 text-white'
-                            : 'bg-emerald-600 text-white'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {eType === 'Magia' ? '🔮 Magia' : eType === 'Item' ? '🛡️ Item' : '🐉 Criatura'}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Row 2: Card Name + PV/DF + Rank */}
-            <div className="grid grid-cols-12 gap-1.5">
-              <input
-                type="text"
-                value={activeCard.title}
-                onChange={(e) =>
-                  updateActiveCard((prev) => ({ ...prev, title: e.target.value }))
-                }
-                placeholder="Nome da Carta..."
-                className="col-span-7 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-bold text-white focus:outline-none focus:border-emerald-500"
-              />
-              <input
-                type="text"
-                maxLength={8}
-                value={
-                  activeCard.entityType === 'Magia'
-                    ? (activeCard.pvText || 'DF300').replace(/^PV/i, 'DF')
-                    : activeCard.pvText
-                }
-                onChange={(e) => {
-                  const rawVal = e.target.value.toUpperCase();
-                  const numVal = parseInt(rawVal.replace(/\D/g, ''), 10);
-                  updateActiveCard((prev) => ({
-                    ...prev,
-                    pvText: rawVal,
-                    ...(!isNaN(numVal) && numVal > 0 ? { pvNumber: numVal } : {}),
-                  }));
-                }}
-                title={
-                  activeCard.entityType === 'Magia'
-                    ? 'DF Lateral — Defesa Extra que entra no PV do Player (Ex: DF500)'
-                    : 'PV Lateral (Ex: PV500)'
-                }
-                placeholder={activeCard.entityType === 'Magia' ? 'DF500' : 'PV500'}
-                className={`col-span-3 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono font-bold text-center focus:outline-none ${
-                  activeCard.entityType === 'Magia'
-                    ? 'text-cyan-300 focus:border-cyan-500'
-                    : 'text-emerald-300 focus:border-emerald-500'
-                }`}
-              />
-              <input
-                type="text"
-                maxLength={2}
-                value={activeCard.rankBadgeText}
-                onChange={(e) =>
-                  updateActiveCard((prev) => ({
-                    ...prev,
-                    rankBadgeText: e.target.value.toUpperCase(),
-                  }))
-                }
-                title="Letra do Rank (C, B, A, S)"
-                placeholder="S"
-                className="col-span-2 px-1.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono font-bold text-amber-300 text-center focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            {/* Row 3: Quick Biome + Family + Element Selectors */}
-            <div className="grid grid-cols-3 gap-1.5">
-              <select
-                value={activeCard.biome || ''}
-                onChange={(e) => {
-                  const val = e.target.value || undefined;
-                  updateActiveCard((prev) => ({
-                    ...prev,
-                    biome: val,
-                    elementText:
-                      val && (!prev.elementText || prev.elementText === 'NEUTRA')
-                        ? val.slice(0, 6).toUpperCase()
-                        : prev.elementText,
-                  }));
-                }}
-                className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-semibold text-emerald-300 truncate"
-              >
-                <option value="">🌍 Bioma...</option>
-                {subgroupCatalog.biomes.map((b) => (
-                  <option key={b} value={b}>
-                    🌍 {b}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={activeCard.family || ''}
-                onChange={(e) => {
-                  const val = e.target.value || undefined;
-                  updateActiveCard((prev) => ({ ...prev, family: val }));
-                }}
-                className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-semibold text-sky-300 truncate"
-              >
-                <option value="">🧬 Família...</option>
-                {subgroupCatalog.families.map((f) => (
-                  <option key={f} value={f}>
-                    🧬 {f}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="text"
-                maxLength={7}
-                value={activeCard.elementText}
-                onChange={(e) =>
-                  updateActiveCard((prev) => ({
-                    ...prev,
-                    elementText: e.target.value.toUpperCase(),
-                  }))
-                }
-                placeholder="ELEMENTO"
-                title="Texto da Cápsula de Elemento"
-                className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-bold text-white text-center uppercase focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-          </div>
-
           {/* Inspector Section Tabs */}
           <div className="grid grid-cols-4 border-b border-slate-800/80 bg-[#090B0E] p-1 gap-1 shrink-0">
             {[
@@ -2129,9 +1909,11 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'bottom-stats' && (
+            {activeTab === 'bottom-stats' && activeCard && (
               <BottomStatsTab
+                card={activeCard}
                 activeCard={activeCard}
+                onChange={updateActiveCard}
                 updateActiveCard={updateActiveCard}
                 handleUpdatePill={handleUpdatePill}
               />

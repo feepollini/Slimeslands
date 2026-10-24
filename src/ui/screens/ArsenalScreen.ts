@@ -15,6 +15,40 @@ import {
 } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t as i18nT, tx as i18nTx } from '../../core/i18n';
 
+export function getCardRank(card: any): string {
+    if (!card) return 'C';
+    const raw = card.rank || card.cardRank || card.cardData?.cardRank || card.matrixCard?.cardRank || card.meta?.rank;
+    if (raw && typeof raw === 'string') {
+        const u = raw.toUpperCase().trim();
+        if (['S', 'A', 'B', 'C', 'D'].includes(u)) return u;
+    }
+    const rarity = (card.preferredRarity || card.rarity || '').toLowerCase();
+    if (rarity === 'legendary' || rarity === 'mitica' || rarity === 'mítica') return 'S';
+    if (rarity === 'epic' || rarity === 'épica' || rarity === 'epica') return 'A';
+    if (rarity === 'rare' || rarity === 'rara') return 'B';
+    return 'C';
+}
+
+export function getCardRankWeight(card: any): number {
+    const rank = getCardRank(card);
+    const weights: Record<string, number> = { 'S': 5, 'A': 4, 'B': 3, 'C': 2, 'D': 1 };
+    return weights[rank] || 1;
+}
+
+export function sortStackInstances(instances: any[]): any[] {
+    return [...instances].sort((a, b) => {
+        const wA = getCardRankWeight(a);
+        const wB = getCardRankWeight(b);
+        if (wB !== wA) return wB - wA; // Maior rank primeiro (S > A > B > C > D)
+        const pvA = Number(a.pv || a.basePv || a.pvNumber || 0);
+        const pvB = Number(b.pv || b.basePv || b.pvNumber || 0);
+        if (pvB !== pvA) return pvB - pvA;
+        const atkA = Number(a.atk || a.baseAtk || a.maxDamage || 0);
+        const atkB = Number(b.atk || b.baseAtk || b.maxDamage || 0);
+        return atkB - atkA;
+    });
+}
+
 export class ArsenalScreen {
     private templates: any[];
     private artifacts: Skill[];
@@ -302,9 +336,12 @@ export class ArsenalScreen {
                     }
                 });
                 displayCards = Array.from(cardMap.values()).map(entry => {
-                    entry.card._count = entry.count;
-                    entry.card._instances = entry.instances;
-                    return entry.card;
+                    // Ordena cópias da pilha garantindo que a de MAIOR RANK fique na frente (topo)
+                    const sorted = sortStackInstances(entry.instances);
+                    const topCard = { ...sorted[0] };
+                    topCard._count = entry.count;
+                    topCard._instances = sorted;
+                    return topCard;
                 });
             } else {
                 displayCards = filtered;
@@ -421,6 +458,7 @@ export class ArsenalScreen {
         const allInDeck = inDeckCount >= totalCount;
         const inDeck = inDeckCount > 0;
         const isStackedCard = this.isStacked && totalCount > 1;
+        const topRank = getCardRank(t);
 
         return `
             <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''} ${isStackedCard ? 'stacked' : ''}" data-name="${t.name}">
@@ -428,11 +466,12 @@ export class ArsenalScreen {
                     ${renderMatrixCardSVG(t, { mode: 'thumb', animateChroma: false })}
                     <div class="ars-fav-indicator ${isFav ? 'active' : ''}">⭐</div>
                     
-                    ${isStackedCard ? `<div class="ars-stack-badge" title="${totalCount} cópias disponíveis">🎴 x${totalCount}</div>` : ''}
+                    ${isStackedCard ? `<div class="ars-stack-badge" data-action="expand-stack" title="Clique para expandir pilha (${totalCount} cartas da Matriz - Topo: Rank ${topRank})">🎴 x${totalCount} ▾</div>` : ''}
 
                     ${inDeck ? `<div class="ars-deck-badge ${isStackedCard && !allInDeck ? 'partial' : ''}">${isStackedCard && totalCount > 1 ? `${inDeckCount}/${totalCount} ${i18nT('ars.inDeck')}` : i18nT('ars.inDeck')}</div>` : ''}
                     
                     <div class="ars-thumb-overlay">
+                        ${isStackedCard ? `<button class="ars-btn-action inline-expand-stack" style="background:linear-gradient(135deg, #7928ca, #ff0080); font-size:0.75rem; margin-bottom:4px;">📂 VER PILHA (${totalCount})</button>` : ''}
                         <button class="ars-btn-action inline-equip">${allInDeck ? i18nT('ars.remove') : (isStackedCard && inDeckCount > 0 ? `+ EQUIPAR (${inDeckCount}/${totalCount})` : (inDeck ? i18nT('ars.remove') : i18nT('ars.equip')))}</button>
                         <button class="ars-btn-action secondary inline-view">${i18nT('ars.details')}</button>
                     </div>
@@ -663,6 +702,12 @@ export class ArsenalScreen {
                 if (Date.now() < this.suppressThumbClickUntil) return;
                 const name = thumb.dataset.name;
                 const c = this.viewerList.find(t => t.name === name) || this.templates.find(t => t.name === name);
+                if (trg.classList.contains('inline-expand-stack') || trg.closest('.ars-stack-badge') || trg.classList.contains('ars-stack-badge')) {
+                    SoundManager.playAction('clique_geral', 0.5);
+                    const instances = (c as any)?._instances || (this.getCardsList().filter(x => x.name === name));
+                    this.openStackExplorerModal(name!, instances.length > 0 ? instances : [c], container);
+                    return;
+                }
                 if (trg.classList.contains('inline-equip')) { this.equipToDeck('card', c, thumb); return; }
                 if (trg.classList.contains('inline-view')) { 
                     const vIdx = this.viewerList.findIndex(t => t.name === name);
@@ -853,25 +898,24 @@ export class ArsenalScreen {
         els.forEach((el) => io.observe(el));
     }
 
-    private equipToDeck(type: 'card' | 'artifact', item: any, sourceEl: HTMLElement | null) {
+    private equipToDeck(type: 'card' | 'artifact', item: any, sourceEl: HTMLElement | null, forceAction?: 'equip' | 'remove') {
         let targetIdx = -1;
         let isRemoving = false;
 
         if (type === 'card') {
-            const inDeckCount = this.preDeckCards.filter(c => c && c.name === item.name).length;
+            const inDeckMatches: number[] = [];
+            this.preDeckCards.forEach((c, idx) => {
+                if (c && (c.id ? c.id === item.id : c.name === item.name)) inDeckMatches.push(idx);
+            });
+            const inDeckCount = inDeckMatches.length;
             const totalCount = item._count || 1;
 
-            if (inDeckCount >= totalCount) {
-                // Se todas as cópias já estão no deck, remove a última cópia equipada
-                let lastIdx = -1;
-                for (let i = this.preDeckCards.length - 1; i >= 0; i--) {
-                    if (this.preDeckCards[i] && this.preDeckCards[i].name === item.name) {
-                        lastIdx = i;
-                        break;
-                    }
-                }
-                if (lastIdx !== -1) {
-                    this.preDeckCards[lastIdx] = null;
+            if (forceAction === 'remove' || (!forceAction && inDeckCount >= totalCount)) {
+                // Remove a cópia equipada
+                const exactIdx = inDeckMatches.find(idx => this.preDeckCards[idx]?.id === item.id);
+                const removeIdx = exactIdx !== undefined ? exactIdx : (inDeckMatches.length > 0 ? inDeckMatches[inDeckMatches.length - 1] : -1);
+                if (removeIdx !== -1) {
+                    this.preDeckCards[removeIdx] = null;
                     isRemoving = true;
                 }
             } else {
@@ -894,6 +938,144 @@ export class ArsenalScreen {
             this.render(document.querySelector('.arsenal-screen')!.parentElement!);
         }
         this.savePreDeck();
+    }
+
+    private openStackExplorerModal(cardName: string, instances: any[], container: HTMLElement) {
+        document.querySelectorAll('.ars-stack-modal-overlay').forEach(el => el.remove());
+
+        const sorted = sortStackInstances(instances);
+        const modal = document.createElement('div');
+        modal.className = 'ars-stack-modal-overlay';
+
+        const total = sorted.length;
+        const fusionTarget = 10;
+        const progressPct = Math.min(100, Math.round((total / fusionTarget) * 100));
+        const canFuse = total >= fusionTarget;
+
+        modal.innerHTML = `
+            <div class="ars-stack-modal-container">
+                <div class="ars-stack-modal-header">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="font-size:1.8rem;">🎴</span>
+                        <div>
+                            <h3 style="margin:0; font-size:1.15rem; font-weight:900; color:#ffd700; text-transform:uppercase; letter-spacing:1px;">${cardName}</h3>
+                            <div style="font-size:0.75rem; color:#94a3b8; margin-top:2px;">
+                                Pilha de Matriz &bull; <strong style="color:#f1f5f9;">${total} cópias</strong> adquiridas &bull; Maior Rank no Topo: <span style="color:#ffd700; font-weight:900;">RANK ${getCardRank(sorted[0])}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="ars-stack-modal-close" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:50%; width:36px; height:36px; font-size:1.2rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:0.2s;" title="Fechar">✕</button>
+                </div>
+
+                <div class="ars-stack-modal-body">
+                    <!-- Banner de Transmutação / Fusão Máxima (Rank S) -->
+                    <div class="ars-fusion-banner">
+                        <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:280px;">
+                            <span style="font-size:2rem; filter:drop-shadow(0 0 8px rgba(168,85,247,0.8));">🔮</span>
+                            <div style="flex:1;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <strong style="color:#ffd700; font-size:0.85rem; letter-spacing:0.5px;">Transmutação Matriz Máxima (Rank S)</strong>
+                                    <span style="font-weight:900; font-size:0.8rem; color:#cbd5e1;">${total} / ${fusionTarget} Cartas</span>
+                                </div>
+                                <div class="ars-fusion-progress-track">
+                                    <div class="ars-fusion-progress-fill" style="width: ${progressPct}%;"></div>
+                                </div>
+                                <div style="font-size:0.68rem; color:#94a3b8; margin-top:6px; line-height:1.4;">
+                                    ${canFuse 
+                                        ? '✨ <strong style="color:#4ade80;">Condição atingida!</strong> Pronto para fundir em carta suprema de Rank S com PV e ATK máximos.' 
+                                        : `Acumule ${fusionTarget - total} cópias adicionais para converter em uma carta de Rank Máximo S (PV/ATK 500+).`}
+                                </div>
+                            </div>
+                        </div>
+                        <button class="ars-fusion-btn ${canFuse ? 'ready' : ''}" ${canFuse ? '' : 'disabled'}>
+                            ${canFuse ? '✨ TRANSMUTAR EM RANK S MÁXIMO' : `🔒 FUNDIR (REQUER ${fusionTarget})`}
+                        </button>
+                    </div>
+
+                    <!-- Grid de Cópias da Pilha -->
+                    <div class="ars-stack-grid">
+                        ${sorted.map((inst, idx) => {
+                            const isTop = idx === 0;
+                            const rank = getCardRank(inst);
+                            const inDeck = this.preDeckCards.some(c => c && (c.id ? c.id === inst.id : c.name === inst.name && total === 1));
+                            const isFav = this.favorites.includes(inst.name);
+                            const pv = inst.pv || inst.basePv || inst.pvNumber || 100;
+                            const atk = inst.atk || inst.baseAtk || inst.maxDamage || 50;
+
+                            return `
+                                <div class="ars-stack-card-card ${isTop ? 'top-rank' : ''}" data-idx="${idx}">
+                                    <div class="ars-stack-card-art">
+                                        ${renderMatrixCardSVG(inst, { mode: 'thumb', animateChroma: false })}
+                                        ${isTop ? `<div class="ars-stack-top-badge">👑 MAIOR RANK (TOPO)</div>` : ''}
+                                        <div class="ars-stack-rank-pill rank-${rank.toLowerCase()}">RANK ${rank}</div>
+                                        ${inDeck ? `<div class="ars-stack-deck-tag">✅ NO DECK</div>` : ''}
+                                    </div>
+                                    <div class="ars-stack-card-details">
+                                        <div class="ars-stack-card-title-row">
+                                            <span style="color:#94a3b8;">Cópia #${idx + 1}</span>
+                                            <span style="color:#ffd700; font-weight:900;">Rank ${rank}</span>
+                                        </div>
+                                        <div class="ars-stack-stats-row">
+                                            <span class="ars-stat-pv">❤️ ${pv} PV</span>
+                                            <span class="ars-stat-atk">⚔️ ${atk} ATK</span>
+                                        </div>
+                                        <div class="ars-stack-card-actions">
+                                            <button class="ars-stack-action-btn equip-btn ${inDeck ? 'remove' : ''}" data-idx="${idx}">
+                                                ${inDeck ? '✕ Remover' : '+ Equipar'}
+                                            </button>
+                                            <button class="ars-stack-action-btn fav-btn ${isFav ? 'active' : ''}" data-idx="${idx}">
+                                                ${isFav ? '⭐ Favorito' : '☆ Favoritar'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const closeBtn = modal.querySelector('.ars-stack-modal-close');
+        const closeModal = () => {
+            SoundManager.playAction('clique_geral', 0.3);
+            modal.remove();
+        };
+        closeBtn?.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        const fusionBtn = modal.querySelector('.ars-fusion-btn');
+        fusionBtn?.addEventListener('click', () => {
+            if (canFuse) {
+                SoundManager.playAction('carta_sacada', 0.7);
+                alert(`🔮 Transmutação Matriz: ${fusionTarget} cópias de ${cardName} preparadas para forjar a carta Rank S definitivo! (Recurso em validação de balanceamento).`);
+            }
+        });
+
+        modal.querySelectorAll('.ars-stack-action-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const b = e.currentTarget as HTMLElement;
+                const idx = parseInt(b.dataset.idx || '0');
+                const targetCard = sorted[idx];
+                if (!targetCard) return;
+
+                if (b.classList.contains('equip-btn')) {
+                    const isEquipped = this.preDeckCards.some(c => c && (c.id ? c.id === targetCard.id : c.name === targetCard.name));
+                    this.equipToDeck('card', targetCard, null, isEquipped ? 'remove' : 'equip');
+                    this.openStackExplorerModal(cardName, instances, container);
+                    this.render(container);
+                } else if (b.classList.contains('fav-btn')) {
+                    SoundManager.playAction('clique_geral', 0.4);
+                    this.toggleFavorite(cardName);
+                    this.openStackExplorerModal(cardName, instances, container);
+                    this.render(container);
+                }
+            });
+        });
     }
 
     private animateToSlot(source: HTMLElement, type: string, idx: number, img: string) {

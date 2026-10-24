@@ -14,8 +14,11 @@ import {
 } from '../../utils/forgeAbilitiesCatalog';
 
 interface Props {
-  card: CardData;
-  onChange: (updates: Partial<CardData>) => void;
+  card?: CardData;
+  activeCard?: CardData;
+  onChange?: (updates: Partial<CardData>) => void;
+  updateActiveCard?: (updates: Partial<CardData>) => void;
+  handleUpdatePill?: (index: number, updates: Partial<BottomStatPill>) => void;
 }
 
 const PILL_ACCENTS = [
@@ -29,7 +32,24 @@ const PILL_ACCENTS = [
   '#F59E0B',
 ];
 
-export const BottomStatsTab: React.FC<Props> = ({ card, onChange }) => {
+export const BottomStatsTab: React.FC<Props> = ({
+  card: propCard,
+  activeCard,
+  onChange: propOnChange,
+  updateActiveCard,
+  handleUpdatePill: propHandleUpdatePill,
+}) => {
+  const card = propCard || activeCard;
+  const onChange = propOnChange || updateActiveCard || (() => {});
+
+  if (!card) {
+    return (
+      <div className="p-4 text-xs text-slate-400 text-center">
+        Selecione uma carta para configurar as habilidades e ataques.
+      </div>
+    );
+  }
+
   const isMagicCard = card.entityType === 'Magia';
   const isItemCard = card.entityType === 'Item';
   const showSummonSlot = card.showSummonCostPill ?? !isItemCard;

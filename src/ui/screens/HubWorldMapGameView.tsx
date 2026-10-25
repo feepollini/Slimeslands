@@ -16,6 +16,7 @@ import { PortraitEmulator } from '../../marker_dream/src/components/PortraitEmul
 import { getMergedGameTemplates } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { CARD_TEMPLATES } from '../../core/constants';
 import { Map as MapIcon, ChevronLeft, ChevronRight, Compass, Check } from 'lucide-react';
+import { OrnateWindow } from '../nova_ui_v1.2/src/components/OrnateWindowFrame';
 
 export const HubWorldMapGameView: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,14 +25,12 @@ export const HubWorldMapGameView: React.FC = () => {
     height: window.innerHeight - 90 || 667,
   });
 
-  // Estado inicial com Fase Mestra, hidratado imediatamente do IndexedDB da Marker Dream
   const [project, setProject] = useState<MapProject>(() => createFaseMestraProject());
   const [savedLevels, setSavedLevels] = useState<SavedLevel[]>(() => [
     createFaseMestraSavedLevel(),
   ]);
   const [selectedMapId, setSelectedMapId] = useState<string>('map-main-default');
 
-  // Hidratação assíncrona real do banco de dados da Engine Marker Dream (IndexedDB + AssetPool)
   useEffect(() => {
     let mounted = true;
     getMergedGameTemplates(CARD_TEMPLATES).catch(() => {});
@@ -73,7 +72,6 @@ export const HubWorldMapGameView: React.FC = () => {
     };
   }, []);
 
-  // Lista unificada de Mapas criados no Editor de Mapas da Marker Dream
   const availableMaps = useMemo<WorldMapConfig[]>(() => {
     const mapById = new Map<string, WorldMapConfig>();
     const activeWorldMap = getOrCreateWorldMapConfig(project);
@@ -90,7 +88,6 @@ export const HubWorldMapGameView: React.FC = () => {
       mapById.set(activeWorldMap.id, activeWorldMap);
     }
 
-    // Também verifica se existem mapas salvos dentro da galeria de fases
     for (const lvl of savedLevels) {
       const lvlProj = lvl.projectData || (lvl as any).project;
       if (lvlProj?.savedWorldMaps) {
@@ -108,14 +105,10 @@ export const HubWorldMapGameView: React.FC = () => {
     return Array.from(mapById.values());
   }, [project, savedLevels]);
 
-  // Estado discreto do seletor lateral de mapas (recolhido por padrão para deixar o mapa 100% limpo)
   const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
-
-  // Quando o jogador clica em "VIAJAR AGORA" em um pino do mapa, entra na Fase jogável (Resultado do Emulador)
   const [activePlayingPhase, setActivePlayingPhase] = useState<MapProject | null>(null);
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
 
-  // Mede o container real da tela de Mapa no Hub
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -138,7 +131,6 @@ export const HubWorldMapGameView: React.FC = () => {
     };
   }, []);
 
-  // Sincroniza alterações do projeto na unidade de memória da Engine
   const handleUpdateProject: React.Dispatch<React.SetStateAction<MapProject>> = (updater) => {
     setProject((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -155,7 +147,6 @@ export const HubWorldMapGameView: React.FC = () => {
     }
   };
 
-  // Troca de mapa no seletor discreto lateral
   const handleSelectWorldMap = (wm: WorldMapConfig) => {
     setSelectedMapId(wm.id);
     setProject((prev) => {
@@ -170,7 +161,6 @@ export const HubWorldMapGameView: React.FC = () => {
     setIsSelectorOpen(false);
   };
 
-  // Hidrata uma fase (inclusive se estiver em Cold Stub) e entra no modo de jogo
   const handleEnterLevel = async (level: SavedLevel) => {
     if (level?.id && level.isColdStub) {
       const fullSlot = await loadSingleLevelSlot(level.id);
@@ -187,7 +177,6 @@ export const HubWorldMapGameView: React.FC = () => {
     }
   };
 
-  // Projeto com o mapa atualmente selecionado aplicado
   const activeMapProject = useMemo<MapProject>(() => {
     const chosen = availableMaps.find((m) => m.id === selectedMapId) || availableMaps[0];
     if (!chosen) return project;
@@ -200,12 +189,22 @@ export const HubWorldMapGameView: React.FC = () => {
 
   const currentMapConfig = getOrCreateWorldMapConfig(activeMapProject);
 
-  // Se o jogador viajou para uma Fase a partir de um pino do mapa, renderiza o resultado puro da Fase
+  useEffect(() => {
+    if (activePlayingPhase) {
+      document.body.classList.add('hub-in-active-phase');
+    } else {
+      document.body.classList.remove('hub-in-active-phase');
+    }
+    return () => {
+      document.body.classList.remove('hub-in-active-phase');
+    };
+  }, [activePlayingPhase]);
+
   if (activePlayingPhase) {
     return (
       <div
         ref={containerRef}
-        className="relative w-full h-full bg-slate-950 overflow-hidden select-none"
+        className="relative w-full h-full bg-[#060b19] overflow-hidden select-none"
       >
         <PortraitEmulator
           project={activePlayingPhase}
@@ -217,18 +216,8 @@ export const HubWorldMapGameView: React.FC = () => {
           onLoadLevel={(lvl) => {
             handleEnterLevel(lvl);
           }}
+          onExitToWorldMap={() => setActivePlayingPhase(null)}
         />
-
-        {/* Botão Discreto estilo Game para voltar ao Mapa Mundi */}
-        <button
-          type="button"
-          onClick={() => setActivePlayingPhase(null)}
-          className="absolute top-3 left-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/75 hover:bg-black/90 backdrop-blur-md border border-amber-400/50 text-amber-200 text-[11px] font-black uppercase tracking-wider shadow-[0_4px_14px_rgba(0,0,0,0.75)] active:scale-95 transition-all cursor-pointer"
-          title="Voltar ao Mapa"
-        >
-          <Compass className="w-3.5 h-3.5 text-amber-400" />
-          <span>Mapa</span>
-        </button>
       </div>
     );
   }
@@ -236,9 +225,8 @@ export const HubWorldMapGameView: React.FC = () => {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-slate-950 overflow-hidden select-none"
+      className="relative w-full h-full bg-[#060b19] overflow-hidden select-none"
     >
-      {/* SAÍDA REAL DO MAPA CRIADO NO EDITOR DE MAPAS DA MARKER DREAM */}
       <WorldMapEmulatorView
         project={activeMapProject}
         savedLevels={savedLevels}
@@ -250,45 +238,39 @@ export const HubWorldMapGameView: React.FC = () => {
         }}
       />
 
-      {/* SELETOR DISCRETO AO ESTILO GAME AO LADO (DIREITA) */}
-      <div className="absolute top-14 right-2.5 z-40 flex items-start gap-1.5">
-        {/* Aba/Botão Discreto para abrir/fechar o Seletor de Mapas */}
+      {/* Seletor de Regiões do Mapa com estética Nova UI v1.2 Pearl & Gold */}
+      <div className="absolute top-14 right-3 z-40 flex flex-col items-end gap-2">
         <button
           type="button"
           onClick={() => setIsSelectorOpen((prev) => !prev)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-black/75 hover:bg-black/90 backdrop-blur-md border border-amber-400/45 text-amber-200 shadow-[0_4px_14px_rgba(0,0,0,0.75)] transition-all cursor-pointer active:scale-95"
+          className="pearl-pill px-3 py-1.5 flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 transition-all"
           title="Alternar Região / Mapa"
         >
-          <MapIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-[10px] font-black uppercase tracking-wider max-w-[110px] truncate">
-            {currentMapConfig.title || 'Mapa'}
+          <MapIcon className="w-3.5 h-3.5 text-[#8c6518] shrink-0" />
+          <span className="font-cinzel font-bold text-[10px] text-[#2b1f14] uppercase tracking-wider max-w-[120px] truncate">
+            {currentMapConfig.title || 'Mapa Imperial'}
           </span>
           {availableMaps.length > 1 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/25 border border-amber-400/40 text-[9px] font-mono font-bold text-amber-300">
+            <span className="px-1.5 py-0.2 rounded-full bg-[#062356] border border-[#d4a84b] font-cinzel font-bold text-[8px] text-[#f5d98b]">
               {availableMaps.length}
             </span>
           )}
           {isSelectorOpen ? (
-            <ChevronRight className="w-3 h-3 text-amber-300/80" />
+            <ChevronRight className="w-3 h-3 text-[#8c6518]" />
           ) : (
-            <ChevronLeft className="w-3 h-3 text-amber-300/80" />
+            <ChevronLeft className="w-3 h-3 text-[#8c6518]" />
           )}
         </button>
 
-        {/* Painel Discreto de Seleção dos Mapas Criados no Editor */}
         {isSelectorOpen && (
-          <div className="w-56 max-h-[68vh] flex flex-col rounded-2xl bg-slate-950/92 backdrop-blur-xl border border-amber-500/45 shadow-[0_12px_32px_rgba(0,0,0,0.9)] overflow-hidden animate-in fade-in slide-in-from-right-3 duration-150">
-            <div className="px-3 py-2 border-b border-amber-500/20 bg-gradient-to-r from-amber-500/15 to-transparent flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 flex items-center gap-1.5">
-                <Compass className="w-3 h-3 text-amber-400" />
-                <span>Regiões do Mundo</span>
-              </span>
-              <span className="text-[9px] font-mono text-amber-200/70">
-                {availableMaps.length} {availableMaps.length === 1 ? 'mapa' : 'mapas'}
-              </span>
-            </div>
-
-            <div className="p-2 space-y-1.5 overflow-y-auto">
+          <div className="w-64">
+            <OrnateWindow
+              title="REGIÕES"
+              compactHeader
+              showClose
+              onClose={() => setIsSelectorOpen(false)}
+              bodyClass="px-3 pt-7 pb-4 space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar"
+            >
               {availableMaps.map((wm, idx) => {
                 const isSelected = wm.id === currentMapConfig.id;
                 const poiCount = (wm.pointsOfInterest || []).filter(
@@ -300,13 +282,13 @@ export const HubWorldMapGameView: React.FC = () => {
                     key={wm.id || `wm-${idx}`}
                     type="button"
                     onClick={() => handleSelectWorldMap(wm)}
-                    className={`w-full p-1.5 rounded-xl border text-left transition-all flex items-center gap-2 cursor-pointer ${
+                    className={`w-full p-2 text-left transition-all flex items-center gap-2 cursor-pointer ${
                       isSelected
-                        ? 'bg-gradient-to-r from-amber-500/25 to-emerald-500/15 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                        : 'bg-white/5 hover:bg-white/10 border-white/10'
+                        ? 'pearl-subcard border-[#b88928] ring-2 ring-[#d4a84b]'
+                        : 'pearl-subcard hover:brightness-95'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/15 bg-slate-900 shrink-0 relative">
+                    <div className="wire-slot w-10 h-10 rounded-lg overflow-hidden shrink-0">
                       {wm.backgroundPng ? (
                         <img
                           src={wm.backgroundPng}
@@ -314,30 +296,28 @@ export const HubWorldMapGameView: React.FC = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-sm">
-                          🗺️
-                        </div>
+                        <span>🗺️</span>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-black text-white truncate">
+                      <div className="font-cinzel font-bold text-[10px] text-[#2b1f14] truncate uppercase">
                         {wm.title || `Mapa ${idx + 1}`}
                       </div>
-                      <div className="text-[9px] font-mono text-amber-300/80 flex items-center gap-1.5">
-                        <span>📍 {poiCount} locais</span>
+                      <div className="font-cinzel text-[8px] text-[#8c6518]">
+                        📍 {poiCount} locais
                       </div>
                     </div>
 
                     {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+                      <div className="w-5 h-5 rounded-full bg-[#062356] border border-[#d4a84b] text-[#f5d98b] flex items-center justify-center shrink-0">
                         <Check className="w-3 h-3 stroke-[3]" />
                       </div>
                     )}
                   </button>
                 );
               })}
-            </div>
+            </OrnateWindow>
           </div>
         )}
       </div>

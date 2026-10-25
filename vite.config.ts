@@ -21,8 +21,7 @@ function cardEditorPlugin(): Plugin {
 
                 if (urlPath === '/api/regenerate-catalog' && req.method === 'GET') {
                     try {
-                        const mod = await import(`./src/core/generateMatrixCatalog.ts?update=${Date.now()}`);
-                        const stats = mod.runFullCatalogGeneration(process.cwd());
+                        const stats = runFullCatalogGeneration(process.cwd());
                         res.setHeader('Content-Type', 'application/json');
                         res.end(JSON.stringify({ success: true, stats }));
                     } catch (err: unknown) {

@@ -1,4 +1,5 @@
 import './style.css';
+import './ui/styles/NovaUIv12.css';
 import './ui/styles/Landscape.css';
 import { gsap } from 'gsap';
 import { MenuScreen } from './ui/screens/MenuScreen';
@@ -192,6 +193,28 @@ class HubApp {
     });
 
     this.bottomNav.bind();
+
+    const mainContent = document.getElementById('main-content');
+    const lastScrollByEl = new WeakMap<EventTarget, number>();
+    mainContent?.addEventListener(
+      'scroll',
+      (ev) => {
+        const target = ev.target as HTMLElement | null;
+        if (!target || typeof target.scrollTop !== 'number') return;
+        // Ignore horizontal carousels
+        if (target.scrollHeight <= target.clientHeight + 24) return;
+        const curY = target.scrollTop;
+        const prevY = lastScrollByEl.get(target) ?? curY;
+        const dy = curY - prevY;
+        lastScrollByEl.set(target, curY);
+        if (curY > 28 && dy > 3) {
+          document.body.classList.add('hub-scroll-hide-bars');
+        } else if (dy < -3 || curY <= 20) {
+          document.body.classList.remove('hub-scroll-hide-bars');
+        }
+      },
+      { capture: true, passive: true }
+    );
   }
 
   private togglePrepMode(active: boolean) {
@@ -319,6 +342,8 @@ class HubApp {
   }
 
   private updateUIComponents() {
+    document.body.classList.remove('hub-scroll-hide-bars');
+    document.body.classList.remove('hub-in-active-phase');
     this.bottomNav.update(this.currentTab, this.isPrepMode);
 
     const settingsBtn = document.getElementById('btn-game-settings');
@@ -364,7 +389,7 @@ class HubApp {
       applyScenarioBackground(getActiveScenario('store', (SCENARIOS as any).store));
       if (isLandscape) {
         const storeLs = new StoreScreenLandscape();
-        storeLs.render(container, { headerSpace: false });
+        storeLs.render(container, { headerSpace: true });
       } else {
         const store = new StoreScreen();
         store.render(container, { headerSpace: true });

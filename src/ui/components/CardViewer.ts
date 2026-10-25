@@ -16,6 +16,7 @@ export interface OpenViewerOpts {
   index?: number;
   priceHtml?: string;
   actionLabel: string;
+  getActionLabel?: (card: any) => string;
   actionDisabled?: boolean;
   onAction: (card: any) => ViewerActionResult | void;
 }
@@ -29,7 +30,8 @@ interface ViewerSession {
 
 let session: ViewerSession | null = null;
 
-export function toPreviewCard(t: any): Card {
+export function toPreviewCard(rawCard: any): Card {
+  const t = rawCard || {};
   const atk = t.baseAtk ?? t.atk ?? 0;
   const pv = t.basePv ?? t.pv ?? 0;
   const mana = t.manaCost ?? t.mana ?? 1;
@@ -44,7 +46,7 @@ export function toPreviewCard(t: any): Card {
   return {
     ...t,
     id: t.id || 'preview',
-    name: t.name || 'Carta',
+    name: t.name || t.title || 'Carta',
     image: t.image || t.imageUrl || '',
     owner: 'p',
     atk: atk,
@@ -89,8 +91,35 @@ function onViewerKey(e: KeyboardEvent) {
   else if (e.key === 'ArrowRight') cardViewerNav(1);
 }
 
-export function openCardViewer(opts: OpenViewerOpts) {
+export function openCardViewer(rawOpts: OpenViewerOpts | any) {
   closeCardViewer();
+  if (!rawOpts) return;
+
+  const isOptsObject =
+    typeof rawOpts === 'object' &&
+    ('card' in rawOpts || 'actionLabel' in rawOpts || 'onAction' in rawOpts);
+
+  const opts: OpenViewerOpts = isOptsObject
+    ? {
+        card: rawOpts.card,
+        list: rawOpts.list,
+        index: rawOpts.index,
+        priceHtml: rawOpts.priceHtml,
+        actionLabel: rawOpts.actionLabel || 'FECHAR',
+        getActionLabel: rawOpts.getActionLabel,
+        actionDisabled: rawOpts.actionDisabled,
+        onAction:
+          typeof rawOpts.onAction === 'function'
+            ? rawOpts.onAction
+            : () => ({ close: true }),
+      }
+    : {
+        card: rawOpts,
+        list: [rawOpts],
+        index: 0,
+        actionLabel: 'FECHAR',
+        onAction: () => ({ close: true }),
+      };
 
   const list = opts.list && opts.list.length > 0 ? opts.list : [opts.card];
   let idx = opts.index ?? list.indexOf(opts.card);
@@ -105,6 +134,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
     const curIdx = session ? session.idx : idx;
     const card = list[curIdx] || opts.card;
     const mock = toPreviewCard(card);
+    const resolvedActionLabel = opts.getActionLabel ? opts.getActionLabel(card) : opts.actionLabel;
     overlay.innerHTML = `
       <style>
         #cv-card .premium-card-art { filter: brightness(1) contrast(1.05); }
@@ -118,7 +148,7 @@ export function openCardViewer(opts: OpenViewerOpts) {
       <div id="cv-counter" style="font-size:clamp(0.54rem, 1.4dvh, 0.65rem); font-weight:900; letter-spacing:3px; color:rgba(255,255,255,0.6);">${list.length > 1 ? `${curIdx + 1} / ${list.length}` : ''}</div>
       <div id="cv-card" style="width:min(350px, 84vw, calc(70dvh * 680 / 990)); max-width:380px; max-height:70dvh; aspect-ratio:680/990; filter:drop-shadow(0 18px 50px rgba(0,0,0,0.8)) drop-shadow(0 0 26px rgba(255,215,0,0.18));">${renderMatrixCardSVG(mock, { mode: 'full', animateChroma: true })}</div>
       ${opts.priceHtml ? `<div id="cv-price" style="font-size:clamp(0.75rem, 2dvh, 0.9rem);">${opts.priceHtml}</div>` : ''}
-      <button id="cv-action" style="min-width:clamp(180px, 32dvh, 220px); padding:clamp(8px, 1.8dvh, 13px) clamp(22px, 4vw, 34px); border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:clamp(0.68rem, 1.8dvh, 0.8rem); letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${opts.actionLabel}</button>
+      <button id="cv-action" style="min-width:clamp(180px, 32dvh, 220px); padding:clamp(8px, 1.8dvh, 13px) clamp(22px, 4vw, 34px); border-radius:14px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:clamp(0.68rem, 1.8dvh, 0.8rem); letter-spacing:2px; cursor:pointer; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5);">${resolvedActionLabel}</button>
     `;
 
     const actBtn = overlay.querySelector('#cv-action') as HTMLButtonElement | null;

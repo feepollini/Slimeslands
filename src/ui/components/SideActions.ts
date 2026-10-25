@@ -11,8 +11,7 @@ export interface SideActionDef {
   hasNotification?: boolean;
 }
 
-// Modulo isolado: botoes laterais do lobby. Cresce aqui sem medo —
-// passe defs proprias no construtor e trate os ids no onAction.
+// Módulo isolado: botões de acesso rápido laterais do Hub (Vertical e Paisagem) — Nova UI v1.2 (Pearl & Gold + Royal Sapphire)
 export class SideActions {
   private actions: SideActionDef[];
   private onAction?: (id: string) => void;
@@ -35,17 +34,17 @@ export class SideActions {
 
   public render(): string {
     const col = (side: 'left' | 'right') => `
-      <div data-side="${side}" style="position:absolute; ${side}:10px; top:clamp(68px, 10dvh, 82px); display:flex; flex-direction:column; gap:clamp(5px, 0.9dvh, 8px); z-index:500;">
+      <div data-side="${side}" class="nova-hub-side-dock" style="position:absolute; ${side}:8px; top:clamp(68px, 10.5dvh, 84px); display:flex; flex-direction:column; gap:clamp(5px, 0.9dvh, 8px); z-index:500; padding:6px 5px; border-radius:16px; background:linear-gradient(180deg, rgba(11, 47, 98, 0.62) 0%, rgba(4, 18, 42, 0.78) 100%); border:1.5px solid rgba(212, 175, 83, 0.52); box-shadow:0 8px 22px rgba(0, 8, 22, 0.65), inset 0 1px 1px rgba(255, 243, 194, 0.3); backdrop-filter:blur(8px);">
         ${this.actions.filter(a => a.side === side).map(a => `
-          <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
-            <button class="lobby-side-btn" data-action="${a.id}" style="width:clamp(44px, 6.2dvh, 54px); height:clamp(44px, 6.2dvh, 54px); background:transparent; border:none; outline:none; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; padding:0; transition:transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);">
+          <div class="nova-side-action-item" style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+            <button class="lobby-side-btn nova-side-medallion" data-action="${a.id}" style="width:clamp(40px, 5.8dvh, 48px); height:clamp(40px, 5.8dvh, 48px); background:radial-gradient(circle at 50% 25%, rgba(252,250,245,0.94) 0%, rgba(235,225,206,0.92) 70%, rgba(216,200,171,0.95) 100%); border:1.5px solid #c59638; outline:1px solid #523707; border-radius:13px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; padding:0; box-shadow:0 4px 10px rgba(0,8,22,0.55), inset 0 1px 2px rgba(255,255,255,0.95); transition:transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;">
               ${a.icon.includes('/') 
-                ? `<img src="${a.icon}" alt="${a.label}" style="width:clamp(44px, 6.2dvh, 54px); height:clamp(44px, 6.2dvh, 54px); object-fit:contain; filter:drop-shadow(0 5px 10px rgba(0,0,0,0.85)); pointer-events:none;" />`
-                : `<span style="font-size:1.85rem; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.8)); pointer-events:none;">${a.icon}</span>`}
-              ${a.hasNotification ? `<span class="lobby-notif-dot" style="position:absolute; top:2px; right:2px; width:12px; height:12px; border-radius:50%; background:radial-gradient(circle at 35% 35%, #ff4d4d 0%, #d60000 70%, #8a0000 100%); border:2px solid #ffffff; box-shadow:0 0 10px rgba(255, 30, 30, 0.95), 0 2px 4px rgba(0,0,0,0.8); pointer-events:none; z-index:502; animation:notifPulseDot 1.8s ease-in-out infinite;"></span>` : ''}
-              ${a.badge ? `<span style="position:absolute; top:-2px; right:-2px; min-width:18px; height:18px; border-radius:10px; background:linear-gradient(180deg, #ff6b6b, #b30000); border:2px solid #0e0903; color:#fff; font-size:0.58rem; font-weight:900; display:flex; align-items:center; justify-content:center; padding:0 3px; box-sizing:border-box; pointer-events:none; box-shadow:0 2px 5px rgba(0,0,0,0.7);">${a.badge}</span>` : ''}
+                ? `<img src="${a.icon}" alt="${a.label}" style="width:clamp(32px, 4.8dvh, 40px); height:clamp(32px, 4.8dvh, 40px); object-fit:contain; filter:drop-shadow(0 3px 5px rgba(0,0,0,0.45)); pointer-events:none;" />`
+                : `<span style="font-size:1.5rem; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.45)); pointer-events:none;">${a.icon}</span>`}
+              ${a.hasNotification ? `<span class="lobby-notif-dot" style="position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%; background:radial-gradient(circle at 35% 35%, #ff4d4d 0%, #d60000 70%, #8a0000 100%); border:1.5px solid #fff3c2; box-shadow:0 0 8px rgba(255, 30, 30, 0.95), 0 2px 4px rgba(0,0,0,0.8); pointer-events:none; z-index:502;"></span>` : ''}
+              ${a.badge ? `<span style="position:absolute; top:-4px; right:-4px; min-width:17px; height:17px; border-radius:999px; background:linear-gradient(180deg, #0b3778, #041f4a); border:1.5px solid #e5c168; color:#fff3c2; font-family:'Cinzel',serif; font-size:0.52rem; font-weight:900; display:flex; align-items:center; justify-content:center; padding:0 4px; box-sizing:border-box; pointer-events:none; box-shadow:0 2px 5px rgba(0,0,0,0.7);">${a.badge}</span>` : ''}
             </button>
-            <span style="font-size:0.52rem; font-weight:900; letter-spacing:0.8px; color:#ffe9a8; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 2px 0 rgba(0,0,0,0.7); white-space:nowrap; pointer-events:none;">${a.label}</span>
+            <span style="font-family:'Cinzel',serif; font-size:0.46rem; font-weight:900; letter-spacing:0.6px; color:#fff3c2; text-shadow:0 1px 3px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8); white-space:nowrap; pointer-events:none;">${a.label}</span>
           </div>
         `).join('')}
       </div>
@@ -53,7 +52,14 @@ export class SideActions {
     return `
       ${col('left')}
       ${col('right')}
-      <div class="lobby-side-toast" style="position:absolute; left:50%; bottom:90px; transform:translateX(-50%); background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #0e0903; border-radius:12px; color:#ffe9a8; font-size:0.7rem; font-weight:900; letter-spacing:2px; padding:10px 22px; opacity:0; pointer-events:none; z-index:501; white-space:nowrap; box-shadow:0 4px 0 rgba(0,0,0,0.5);"></div>
+      <div class="lobby-side-toast" style="position:absolute; left:50%; bottom:94px; transform:translateX(-50%); background:linear-gradient(180deg, #0b3778 0%, #041f4a 100%); border:2px solid #e5c168; border-radius:999px; color:#fff3c2; font-family:'Cinzel',serif; font-size:0.68rem; font-weight:900; letter-spacing:1.8px; padding:8px 20px; opacity:0; pointer-events:none; z-index:501; white-space:nowrap; box-shadow:0 8px 24px rgba(0,8,22,0.85);"></div>
+      <style>
+        .nova-side-medallion:hover {
+          transform: translateY(-2px) scale(1.05);
+          border-color: #0b3778 !important;
+          box-shadow: 0 6px 14px rgba(0,8,22,0.75), 0 0 12px rgba(229,193,104,0.55) !important;
+        }
+      </style>
     `;
   }
 
@@ -62,7 +68,7 @@ export class SideActions {
 
     const showToast = (msg: string) => {
       if (!toast) return;
-      toast.textContent = msg;
+      toast.textContent = `❖ ${msg} ❖`;
       gsap.killTweensOf(toast);
       gsap.fromTo(toast, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out' });
       gsap.to(toast, { opacity: 0, y: 6, duration: 0.3, delay: 1.4 });

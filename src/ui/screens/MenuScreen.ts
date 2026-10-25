@@ -15,21 +15,22 @@ export class MenuScreen {
     return `
       <div class="menu-main-view active" id="view-battle" style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; position:relative; overflow:hidden;">
         <!-- VINHETA DO LOBBY -->
-        <div id="lobby-vignette" style="position:absolute; inset:0; pointer-events:none; z-index:10; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,0.45) 75%, rgba(0,0,0,0.85) 100%), linear-gradient(90deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.2) 20%, transparent 35%, transparent 65%, rgba(0,0,0,0.2) 80%, rgba(0,0,0,0.65) 100%);"></div>
+        <div id="lobby-vignette" style="position:absolute; inset:0; pointer-events:none; z-index:10; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(2,12,27,0.42) 78%, rgba(2,10,24,0.82) 100%);"></div>
         
-        <!-- BOTÃO CIRCULAR DE TESTE DO TABULEIRO 3x1 NO CANTO INFERIOR DIREITO -->
-        <button id="btn-boss-test-circle" title="Testar Arena 3x1" style="
+        <!-- BOTÃO DE TESTE DO TABULEIRO 3x1 (ROYAL SAPPHIRE & GOLD v1.2) -->
+        <button id="btn-boss-test-circle" title="Testar Arena Boss 3x1" style="
           position: absolute;
-          bottom: 104px;
+          bottom: 94px;
           right: 12px;
           width: 44px;
           height: 44px;
           border-radius: 50%;
-          background: radial-gradient(circle, #ffd700 0%, #b8860b 80%, #5a4128 100%);
-          border: 2px solid #ffffff;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75), 0 0 12px rgba(255, 215, 0, 0.5);
-          color: #000;
-          font-size: 1.25rem;
+          background: linear-gradient(180deg, #0b3778 0%, #041f4a 55%, #02122e 100%);
+          border: 2px solid #fff3c2;
+          outline: 1.5px solid #9b701e;
+          box-shadow: 0 6px 16px rgba(0, 8, 22, 0.8), 0 0 14px rgba(212, 175, 83, 0.45);
+          color: #fff3c2;
+          font-size: 1.2rem;
           display: flex;
           align-items: center;
           justify-content: center;

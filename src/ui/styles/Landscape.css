@@ -82,7 +82,7 @@ body.is-landscape-mode .menu-content {
 }
 
 /* ============================================================================
-   1. HEADER ESTILO WILD RIFT / MOBILE LEGENDS (TOPO LADO A LADO)
+   1. HEADER ESTILO NOVA UI v1.2 (PEARL & GOLD + ROYAL SAPPHIRE LADO A LADO)
    ============================================================================ */
 body.is-landscape-mode #top-header-component,
 body.is-landscape-mode .menu-top-bar {
@@ -102,9 +102,9 @@ body.is-landscape-mode .menu-top-bar {
   align-items: center !important;
   background: linear-gradient(
     180deg,
-    rgba(10, 7, 4, 0.92) 0%,
-    rgba(14, 10, 5, 0.65) 68%,
-    rgba(14, 10, 5, 0) 100%
+    rgba(2, 12, 27, 0.88) 0%,
+    rgba(4, 20, 44, 0.55) 68%,
+    rgba(4, 20, 44, 0) 100%
   ) !important;
   z-index: 1200 !important;
 }
@@ -119,7 +119,7 @@ body.is-landscape-mode .menu-top-bar {
   }
 
   body.is-landscape-mode #top-header-component #btn-profile {
-    transform: scale(0.8);
+    transform: scale(0.82);
     transform-origin: left center;
   }
 
@@ -130,7 +130,7 @@ body.is-landscape-mode .menu-top-bar {
 }
 
 /* ============================================================================
-   2. BARRA INFERIOR CENTRAL LADO A LADO (DECK • MUNDO • BATALHAR • ACADEMIA • LOJA)
+   2. CÁPSULA INFERIOR PAISAGEM NOVA UI v1.2 (DECK • MAPA • BATALHAR • INVENTÁRIO • LOJA)
    ============================================================================ */
 body.is-landscape-mode .menu-bottom-nav {
   position: fixed !important;
@@ -138,95 +138,125 @@ body.is-landscape-mode .menu-bottom-nav {
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: auto !important;
+  max-width: 96vw !important;
   z-index: 1250 !important;
 }
 
 #nav-pill-landscape {
+  position: relative;
   display: flex;
   align-items: center;
   gap: clamp(4px, 0.8vw, 8px);
-  padding: clamp(3px, 0.7dvh, 6px) clamp(6px, 1vw, 10px);
+  padding: clamp(4px, 0.75dvh, 6px) clamp(7px, 1.1vw, 12px);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(44, 31, 17, 0.96) 0%, rgba(18, 12, 6, 0.98) 100%);
-  border: 2px solid #0e0903;
+  background: radial-gradient(circle at 50% 20%, #fcfaf5 0%, #f3ead8 58%, #e4d4b7 100%);
+  border: 2px solid #b58932;
+  outline: 2.5px solid #e5c168;
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.85),
-    0 0 0 1.5px rgba(212, 175, 55, 0.38),
-    inset 0 2px 0 rgba(255, 236, 190, 0.3);
+    0 12px 32px rgba(0, 8, 22, 0.88),
+    0 0 0 4px #523707,
+    0 0 24px rgba(212, 168, 79, 0.35),
+    inset 0 2px 3px rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
+}
+
+#nav-pill-landscape::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 11px;
+  height: 11px;
+  background: linear-gradient(135deg, #fff3c2 0%, #c59638 65%, #7d5b19 100%);
+  border: 1.5px solid #523707;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
 }
 
 .ls-nav-item {
   height: clamp(28px, 6.2dvh, 42px);
   padding: 0 clamp(10px, 1.5vw, 18px);
   border-radius: 999px;
-  border: 1.5px solid rgba(212, 175, 55, 0.16);
-  background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 233, 168, 0.72);
-  font-family: 'Outfit', sans-serif;
-  font-size: clamp(0.56rem, 1.5dvh, 0.72rem);
+  border: 1.5px solid #cdb482;
+  background: linear-gradient(180deg, #fbf7ef 0%, #f1e8d7 54%, #e3d5bc 100%);
+  color: #122030;
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.54rem, 1.45dvh, 0.7rem);
   font-weight: 900;
   letter-spacing: 1px;
   text-transform: uppercase;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(4px, 0.6vw, 8px);
+  gap: clamp(4px, 0.6vw, 7px);
   cursor: pointer;
-  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.92),
+    0 2px 5px rgba(15, 28, 46, 0.14);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
 .ls-nav-item:hover {
-  color: #fff;
-  border-color: rgba(212, 175, 55, 0.55);
-  background: rgba(212, 175, 55, 0.16);
-  transform: translateY(-2px);
+  border-color: #9b701e;
+  background: linear-gradient(180deg, #fffdf9 0%, #f5ede0 60%, #e8dac2 100%);
+  transform: translateY(-1.5px);
+  box-shadow:
+    0 4px 10px rgba(15, 28, 46, 0.22),
+    0 0 10px rgba(212, 168, 79, 0.3);
 }
 
 .ls-nav-item.active:not(.ls-nav-battle-center) {
-  background: linear-gradient(180deg, #ffe27a 0%, #d4af37 65%, #9a7414 100%);
-  color: #2a1600;
-  border-color: #fff3b0;
-  box-shadow: 0 0 18px rgba(212, 175, 55, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.55);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 52%, #02122e 90%, #051b42 100%);
+  color: #fff3c2;
+  border: 1.5px solid #e5c168;
+  box-shadow:
+    0 5px 14px rgba(0, 8, 22, 0.65),
+    0 0 14px rgba(212, 168, 79, 0.45),
+    inset 0 1.5px 3px rgba(120, 185, 255, 0.35);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 
-/* Botão Central BATALHAR em destaque (Estilo Wild Rift / Mobile Legends) */
+/* Botão Central BATALHAR em destaque (Royal Sapphire & Gold Crest v1.2) */
 .ls-nav-item.ls-nav-battle-center {
   height: clamp(32px, 6.8dvh, 46px);
-  padding: 0 clamp(14px, 2.2vw, 28px);
-  background: linear-gradient(180deg, #523b20 0%, #2a1c0d 100%);
-  border: 2px solid #d4af37;
-  color: #ffe9a8;
-  font-size: clamp(0.62rem, 1.65dvh, 0.8rem);
-  font-weight: 950;
-  letter-spacing: 1.5px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+  padding: 0 clamp(14px, 2.2vw, 26px);
+  background: linear-gradient(180deg, #0e418c 0%, #06275c 54%, #031536 100%);
+  border: 2px solid #e5c168;
+  color: #fff3c2;
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.6rem, 1.6dvh, 0.78rem);
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+  box-shadow:
+    0 5px 14px rgba(0, 8, 22, 0.65),
+    inset 0 2px 3px rgba(140, 200, 255, 0.32);
 }
 
 .ls-nav-item.ls-nav-battle-center.active {
-  background: linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%);
-  border: 2px solid #e2ff9e;
-  color: #0f1f00;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 52%, #02122e 90%, #051b42 100%);
+  border: 2px solid #fff3c2;
+  color: #fff8e6;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
   box-shadow:
-    0 0 20px rgba(126, 211, 33, 0.65),
-    0 3px 0 #1b3d06,
-    inset 0 2px 0 rgba(255, 255, 255, 0.65);
+    0 0 20px rgba(229, 193, 104, 0.65),
+    0 4px 12px rgba(0, 8, 22, 0.8),
+    inset 0 2px 4px rgba(140, 200, 255, 0.42);
   transform: scale(1.03);
 }
 
 .ls-nav-item.ls-nav-battle-center.prep-mode {
-  background: linear-gradient(180deg, #ff6b6b 0%, #dc2626 50%, #991b1b 100%) !important;
-  border-color: #fca5a5 !important;
+  background: linear-gradient(180deg, #dc2626 0%, #991b1b 55%, #450a0a 100%) !important;
+  border-color: #fff3c2 !important;
   color: #ffffff !important;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8) !important;
   box-shadow: 0 0 24px rgba(239, 68, 68, 0.75), inset 0 2px 0 rgba(255, 255, 255, 0.45) !important;
 }
 
 /* ============================================================================
-   3. LOBBY LANDSCAPE (MenuScreenLandscape — Palco Limpo + Cantos Proporcionais)
+   3. LOBBY LANDSCAPE (MenuScreenLandscape — Palco Limpo + Docas Laterais Nova UI v1.2)
    ============================================================================ */
 body.is-landscape-mode .menu-main-view.hub-landscape-view {
   width: 100vw !important;
@@ -246,8 +276,8 @@ body.is-landscape-mode .menu-main-view.hub-landscape-view {
   pointer-events: none;
   z-index: 2;
   background:
-    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 48%, rgba(0, 0, 0, 0.55) 100%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.58) 0%, transparent 16%, transparent 84%, rgba(0, 0, 0, 0.58) 100%);
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 48%, rgba(2, 12, 27, 0.55) 100%),
+    linear-gradient(90deg, rgba(2, 12, 27, 0.58) 0%, transparent 16%, transparent 84%, rgba(2, 12, 27, 0.58) 100%);
 }
 
 .hub-ls-corners-layer {
@@ -257,78 +287,81 @@ body.is-landscape-mode .menu-main-view.hub-landscape-view {
   z-index: 25;
 }
 
-/* Organiza os botões laterais (SideActions) nos cantos esquerdo e direito */
+/* Organiza os botões laterais (SideActions) nos cantos esquerdo e direito em estilo Nova UI v1.2 */
 body.is-landscape-mode .hub-ls-corners-layer [data-side="left"] {
   position: absolute !important;
-  left: clamp(10px, 2vw, 28px) !important;
-  top: 53% !important;
+  left: clamp(10px, 2vw, 26px) !important;
+  top: 52% !important;
   transform: translateY(-50%) !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: clamp(2px, 0.85dvh, 8px) !important;
-  padding: clamp(5px, 1.1dvh, 10px) clamp(5px, 0.9vw, 10px) !important;
-  border-radius: 16px !important;
-  background: linear-gradient(180deg, rgba(20, 14, 7, 0.72) 0%, rgba(10, 7, 4, 0.82) 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.28) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65) !important;
-  backdrop-filter: blur(8px) !important;
+  gap: clamp(3px, 0.85dvh, 8px) !important;
+  padding: clamp(6px, 1.1dvh, 10px) clamp(6px, 0.9vw, 10px) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, rgba(11, 47, 98, 0.76) 0%, rgba(4, 18, 42, 0.88) 100%) !important;
+  border: 2px solid #d4af53 !important;
+  outline: 1.5px solid #523707 !important;
+  box-shadow: 0 10px 28px rgba(0, 8, 22, 0.78), inset 0 1px 2px rgba(255, 243, 194, 0.35) !important;
+  backdrop-filter: blur(10px) !important;
   pointer-events: auto !important;
 }
 
 body.is-landscape-mode .hub-ls-corners-layer [data-side="right"] {
   position: absolute !important;
-  right: clamp(10px, 2vw, 28px) !important;
-  top: 53% !important;
+  right: clamp(10px, 2vw, 26px) !important;
+  top: 52% !important;
   transform: translateY(-50%) !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: clamp(2px, 0.85dvh, 8px) !important;
-  padding: clamp(5px, 1.1dvh, 10px) clamp(5px, 0.9vw, 10px) !important;
-  border-radius: 16px !important;
-  background: linear-gradient(180deg, rgba(20, 14, 7, 0.72) 0%, rgba(10, 7, 4, 0.82) 100%) !important;
-  border: 1.5px solid rgba(212, 175, 55, 0.28) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65) !important;
-  backdrop-filter: blur(8px) !important;
+  gap: clamp(3px, 0.85dvh, 8px) !important;
+  padding: clamp(6px, 1.1dvh, 10px) clamp(6px, 0.9vw, 10px) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, rgba(11, 47, 98, 0.76) 0%, rgba(4, 18, 42, 0.88) 100%) !important;
+  border: 2px solid #d4af53 !important;
+  outline: 1.5px solid #523707 !important;
+  box-shadow: 0 10px 28px rgba(0, 8, 22, 0.78), inset 0 1px 2px rgba(255, 243, 194, 0.35) !important;
+  backdrop-filter: blur(10px) !important;
   pointer-events: auto !important;
 }
 
 body.is-landscape-mode .hub-ls-corners-layer .lobby-side-btn {
-  width: clamp(28px, 6.2dvh, 46px) !important;
-  height: clamp(28px, 6.2dvh, 46px) !important;
+  width: clamp(30px, 6.2dvh, 46px) !important;
+  height: clamp(30px, 6.2dvh, 46px) !important;
 }
 
 body.is-landscape-mode .hub-ls-corners-layer .lobby-side-btn img {
-  width: clamp(26px, 5.8dvh, 44px) !important;
-  height: clamp(26px, 5.8dvh, 44px) !important;
+  width: clamp(24px, 5.2dvh, 38px) !important;
+  height: clamp(24px, 5.2dvh, 38px) !important;
 }
 
 body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
-  font-size: clamp(0.38rem, 1.05dvh, 0.52rem) !important;
+  font-size: clamp(0.38rem, 1.05dvh, 0.5rem) !important;
   line-height: 1.05 !important;
 }
 
 .hub-ls-boss-corner-btn {
   position: absolute;
-  right: clamp(68px, 8.8vw, 108px);
-  bottom: clamp(8px, 2dvh, 16px);
+  right: clamp(72px, 9vw, 112px);
+  bottom: clamp(10px, 2dvh, 18px);
   pointer-events: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: clamp(4px, 1dvh, 8px) clamp(8px, 1.2vw, 12px);
+  padding: clamp(5px, 1dvh, 8px) clamp(9px, 1.2vw, 14px);
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(64, 42, 14, 0.92), rgba(24, 15, 5, 0.95));
-  border: 2px solid #ffd700;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75), 0 0 14px rgba(255, 215, 0, 0.35);
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 60%, #02122e 100%);
+  border: 2px solid #fff3c2;
+  outline: 1.5px solid #9b701e;
+  box-shadow: 0 6px 20px rgba(0, 8, 22, 0.8), 0 0 14px rgba(212, 175, 83, 0.4);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .hub-ls-boss-corner-btn:hover {
   transform: translateY(-3px) scale(1.04);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85), 0 0 20px rgba(255, 215, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 8, 22, 0.9), 0 0 20px rgba(229, 193, 104, 0.65);
 }
 
 .hub-ls-boss-icon {
@@ -337,23 +370,24 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 }
 
 .hub-ls-boss-label {
+  font-family: 'Cinzel', serif;
   font-size: clamp(0.44rem, 1.1dvh, 0.55rem);
-  font-weight: 950;
+  font-weight: 900;
   letter-spacing: 0.8px;
-  color: #ffd76a;
+  color: #fff3c2;
   text-shadow: 0 1px 2px #000;
 }
 
 /* ============================================================================
-   4. DECK / ARSENAL & PREPARAÇÃO DE BATALHA LANDSCAPE
+   4. DECK / ARSENAL & PREPARAÇÃO DE BATALHA LANDSCAPE (NOVA UI v1.2 PEARL & GOLD)
    ============================================================================ */
 .arsenal-landscape-screen {
   width: 100vw !important;
   max-width: 100vw !important;
   height: 100dvh !important;
-  padding: clamp(44px, 9.5dvh, 72px) clamp(10px, 2.2vw, 38px) clamp(46px, 10.5dvh, 84px) !important;
+  padding: clamp(44px, 9.5dvh, 72px) clamp(10px, 2.2vw, 38px) clamp(48px, 10.5dvh, 84px) !important;
   box-sizing: border-box !important;
-  background: radial-gradient(circle at 50% 50%, rgba(12, 9, 5, 0.55) 0%, rgba(6, 4, 2, 0.82) 100%) !important;
+  background: radial-gradient(ellipse 90% 80% at 50% 38%, rgba(10, 46, 92, 0.72) 0%, rgba(5, 29, 61, 0.85) 55%, rgba(2, 16, 36, 0.94) 100%) !important;
   overflow: hidden !important;
   display: flex !important;
 }
@@ -367,22 +401,23 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   min-height: 0;
 }
 
-/* Painel Esquerdo Emoldurado (Meu Deck) */
+/* Painel Esquerdo Emoldurado (Meu Deck — Pearl & Gold Surface v1.2) */
 .ars-ls-deck-pane {
   height: 100%;
   min-height: 0;
-  background: linear-gradient(180deg, rgba(38, 26, 13, 0.96) 0%, rgba(18, 12, 6, 0.98) 100%);
-  border: 2px solid #0e0903;
-  outline: 1.5px solid rgba(212, 175, 55, 0.42);
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  border: 2px solid #b58932;
+  outline: 2.5px solid #e5c168;
   border-radius: clamp(12px, 2dvh, 18px);
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    inset 0 2px 0 rgba(255, 236, 190, 0.22);
+    0 16px 40px rgba(0, 8, 22, 0.82),
+    inset 0 2px 3px rgba(255, 255, 255, 0.92);
   display: flex;
   flex-direction: column;
   padding: clamp(6px, 1.5dvh, 14px) clamp(8px, 1.4vw, 16px);
   box-sizing: border-box;
   overflow: hidden;
+  color: #122030;
 }
 
 .ars-ls-pane-header {
@@ -391,7 +426,7 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   justify-content: space-between;
   gap: 6px;
   padding-bottom: clamp(4px, 1dvh, 10px);
-  border-bottom: 1.5px solid rgba(212, 175, 55, 0.22);
+  border-bottom: 1.5px solid rgba(181, 137, 50, 0.35);
   flex-shrink: 0;
 }
 
@@ -403,7 +438,7 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 
 .ars-ls-title-icon {
   font-size: clamp(0.95rem, 2.2dvh, 1.25rem);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
 }
 
 .ars-ls-title-main {
@@ -411,14 +446,14 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   font-size: clamp(0.64rem, 1.6dvh, 0.82rem);
   font-weight: 900;
   letter-spacing: 1.2px;
-  color: #ffd76a;
-  text-shadow: 0 2px 4px #000;
+  color: #122030;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .ars-ls-title-sub {
   font-size: clamp(0.46rem, 1.1dvh, 0.56rem);
   font-weight: 800;
-  color: rgba(255, 233, 168, 0.68);
+  color: #7d5b19;
   letter-spacing: 0.6px;
 }
 
@@ -428,9 +463,9 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   margin: clamp(4px, 1dvh, 10px) 0;
   padding: clamp(5px, 1.2dvh, 10px);
   border-radius: 12px;
-  background: rgba(8, 5, 2, 0.65);
-  border: 1.5px solid rgba(212, 175, 55, 0.2);
-  box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.8);
+  background: rgba(235, 224, 204, 0.72);
+  border: 1.5px solid #cdb482;
+  box-shadow: inset 0 2px 6px rgba(15, 28, 46, 0.12);
   overflow-y: auto;
   display: flex;
   align-items: center;
@@ -450,7 +485,7 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   flex-direction: column;
   gap: clamp(4px, 1dvh, 10px);
   padding-top: clamp(4px, 0.9dvh, 8px);
-  border-top: 1.5px solid rgba(212, 175, 55, 0.22);
+  border-top: 1.5px solid rgba(181, 137, 50, 0.35);
 }
 
 .ars-ls-artifacts-bar {
@@ -460,10 +495,11 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 }
 
 .ars-ls-sub-label {
+  font-family: 'Cinzel', serif;
   font-size: 0.52rem;
   font-weight: 900;
   letter-spacing: 1px;
-  color: rgba(255, 215, 106, 0.75);
+  color: #7d5b19;
 }
 
 .ars-ls-artifacts-row {
@@ -478,20 +514,21 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   gap: 6px;
 }
 
-/* Painel Direito Emoldurado (Coleção & Acervo) */
+/* Painel Direito Emoldurado (Coleção & Acervo — Pearl & Gold Surface v1.2) */
 .ars-ls-collection-pane {
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(28, 20, 10, 0.94) 0%, rgba(12, 9, 5, 0.96) 100%);
-  border: 2px solid #0e0903;
-  outline: 1.5px solid rgba(212, 175, 55, 0.42);
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  border: 2px solid #b58932;
+  outline: 2.5px solid #e5c168;
   border-radius: clamp(12px, 2dvh, 18px);
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    inset 0 2px 0 rgba(255, 236, 190, 0.2);
+    0 16px 40px rgba(0, 8, 22, 0.82),
+    inset 0 2px 3px rgba(255, 255, 255, 0.92);
   overflow: hidden;
+  color: #122030;
 }
 
 .ars-ls-toolbar {
@@ -500,8 +537,8 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   justify-content: space-between;
   gap: clamp(6px, 1vw, 12px);
   padding: clamp(6px, 1.4dvh, 12px) clamp(10px, 1.6vw, 20px);
-  background: linear-gradient(180deg, rgba(46, 32, 16, 0.98) 0%, rgba(24, 16, 8, 0.98) 100%);
-  border-bottom: 1.5px solid rgba(212, 175, 55, 0.28);
+  background: linear-gradient(180deg, #faf5eb 0%, #eadec8 100%);
+  border-bottom: 1.5px solid #cdb482;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -509,22 +546,31 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 .ars-ls-tabs-pill {
   display: flex;
   gap: 4px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(235, 224, 204, 0.75);
   padding: 3px;
-  border-radius: 10px;
-  border: 1.5px solid rgba(212, 175, 55, 0.25);
+  border-radius: 999px;
+  border: 1.5px solid #cdb482;
 }
 
 .ars-ls-tabs-pill .ars-tab {
   padding: clamp(4px, 0.9dvh, 7px) clamp(8px, 1.2vw, 16px);
-  font-size: clamp(0.54rem, 1.3dvh, 0.68rem);
-  border-radius: 7px;
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.54rem, 1.3dvh, 0.66rem);
+  color: #2c4159;
+  border-radius: 999px;
   letter-spacing: 1px;
   white-space: nowrap;
 }
 
 .ars-ls-tabs-pill .ars-tab.active {
-  background: linear-gradient(180deg, rgba(212, 175, 55, 0.28), rgba(212, 175, 55, 0.1));
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 60%, #02122e 100%);
+  color: #fff3c2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 8, 22, 0.45);
+}
+
+.ars-ls-tabs-pill .ars-tab.active::after {
+  display: none;
 }
 
 .ars-ls-filters-group {
@@ -551,7 +597,6 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 
 /* Adaptação especial para Celulares em Paisagem no Deck / Preparação */
 @media (max-height: 540px) {
-  /* Em telas baixas de celular, usa 6x2 para que as 12 cartas do deck caibam todas visíveis sem esmagar */
   .ars-ls-deck-grid {
     grid-template-columns: repeat(6, 1fr) !important;
     gap: 4px !important;
@@ -591,15 +636,15 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 }
 
 /* ============================================================================
-   5. LOJA LANDSCAPE (Respeitando Bordas + Sem Quebra de Texto nos Botões)
+   5. LOJA LANDSCAPE (NOVA UI v1.2 — PEARL & GOLD + ROYAL SAPPHIRE)
    ============================================================================ */
 .store-landscape-outer {
   width: 100vw !important;
   max-width: 100vw !important;
   height: 100dvh !important;
-  padding: clamp(44px, 9.5dvh, 72px) clamp(10px, 2.2vw, 38px) clamp(46px, 10.5dvh, 84px) !important;
+  padding: clamp(44px, 9.5dvh, 72px) clamp(10px, 2.2vw, 38px) clamp(48px, 10.5dvh, 84px) !important;
   box-sizing: border-box !important;
-  background: radial-gradient(circle at 50% 50%, rgba(10, 12, 18, 0.55) 0%, rgba(5, 6, 10, 0.84) 100%) !important;
+  background: radial-gradient(ellipse 90% 80% at 50% 38%, rgba(10, 46, 92, 0.72) 0%, rgba(5, 29, 61, 0.85) 55%, rgba(2, 16, 36, 0.94) 100%) !important;
   overflow: hidden !important;
 }
 
@@ -607,7 +652,7 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: clamp(148px, 19vw, 230px) 1fr;
+  grid-template-columns: clamp(154px, 19.5vw, 236px) 1fr;
   gap: clamp(8px, 1.5vw, 20px);
   min-height: 0;
 }
@@ -615,19 +660,20 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 .store-ls-sidebar {
   height: 100%;
   min-height: 0;
-  background: linear-gradient(180deg, rgba(38, 26, 13, 0.96) 0%, rgba(16, 11, 5, 0.98) 100%);
-  border: 2px solid #0e0903;
-  outline: 1.5px solid rgba(212, 175, 55, 0.42);
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  border: 2px solid #b58932;
+  outline: 2.5px solid #e5c168;
   border-radius: clamp(12px, 2dvh, 18px);
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    inset 0 2px 0 rgba(255, 236, 190, 0.22);
+    0 16px 40px rgba(0, 8, 22, 0.82),
+    inset 0 2px 3px rgba(255, 255, 255, 0.92);
   padding: clamp(8px, 1.6dvh, 16px) clamp(8px, 1.2vw, 14px);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: clamp(6px, 1.2dvh, 12px);
   overflow-y: auto;
+  color: #122030;
 }
 
 .store-ls-sidebar-header {
@@ -635,7 +681,7 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   align-items: center;
   gap: 8px;
   padding-bottom: clamp(6px, 1.2dvh, 12px);
-  border-bottom: 1.5px solid rgba(212, 175, 55, 0.24);
+  border-bottom: 1.5px solid rgba(181, 137, 50, 0.35);
 }
 
 .store-ls-sidebar-icon {
@@ -647,14 +693,14 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   font-size: clamp(0.62rem, 1.5dvh, 0.82rem);
   font-weight: 900;
   letter-spacing: 1.2px;
-  color: #ffd76a;
-  text-shadow: 0 2px 4px #000;
+  color: #122030;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 .store-ls-sidebar-sub {
   font-size: clamp(0.44rem, 1dvh, 0.54rem);
   font-weight: 800;
-  color: rgba(255, 233, 168, 0.65);
+  color: #7d5b19;
   letter-spacing: 0.8px;
 }
 
@@ -667,46 +713,47 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 .store-ls-cat-btn {
   width: 100%;
   padding: clamp(6px, 1.1dvh, 10px) clamp(8px, 1vw, 12px);
-  border-radius: 10px;
-  border: 1.5px solid rgba(212, 175, 55, 0.18);
-  background: rgba(0, 0, 0, 0.45);
-  color: #ffe9a8;
-  font-family: 'Outfit', sans-serif;
-  font-size: clamp(0.56rem, 1.35dvh, 0.72rem);
-  font-weight: 900;
+  border-radius: 999px;
+  border: 1.5px solid #cdb482;
+  background: linear-gradient(180deg, #fbf7ef 0%, #f1e8d7 54%, #e3d5bc 100%);
+  color: #122030;
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.54rem, 1.3dvh, 0.68rem);
+  font-weight: 800;
   text-align: left;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.9);
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .store-ls-cat-btn:hover {
-  background: rgba(212, 175, 55, 0.16);
-  border-color: rgba(212, 175, 55, 0.5);
-  transform: translateX(3px);
+  border-color: #9b701e;
+  transform: translateX(2px);
 }
 
 .store-ls-cat-btn.active {
-  background: linear-gradient(90deg, rgba(212, 175, 55, 0.34), rgba(212, 175, 55, 0.1));
-  border-color: #ffd700;
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 55%, #02122e 100%);
+  border-color: #e5c168;
+  color: #fff3c2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 4px 12px rgba(0, 8, 22, 0.55), inset 0 1px 2px rgba(120, 185, 255, 0.35);
 }
 
-/* Painel Direito Emoldurado da Loja */
+/* Painel Direito Emoldurado da Loja (Pearl & Gold Surface v1.2) */
 .store-ls-main {
   height: 100% !important;
   min-height: 0 !important;
-  background: linear-gradient(180deg, rgba(26, 19, 10, 0.94) 0%, rgba(12, 9, 5, 0.96) 100%) !important;
-  border: 2px solid #0e0903 !important;
-  outline: 1.5px solid rgba(212, 175, 55, 0.42) !important;
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%) !important;
+  border: 2px solid #b58932 !important;
+  outline: 2.5px solid #e5c168 !important;
   border-radius: clamp(12px, 2dvh, 18px) !important;
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.8),
-    inset 0 2px 0 rgba(255, 236, 190, 0.2) !important;
+    0 16px 40px rgba(0, 8, 22, 0.82),
+    inset 0 2px 3px rgba(255, 255, 255, 0.92) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   padding: clamp(10px, 2dvh, 20px) clamp(12px, 2vw, 26px) clamp(20px, 3.5dvh, 36px) !important;
@@ -726,8 +773,8 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
   border-radius: 14px !important;
   overflow: hidden !important;
   margin-bottom: clamp(10px, 2dvh, 18px) !important;
-  border: 2px solid rgba(212, 175, 55, 0.35) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65) !important;
+  border: 2px solid #c59638 !important;
+  box-shadow: 0 8px 24px rgba(15, 28, 46, 0.25) !important;
 }
 
 .store-ls-main .sec-banners > div {
@@ -737,12 +784,12 @@ body.is-landscape-mode .hub-ls-corners-layer [data-side] span {
 }
 
 .store-ls-main .store-dynamic-sec:not(.sec-banners) {
-  background: linear-gradient(180deg, rgba(34, 24, 12, 0.78) 0%, rgba(15, 10, 5, 0.86) 100%);
-  border: 1.5px solid rgba(212, 175, 55, 0.24);
+  background: rgba(247, 241, 229, 0.84);
+  border: 1.5px solid #d4bc8b;
   border-radius: 14px;
   padding: clamp(8px, 1.6dvh, 14px) clamp(10px, 1.6vw, 18px) clamp(10px, 2dvh, 18px);
   margin-bottom: clamp(10px, 2dvh, 18px);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.9), 0 4px 14px rgba(15, 28, 46, 0.1);
 }
 
 /* ============================================================================
@@ -1611,7 +1658,7 @@ body.is-landscape-mode .academy-screen {
   box-sizing: border-box !important;
 }
 
-/* 8.1 TELA DE PERFIL DEDICADA EM MODO PAISAGEM (MOBILE, TABLET E WEB) */
+/* 8.1 TELA DE PERFIL DEDICADA EM MODO PAISAGEM (NOVA UI v1.2 PEARL & GOLD) */
 .profile-ls-screen {
   width: 100% !important;
   height: 100% !important;
@@ -1622,8 +1669,7 @@ body.is-landscape-mode .academy-screen {
   justify-content: center !important;
   overflow: hidden !important;
   background:
-    radial-gradient(circle at 50% 35%, rgba(212, 175, 55, 0.14) 0%, transparent 62%),
-    radial-gradient(circle at center, rgba(12, 8, 4, 0.68) 0%, rgba(4, 3, 2, 0.9) 100%) !important;
+    radial-gradient(ellipse 90% 80% at 50% 35%, rgba(11, 47, 98, 0.72) 0%, rgba(4, 18, 42, 0.88) 70%, rgba(2, 9, 22, 0.94) 100%) !important;
   backdrop-filter: blur(14px) saturate(1.15) !important;
   -webkit-backdrop-filter: blur(14px) saturate(1.15) !important;
 }
@@ -1651,19 +1697,20 @@ body.is-landscape-mode .academy-screen {
 }
 
 .profile-ls-card.profile-ls-identity-card {
-  background: linear-gradient(180deg, rgba(38, 27, 15, 0.95) 0%, rgba(16, 11, 6, 0.98) 100%);
-  border: 2px solid rgba(212, 175, 55, 0.55);
-  border-bottom: 5px solid #090603;
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  border: 2px solid #b58932;
+  outline: 2.5px solid #e5c168;
   border-radius: clamp(14px, 2.6dvh, 22px);
   padding: clamp(10px, 2.6dvh, 24px) clamp(12px, 2vw, 24px);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: clamp(8px, 2dvh, 18px);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.88), inset 0 1px 0 rgba(255, 236, 190, 0.25);
+  box-shadow: 0 16px 40px rgba(0, 8, 22, 0.82), inset 0 2px 3px rgba(255, 255, 255, 0.92);
   box-sizing: border-box;
   min-width: 0;
   overflow: hidden;
+  color: #122030;
 }
 
 .profile-ls-hero-row {
@@ -1679,11 +1726,11 @@ body.is-landscape-mode .academy-screen {
   height: clamp(54px, min(16dvh, 9vw), 96px) !important;
   border-radius: 50% !important;
   background: url('/cards/1.jpg') center/cover !important;
-  border: 3px solid #3a2a12 !important;
-  outline: 2px solid #d4af37 !important;
+  border: 3px solid #fff3c2 !important;
+  outline: 2.5px solid #b58932 !important;
   margin: 0 !important;
   flex-shrink: 0;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.85), 0 0 24px rgba(212, 175, 55, 0.45) !important;
+  box-shadow: 0 6px 18px rgba(15, 28, 46, 0.4), 0 0 24px rgba(212, 175, 83, 0.45) !important;
 }
 
 .profile-ls-identity-info {
@@ -1697,27 +1744,28 @@ body.is-landscape-mode .academy-screen {
 }
 
 .profile-ls-level-badge {
-  font-size: clamp(0.54rem, min(1.4dvh, 1.1vw), 0.74rem);
-  color: #ffe9a8;
-  font-weight: 950;
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.54rem, min(1.4dvh, 1.1vw), 0.72rem);
+  color: #fff3c2;
+  font-weight: 900;
   letter-spacing: 1.4px;
-  background: linear-gradient(180deg, #5a4128, #2a1c0d);
-  border: 1.5px solid #d4af37;
+  background: linear-gradient(180deg, #0b3778 0%, #041f4a 100%);
+  border: 1.5px solid #e5c168;
   border-radius: 999px;
   padding: 2px 11px;
   text-transform: uppercase;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.65);
+  box-shadow: 0 3px 8px rgba(0, 8, 22, 0.55);
 }
 
 .profile-ls-name {
   margin: 0;
   font-family: 'Cinzel', serif;
   font-size: clamp(0.82rem, min(2.7dvh, 2vw), 1.38rem);
-  font-weight: 950;
+  font-weight: 900;
   letter-spacing: clamp(0.6px, 0.15vw, 1.5px);
-  color: #ffd76a;
+  color: #122030;
   text-transform: uppercase;
-  text-shadow: 0 3px 6px rgba(0, 0, 0, 0.95);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1725,10 +1773,11 @@ body.is-landscape-mode .academy-screen {
 }
 
 .profile-ls-subtitle {
+  font-family: 'Marcellus', serif;
   font-size: clamp(0.48rem, min(1.2dvh, 1vw), 0.64rem);
   font-weight: 800;
   letter-spacing: clamp(1px, 0.18vw, 1.8px);
-  color: rgba(255, 233, 168, 0.65);
+  color: #7d5b19;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
@@ -1738,8 +1787,8 @@ body.is-landscape-mode .academy-screen {
 
 .profile-ls-xp-box {
   width: 100%;
-  background: rgba(10, 7, 4, 0.78);
-  border: 1.5px solid rgba(212, 175, 55, 0.36);
+  background: rgba(247, 241, 229, 0.85);
+  border: 1.5px solid #d4bc8b;
   border-radius: 12px;
   padding: clamp(8px, 1.8dvh, 14px) clamp(10px, 1.5vw, 16px);
   box-sizing: border-box;
@@ -1748,27 +1797,28 @@ body.is-landscape-mode .academy-screen {
 .profile-ls-xp-header {
   display: flex;
   justify-content: space-between;
+  font-family: 'Cinzel', serif;
   font-size: clamp(0.54rem, min(1.4dvh, 1.1vw), 0.72rem);
-  font-weight: 950;
+  font-weight: 900;
   letter-spacing: 1px;
-  color: #ffd76a;
+  color: #122030;
   margin-bottom: clamp(5px, 1.1dvh, 8px);
 }
 
 .profile-ls-xp-track {
   width: 100%;
-  height: clamp(10px, 2.2dvh, 15px);
-  background: rgba(0, 0, 0, 0.82);
+  height: clamp(10px, 2.2dvh, 14px);
+  background: #04152d;
   border-radius: 999px;
-  border: 1.5px solid #0e0903;
+  border: 1.5px solid #b58932;
   overflow: hidden;
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.95);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.85);
 }
 
 .profile-ls-xp-fill {
   height: 100%;
-  background: linear-gradient(90deg, #22c55e 0%, #4ade80 55%, #bbf7d0 100%);
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.65);
+  background: linear-gradient(90deg, #9b701e 0%, #e5c168 55%, #fff3c2 100%);
+  box-shadow: 0 0 12px rgba(229, 193, 104, 0.65);
   border-radius: 999px;
 }
 
@@ -1791,22 +1841,22 @@ body.is-landscape-mode .academy-screen {
 }
 
 .profile-ls-stat-box {
-  background: linear-gradient(180deg, rgba(38, 27, 15, 0.95) 0%, rgba(16, 11, 6, 0.98) 100%);
-  border: 1.5px solid rgba(212, 175, 55, 0.45);
-  border-bottom: 4px solid #090603;
+  background: radial-gradient(circle at 50% 25%, #fcfaf5 0%, #f5efe2 55%, #ebe1ce 90%, #e2d5bc 100%);
+  border: 2px solid #b58932;
+  outline: 1.5px solid #e5c168;
   border-radius: clamp(12px, 2.2dvh, 18px);
   padding: clamp(8px, 1.8dvh, 16px) clamp(10px, 1.4vw, 18px);
   display: flex;
   align-items: center;
   gap: clamp(8px, 1.2vw, 14px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 236, 190, 0.2);
+  box-shadow: 0 10px 24px rgba(0, 8, 22, 0.65), inset 0 1px 2px rgba(255, 255, 255, 0.9);
   box-sizing: border-box;
   min-width: 0;
 }
 
 .profile-ls-stat-icon {
   font-size: clamp(1.1rem, min(3dvh, 2.2vw), 1.65rem);
-  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.85));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
   flex-shrink: 0;
 }
 
@@ -1819,18 +1869,19 @@ body.is-landscape-mode .academy-screen {
 }
 
 .profile-ls-stat-val {
-  font-size: clamp(0.95rem, min(2.6dvh, 2vw), 1.45rem);
-  font-weight: 950;
-  color: #ffe9a8;
+  font-family: 'EB Garamond', serif;
+  font-size: clamp(1.05rem, min(2.8dvh, 2.1vw), 1.55rem);
+  font-weight: 800;
+  color: #122030;
   line-height: 1.05;
-  text-shadow: 0 2px 4px #000;
 }
 
 .profile-ls-stat-lbl {
+  font-family: 'Cinzel', serif;
   font-size: clamp(0.46rem, min(1.2dvh, 0.95vw), 0.62rem);
   font-weight: 900;
   letter-spacing: 0.8px;
-  color: #d4af37;
+  color: #7d5b19;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
@@ -1845,69 +1896,21 @@ body.is-landscape-mode .academy-screen {
   min-width: 0;
 }
 
-.profile-ls-action-btn {
-  height: clamp(34px, 8dvh, 48px);
-  padding: 0 clamp(8px, 1.2vw, 18px) !important;
-  border-radius: 999px !important;
-  font-family: 'Cinzel', serif;
-  font-size: clamp(0.54rem, min(1.5dvh, 1.15vw), 0.78rem) !important;
-  font-weight: 950 !important;
-  letter-spacing: clamp(0.5px, 0.12vw, 1.3px) !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  cursor: pointer;
-  white-space: nowrap;
-  box-sizing: border-box;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.profile-ls-action-btn.gold {
-  background: linear-gradient(180deg, #ffe27a, #d4af37 60%, #9a7414) !important;
-  border: 2px solid #fef08a !important;
-  border-bottom: 4px solid #5c4308 !important;
-  color: #2b1800 !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8), 0 0 18px rgba(212, 175, 55, 0.35) !important;
-}
-
-.profile-ls-action-btn.dark {
-  background: linear-gradient(180deg, #4a3622, #26190a) !important;
-  border: 2px solid rgba(212, 175, 55, 0.55) !important;
-  border-bottom: 4px solid #0e0903 !important;
-  color: #ffd76a !important;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8) !important;
-}
-
-/* 8.2 TELA DE CONFIGURAÇÕES EM MODO PAISAGEM (ACESSADA PELO PERFIL OU HEADER) */
+/* 8.2 TELA DE CONFIGURAÇÕES EM MODO PAISAGEM */
 body.is-landscape-mode .settings-screen {
   padding: clamp(10px, 2.4dvh, 22px) clamp(14px, 2.5vw, 32px) clamp(50px, 11.5dvh, 78px) !important;
   overflow-y: auto !important;
 }
 
-body.is-landscape-mode .settings-screen > div:first-child {
+body.is-landscape-mode .settings-screen .nova-pearl-window {
   max-width: min(860px, 94vw) !important;
-  margin-bottom: clamp(8px, 2dvh, 16px) !important;
 }
 
 body.is-landscape-mode .settings-screen .settings-list {
-  max-width: min(860px, 94vw) !important;
   display: grid !important;
   grid-template-columns: repeat(2, 1fr) !important;
   gap: clamp(8px, 1.6dvh, 14px) clamp(10px, 1.8vw, 18px) !important;
   align-items: stretch !important;
-}
-
-body.is-landscape-mode .settings-screen .settings-list > div[style*="height:10px"] {
-  display: none !important;
-}
-
-body.is-landscape-mode .settings-screen .settings-item,
-body.is-landscape-mode .settings-screen .settings-list > div:first-child {
-  padding: clamp(10px, 2.2dvh, 16px) clamp(12px, 1.8vw, 18px) !important;
-  border-radius: 14px !important;
 }
 
 /* Esconde qualquer botão manual de orientação caso exista no DOM */

@@ -167,6 +167,9 @@ interface Props {
   onToggleWebMode?: (web: boolean) => void;
   isPlayMode?: boolean;
   isWorldMapSolo?: boolean;
+  onExitToWorldMap?: () => void;
+  setProject?: React.Dispatch<React.SetStateAction<MapProject>>;
+  selectedMarkerId?: string | null;
 }
 
 // Tamanho fixo do preview (seletor de presets removido)
@@ -482,6 +485,7 @@ export const PortraitEmulator: React.FC<Props> = ({
   onToggleWebMode,
   isPlayMode = false,
   isWorldMapSolo = false,
+  onExitToWorldMap,
 }) => {
   const isLandscape = orientation === 'landscape';
   const [internalWebMode, setInternalWebMode] = useState<boolean>(false);
@@ -10306,7 +10310,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                       );
                     }
                   }}
-                  className={`absolute z-60 select-none pointer-events-auto ${
+                  className={`absolute z-60 select-none pointer-events-auto phase-header-morph-in ${
                     isInlineEditing
                       ? `cursor-grab active:cursor-grabbing rounded-2xl p-1 ring-2 ${
                           selectedInlineId === 'btn-player-header' ||
@@ -10317,9 +10321,9 @@ export const PortraitEmulator: React.FC<Props> = ({
                       : ''
                   }`}
                   style={{
-                    left: `${(isLandscape ? 24 : 22) + (playerHeaderConfig?.x || 0)}px`,
-                    top: `${(isLandscape ? 22 : 42) + (playerHeaderConfig?.y || 0)}px`,
-                    transform: `scale(${playerHeaderConfig?.scale ?? (isLandscape ? 0.88 : 0.92)})`,
+                    left: `${(isPlayMode ? 10 : isLandscape ? 24 : 22) + (playerHeaderConfig?.x || 0)}px`,
+                    top: `${(isPlayMode ? 8 : isLandscape ? 22 : 42) + (playerHeaderConfig?.y || 0)}px`,
+                    transform: `scale(${playerHeaderConfig?.scale ?? (isPlayMode ? 1 : isLandscape ? 0.88 : 0.92)})`,
                     transformOrigin: 'top left',
                     opacity: playerHeaderConfig?.opacity ?? 1.0,
                   }}
@@ -10377,8 +10381,8 @@ export const PortraitEmulator: React.FC<Props> = ({
                       : ''
                   }`}
                   style={{
-                    left: `${(isLandscape ? 28 : 26) + (questTrackerConfig?.x || 0)}px`,
-                    top: `${(isLandscape ? 98 : 132) + (questTrackerConfig?.y || 0)}px`,
+                    left: `${(isPlayMode ? 12 : isLandscape ? 28 : 26) + (questTrackerConfig?.x || 0)}px`,
+                    top: `${(isPlayMode ? 68 : isLandscape ? 98 : 132) + (questTrackerConfig?.y || 0)}px`,
                     transform: `scale(${questTrackerConfig?.scale ?? (isLandscape ? 0.9 : 0.95)})`,
                     transformOrigin: 'top left',
                     opacity: questTrackerConfig?.opacity ?? 1.0,
@@ -10424,7 +10428,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                       );
                     }
                   }}
-                  className={`absolute z-60 select-none pointer-events-auto ${
+                  className={`absolute z-60 select-none pointer-events-auto phase-header-morph-in ${
                     isInlineEditing
                       ? `cursor-grab active:cursor-grabbing rounded-full p-1 ring-2 ${
                           selectedInlineId === 'btn-top-glass-bar' ||
@@ -10435,9 +10439,9 @@ export const PortraitEmulator: React.FC<Props> = ({
                       : ''
                   }`}
                   style={{
-                    right: `${(isLandscape ? 22 : 16) - (topGlassBarConfig?.x || 0)}px`,
-                    top: `${(isLandscape ? 22 : 44) + (topGlassBarConfig?.y || 0)}px`,
-                    transform: `scale(${topGlassBarConfig?.scale ?? (isLandscape ? 0.96 : 0.88)})`,
+                    right: `${(isPlayMode ? 10 : isLandscape ? 22 : 16) - (topGlassBarConfig?.x || 0)}px`,
+                    top: `${(isPlayMode ? 12 : isLandscape ? 22 : 44) + (topGlassBarConfig?.y || 0)}px`,
+                    transform: `scale(${topGlassBarConfig?.scale ?? (isPlayMode ? 1 : isLandscape ? 0.96 : 0.88)})`,
                     transformOrigin: 'top right',
                     opacity: topGlassBarConfig?.opacity ?? 1.0,
                   }}
@@ -10451,6 +10455,7 @@ export const PortraitEmulator: React.FC<Props> = ({
                     config={topGlassBarConfig}
                     isLandscape={isLandscape}
                     isAudioMuted={isBgmMuted}
+                    onExitToWorldMap={onExitToWorldMap}
                     onTriggerAction={(action) => {
                       if (isInlineEditing) return;
                       if (action === 'open_inventory') {
@@ -10461,6 +10466,10 @@ export const PortraitEmulator: React.FC<Props> = ({
                           initialTab: hudQuestSubTab,
                         });
                       } else if (action === 'toggle_map') {
+                        if (onExitToWorldMap) {
+                          onExitToWorldMap();
+                          return;
+                        }
                         const trackedId = project.questsConfig?.activeTrackedQuestId;
                         const trackedQuest = (project.questsConfig?.quests || []).find(
                           (q) => q.id === trackedId

@@ -1,1255 +1,1105 @@
-
 import '../styles/Arsenal.css';
 import { Skill } from '../../core/GameEngine';
-import { gsap } from 'gsap';
-import { bindLongPress } from '../utils/InputUtils';
 import { SoundManager } from '../utils/SoundManager';
+import { bindLongPress } from '../utils/InputUtils';
 import { thumbFor } from '../utils/thumb';
-import { openCardViewer, cardViewerNav, isCardViewerOpen } from '../components/CardViewer';
+import { openCardViewer } from '../components/CardViewer';
 import {
-    renderMatrixCardSVG,
-    renderMatrixCardBackSVG,
-    getMergedGameTemplatesSync,
-    getMergedGameTemplates,
-    resolveMatrixOrGameCard,
+  renderMatrixCardSVG,
+  renderMatrixCardBackSVG,
+  getMergedGameTemplatesSync,
+  getMergedGameTemplates,
+  resolveMatrixOrGameCard,
 } from './forge_v2/utils/HestridiaMatrixRenderer';
-import { t as i18nT, tx as i18nTx } from '../../core/i18n';
+import {
+  renderOrnateWindowHtml,
+  renderGoldDividerHHtml,
+  renderGoldDividerVHtml,
+} from '../components/OrnateFrameHtml';
 
 export function getCardRank(card: any): string {
-    if (!card) return 'C';
-    const raw = card.rank || card.cardRank || card.cardData?.cardRank || card.matrixCard?.cardRank || card.meta?.rank;
-    if (raw && typeof raw === 'string') {
-        const u = raw.toUpperCase().trim();
-        if (['S', 'A', 'B', 'C', 'D'].includes(u)) return u;
-    }
-    const rarity = (card.preferredRarity || card.rarity || '').toLowerCase();
-    if (rarity === 'legendary' || rarity === 'mitica' || rarity === 'mítica') return 'S';
-    if (rarity === 'epic' || rarity === 'épica' || rarity === 'epica') return 'A';
-    if (rarity === 'rare' || rarity === 'rara') return 'B';
-    return 'C';
+  if (!card) return 'C';
+  const raw =
+    card.rank ||
+    card.cardRank ||
+    card.cardData?.cardRank ||
+    card.matrixCard?.cardRank ||
+    card.meta?.rank;
+  if (raw && typeof raw === 'string') {
+    const u = raw.toUpperCase().trim();
+    if (['S', 'A', 'B', 'C', 'D'].includes(u)) return u;
+  }
+  const rarity = (card.preferredRarity || card.rarity || '').toLowerCase();
+  if (rarity === 'legendary' || rarity === 'mitica' || rarity === 'mítica') return 'S';
+  if (rarity === 'epic' || rarity === 'épica' || rarity === 'epica') return 'A';
+  if (rarity === 'rare' || rarity === 'rara') return 'B';
+  return 'C';
 }
 
 export function getCardRankWeight(card: any): number {
-    const rank = getCardRank(card);
-    const weights: Record<string, number> = { 'S': 5, 'A': 4, 'B': 3, 'C': 2, 'D': 1 };
-    return weights[rank] || 1;
+  const rank = getCardRank(card);
+  const weights: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
+  return weights[rank] || 1;
 }
 
 export function sortStackInstances(instances: any[]): any[] {
-    return [...instances].sort((a, b) => {
-        const wA = getCardRankWeight(a);
-        const wB = getCardRankWeight(b);
-        if (wB !== wA) return wB - wA; // Maior rank primeiro (S > A > B > C > D)
-        const pvA = Number(a.pv || a.basePv || a.pvNumber || 0);
-        const pvB = Number(b.pv || b.basePv || b.pvNumber || 0);
-        if (pvB !== pvA) return pvB - pvA;
-        const atkA = Number(a.atk || a.baseAtk || a.maxDamage || 0);
-        const atkB = Number(b.atk || b.baseAtk || b.maxDamage || 0);
-        return atkB - atkA;
-    });
+  return [...instances].sort((a, b) => {
+    const wA = getCardRankWeight(a);
+    const wB = getCardRankWeight(b);
+    if (wB !== wA) return wB - wA;
+    const pvA = Number(a.pv || a.basePv || a.pvNumber || 0);
+    const pvB = Number(b.pv || b.basePv || b.pvNumber || 0);
+    if (pvB !== pvA) return pvB - pvA;
+    const atkA = Number(a.atk || a.baseAtk || a.maxDamage || 0);
+    const atkB = Number(b.atk || b.baseAtk || a.maxDamage || 0);
+    return atkB - atkA;
+  });
 }
 
 export class ArsenalScreen {
-    private templates: any[];
-    private artifacts: Skill[];
-    private boards: string[];
+  protected templates: any[];
+  protected artifacts: Skill[];
+  protected boards: string[];
 
-    private activeTab: 'cards' | 'artifacts' | 'boards' = 'cards';
-    private gridSize: 2 | 3 | 4 = 3;
-    private searchQuery: string = '';
-    private rarityFilter: 'all' | 'common' | 'rare' | 'epic' | 'legendary' = 'all';
-    private favorites: string[] = [];
-    private isStacked: boolean = false;
+  protected activeTab: 'cards' | 'artifacts' | 'boards' = 'cards';
+  protected gridSize: 2 | 3 | 4 = 3;
+  protected searchQuery = '';
+  protected rarityFilter: 'all' | 'common' | 'rare' | 'epic' | 'legendary' = 'all';
+  protected favorites: string[] = [];
+  protected isStacked = false;
 
-    // Pre-Deck State
-    private preDeckCards: (any | null)[] = [null, null, null, null, null, null, null, null, null, null, null, null];
-    private preDeckArtifacts: (Skill | null)[] = [null, null, null];
-    private selectedBoard: string = '';
+  protected preDeckCards: (any | null)[] = Array(12).fill(null);
+  protected preDeckArtifacts: (Skill | null)[] = [null, null, null];
+  protected selectedBoard = '';
 
-    // Viewer state
-    private viewerList: any[] = [];
+  protected currentSlot = 1;
+  protected isPreDeckCollapsed = false;
+  protected showConfirmSwitch = false;
+  protected targetSlot = 1;
+  protected inspectedArtifact: Skill | null = null;
+  protected isPrepMode = false;
+  protected isLandscapeMode = false;
+  protected lastScrollTop = 0;
 
-    // Loadouts & UI State
-    private currentSlot: number = 1;
-    private suppressThumbClickUntil: number = 0;
-    private isPreDeckCollapsed: boolean = false;
-    private collapsedSections: Set<string> = new Set();
-    private showConfirmSwitch: boolean = false;
-    private targetSlot: number = 1;
+  protected onConfirm?: (cards: any[], artifacts: Skill[], board: string) => void;
 
-    private onConfirm?: (cards: any[], artifacts: Skill[], board: string) => void;
+  constructor(
+    templates: any[],
+    artifacts: Skill[],
+    boards: string[],
+    onConfirm?: (cards: any[], artifacts: Skill[], board: string) => void,
+    isPrepMode = false
+  ) {
+    this.templates = getMergedGameTemplatesSync(templates);
+    this.artifacts = artifacts;
+    this.boards = boards?.length
+      ? boards
+      : [
+          '/cards/Arena_Bioluminescente_dos_Cogumelos.png',
+          '/cards/Batalha_dos_slimes_fant_sticos.png',
+          '/cards/05_gelo.png',
+        ];
+    this.onConfirm = onConfirm;
+    this.isPrepMode = isPrepMode;
+    this.isPreDeckCollapsed = false;
 
-    constructor(
-        templates: any[], 
-        artifacts: Skill[], 
-        boards: string[], 
-        onConfirm?: (cards: any[], artifacts: Skill[], board: string) => void,
-        isPrepMode: boolean = false
-    ) {
-        this.templates = getMergedGameTemplatesSync(templates);
-        this.artifacts = artifacts;
-        this.boards = boards;
-        this.onConfirm = onConfirm;
-        this.isPreDeckCollapsed = !isPrepMode;
+    const favs = localStorage.getItem('arsenal_favorites');
+    if (favs) {
+      try {
+        this.favorites = JSON.parse(favs);
+      } catch (_) {}
+    }
 
-        // Load Persistence
-        const favs = localStorage.getItem('arsenal_favorites');
-        if (favs) this.favorites = JSON.parse(favs);
+    const savedStacked = localStorage.getItem('arsenal_stack_copies');
+    if (savedStacked !== null) {
+      this.isStacked = savedStacked === 'true';
+    }
 
-        const savedStacked = localStorage.getItem('arsenal_stack_copies');
-        if (savedStacked !== null) {
-            try { this.isStacked = JSON.parse(savedStacked); } catch {}
+    const activeSlot = localStorage.getItem('arsenal_active_slot');
+    this.currentSlot = activeSlot ? parseInt(activeSlot, 10) : 1;
+
+    this.selectedBoard = this.boards[0] || '';
+    this.loadDeckFromSlot(this.currentSlot);
+  }
+
+  protected resolveCardEntry(nameOrObj: any): any | null {
+    if (!nameOrObj) return null;
+    if (typeof nameOrObj === 'object' && (nameOrObj.name || nameOrObj.title || nameOrObj.id)) {
+      return (
+        resolveMatrixOrGameCard(nameOrObj.name || nameOrObj.title || nameOrObj.id, this.templates) ||
+        nameOrObj
+      );
+    }
+    const key = String(nameOrObj);
+    return (
+      resolveMatrixOrGameCard(key, this.templates) ||
+      this.templates.find(
+        (t) =>
+          t &&
+          (t.name === key ||
+            t.id === key ||
+            String(t.name || '').toLowerCase() === key.toLowerCase())
+      ) ||
+      null
+    );
+  }
+
+  protected loadDeckFromSlot(slot: number) {
+    try {
+      const slotRaw =
+        localStorage.getItem(`arsenal_predeck_s${slot}`) ||
+        localStorage.getItem(`arsenal_loadout_${slot}`) ||
+        (slot === 1 ? localStorage.getItem('arsenal_predeck') : null);
+      if (slotRaw) {
+        const parsed = JSON.parse(slotRaw);
+        if (Array.isArray(parsed.cards) && parsed.cards.some(Boolean)) {
+          this.preDeckCards = Array(12)
+            .fill(null)
+            .map((_, i) => this.resolveCardEntry(parsed.cards[i]));
+        } else {
+          this.preDeckCards = Array(12)
+            .fill(null)
+            .map((_, i) => this.templates[i] || null);
         }
-
-        try {
-            const collapsed = JSON.parse(localStorage.getItem('arsenal_collapsed_sections') || '[]');
-            this.collapsedSections = new Set(collapsed);
-        } catch {}
-
-        const lastSlot = localStorage.getItem('arsenal_current_slot');
-        if (lastSlot) this.currentSlot = parseInt(lastSlot);
-
-        this.loadSlotData(this.currentSlot);
-
-        window.addEventListener('keydown', this.handleGlobalKeys.bind(this));
-        window.addEventListener('hestridia:matrix-updated', () => {
-            this.templates = getMergedGameTemplatesSync(templates);
-            this.loadSlotData(this.currentSlot);
-        });
-    }
-
-    private renderPreDeck(): string {
-        return `
-            <div class="ars-predeck-panel ${this.isPreDeckCollapsed ? 'collapsed' : ''}">
-                <div class="ars-predeck-header">
-                    <div class="ars-collapse-toggle" id="ars-collapse-btn">
-                        <span class="ars-collapse-icon">${this.isPreDeckCollapsed ? '▶' : '▼'}</span>
-                        <span class="ars-collapse-text">${this.isPreDeckCollapsed ? i18nT('ars.showPrep') : i18nT('ars.collapse')}</span>
-                    </div>
-                    
-                    <div class="ars-slot-selector">
-                        <button class="ars-slot-btn ${this.currentSlot === 1 ? 'active' : ''}" data-slot="1">${i18nT('ars.slot')} 1</button>
-                        <button class="ars-slot-btn ${this.currentSlot === 2 ? 'active' : ''}" data-slot="2">${i18nT('ars.slot')} 2</button>
-                        <button class="ars-slot-btn ${this.currentSlot === 3 ? 'active' : ''}" data-slot="3">${i18nT('ars.slot')} 3</button>
-                    </div>
-                </div>
-
-                <div class="ars-predeck-content-wrapper">
-                    <div class="ars-predeck-cards">
-                        ${this.preDeckCards.map((c, i) => `
-                            <div class="ars-slot ars-card-slot ${c ? 'filled' : ''}" data-type="card" data-idx="${i}" draggable="true">
-                                ${c ? `<div class="ars-slot-img" style="border-radius:6px; overflow:hidden;">${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}</div>` : '<div class="ars-slot-plus">+</div>'}
-                            </div>
-                        `).join('')}
-                    </div>
-
-                    <div class="ars-predeck-bottom">
-                        <!-- ARTIFACTS -->
-                        <div class="ars-skill-slots">
-                            ${this.preDeckArtifacts.map((a, i) => `
-                                <div class="ars-slot ars-skill-circle ${a ? 'filled' : ''}" data-type="artifact" data-idx="${i}" draggable="true">
-                                    ${a ? `<div class="ars-slot-img" style="background-image:url('${a.image || ''}'); display:flex; align-items:center; justify-content:center; font-size:1.5rem;">${a.image ? '' : a.icon}</div>` : '<div class="ars-slot-plus">+</div>'}
-                                </div>
-                            `).join('')}
-                        </div>
-
-                        <!-- BOARD SELECTION -->
-                        <div class="ars-slot ars-board-mini-slot filled" data-type="board" style="background-image:url('${this.selectedBoard}')">
-                            <div style="font-size: 0.5rem; background: rgba(0,0,0,0.5); width: 100%; text-align: center; position: absolute; bottom: 0; padding: 2px 0;">${i18nT('ars.back')}</div>
-                        </div>
-                    </div>
-
-                    <!-- SAVE BUTTON SECTION -->
-                    <div class="ars-save-section">
-                        <button class="ars-save-btn" id="ars-save-deck">
-                            <span class="ars-save-icon">💾</span>
-                            <span class="ars-save-text">${i18nT('ars.save')}</span>
-                        </button>
-                        <button class="ars-auto-btn" id="ars-auto-fill">
-                            <span class="ars-auto-icon">🎲</span>
-                            <span class="ars-auto-text">${i18nT('ars.autofill')}</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    public render(container: HTMLElement) {
-        container.innerHTML = `
-            <div class="arsenal-screen" style="height: 100%; display: flex; flex-direction: column;">
-                ${this.renderPreDeck()}
-
-                <div class="ars-scroller">
-                    <!-- STICKY HEADER -->
-                    <div class="ars-sticky-header">
-                        <div class="ars-control-row">
-                            <div class="ars-grid-switcher">
-                                <button class="ars-grid-btn ${this.gridSize === 2 ? 'active' : ''}" data-size="2">2x</button>
-                                <button class="ars-grid-btn ${this.gridSize === 3 ? 'active' : ''}" data-size="3">3x</button>
-                                <button class="ars-grid-btn ${this.gridSize === 4 ? 'active' : ''}" data-size="4">4x</button>
-                            </div>
-
-                            <div class="ars-search-box">
-                                <span class="ars-search-icon">🔍</span>
-                                <input type="text" class="ars-search-input" id="ars-search" placeholder="${i18nT('ars.search')}" value="${this.searchQuery}">
-                            </div>
-
-                            <select class="ars-select compact" id="ars-rarity-filter">
-                                <option value="all" ${this.rarityFilter === 'all' ? 'selected' : ''}>${i18nT('ars.all')}</option>
-                                <option value="common" ${this.rarityFilter === 'common' ? 'selected' : ''}>${i18nT('ars.common')}</option>
-                                <option value="rare" ${this.rarityFilter === 'rare' ? 'selected' : ''}>${i18nT('ars.rare')}</option>
-                                <option value="epic" ${this.rarityFilter === 'epic' ? 'selected' : ''}>${i18nT('ars.epic')}</option>
-                                <option value="legendary" ${this.rarityFilter === 'legendary' ? 'selected' : ''}>${i18nT('ars.legendary')}</option>
-                            </select>
-
-                            <!-- BOTÃO DISCRETO E CIRCULAR PARA PILHAR CÓPIAS -->
-                            <button id="ars-stack-btn" class="ars-stack-btn ${this.isStacked ? 'active' : ''}" title="${this.isStacked ? 'Desempilhar cópias (modo sequencial)' : 'Pilhar cópias'}" aria-label="Pilhar cópias">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="2" y="7" width="13" height="14" rx="2" ry="2"></rect>
-                                    <path d="M6 3h13a2 2 0 0 1 2 2v13"></path>
-                                </svg>
-                            </button>
-                        </div>
-
-                        <!-- TABS -->
-                        <div class="ars-tabs">
-                            <button class="ars-tab ${this.activeTab === 'cards' ? 'active' : ''}" data-tab="cards">${i18nT('ars.cards')}</button>
-                            <button class="ars-tab ${this.activeTab === 'artifacts' ? 'active' : ''}" data-tab="artifacts">${i18nT('ars.artifacts')}</button>
-                            <button class="ars-tab ${this.activeTab === 'boards' ? 'active' : ''}" data-tab="boards">${i18nT('ars.boards')}</button>
-                        </div>
-                    </div>
-
-                    <!-- CONTENT PANEL -->
-                    <div class="ars-content" id="ars-panel">
-                        ${this.renderActiveContent()}
-                    </div>
-                </div>
-
-                <!-- ARTIFACT MODAL -->
-                <div class="ars-viewer-overlay" id="ars-artifact-modal" style="background: rgba(0,0,0,0.95);">
-                    <div class="ars-viewer-body" style="align-items:center; justify-content:center;">
-                        <div id="ars-artifact-content" style="position: relative; max-width: 400px; width: 90%; padding: 30px 26px; background: linear-gradient(180deg, #3a2a15, #1c1207); border: 3px solid #0e0903; border-radius: 18px; text-align: center; box-shadow: 0 8px 0 rgba(0,0,0,0.55), 0 0 30px rgba(212,175,55,0.25), inset 0 2px 0 rgba(255,236,190,0.25); color: #ffe9a8;"></div>
-                    </div>
-                </div>
-
-                <!-- HIDDEN CONFIRM FOR PROGRAMMATIC TRIGGER -->
-                <button id="ars-confirm" style="display:none;"></button>
-
-                <!-- SWITCH MODAL -->
-                <div class="ars-viewer-overlay ${this.showConfirmSwitch ? 'active' : ''}" id="ars-switch-modal" style="background: rgba(0,0,0,0.9);">
-                    <div class="ars-viewer-body" style="align-items:center; justify-content:center;">
-                        <div style="background: #222; border: 1px solid #444; border-radius: 15px; padding: 25px; max-width: 350px; width: 90%; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,1);">
-                            <div style="font-size: 1.2rem; font-weight: 950; margin-bottom: 10px; color: #ffd700;">${i18nT('ars.switchTitle')}</div>
-                            <div style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 25px;">${i18nTx('ars.switchMsg', { slot: this.targetSlot })}</div>
-                            <div style="display: flex; gap: 10px;">
-                                <button id="switch-cancel" class="ars-btn-action secondary" style="flex:1;">${i18nT('ars.cancel')}</button>
-                                <button id="switch-confirm" class="ars-btn-action" style="flex:1;">${i18nT('ars.load')}</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        this.bind(container);
-        this.observeLazyBg(container);
-
-        if (!container.dataset.matrixArsenalSynced) {
-            container.dataset.matrixArsenalSynced = '1';
-            getMergedGameTemplates(this.templates).then((merged) => {
-                if (merged && merged.length !== this.templates.length) {
-                    this.templates = merged;
-                    this.loadSlotData(this.currentSlot);
-                    if (container.isConnected) {
-                        this.render(container);
-                    }
-                }
-            });
-        }
-    }
-
-    private getCardsList(): any[] {
-        const list: any[] = [...this.templates];
-        try {
-            const raw = localStorage.getItem('store_owned');
-            if (raw) {
-                const owned = JSON.parse(raw);
-                if (Array.isArray(owned.cards)) {
-                    const storeCounts: Record<string, number> = {};
-                    owned.cards.forEach((name: string) => {
-                        storeCounts[name] = (storeCounts[name] || 0) + 1;
-                    });
-                    for (const [name, count] of Object.entries(storeCounts)) {
-                        const existingCount = list.filter(t => t.name === name).length;
-                        const needed = count - existingCount;
-                        if (needed > 0) {
-                            const tmpl = this.templates.find(t => t.name === name);
-                            if (tmpl) {
-                                for (let i = 0; i < needed; i++) {
-                                    list.push({ ...tmpl });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch {}
-        return list;
-    }
-
-    private renderActiveContent(): string {
-        const q = this.searchQuery.toLowerCase();
-
-        if (this.activeTab === 'cards') {
-            const allCards = this.getCardsList();
-            if (allCards.length === 0) {
-                return `
-                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 48px 20px; text-align:center; color:#94a3b8; gap:16px;">
-                        <div style="font-size:3rem;">🎴</div>
-                        <div style="font-size:1.15rem; font-weight:900; color:#f1f5f9;">Nenhuma Carta Criada na Matriz</div>
-                        <div style="font-size:0.82rem; max-width:440px; color:#cbd5e1; line-height:1.5;">
-                            Os presets antigos foram desativados para manter coesão com a Forja e a Galeria de Decks. Acesse a <strong>Forja Matriz</strong> para criar seus slimes e magias ou monte seus decks na <strong>Galeria de Decks</strong>!
-                        </div>
-                        <button onclick="window.location.href='forge.html'" style="margin-top:8px; padding:10px 24px; background:linear-gradient(135deg, #7928ca, #ff0080); color:#fff; border:none; border-radius:9999px; font-weight:900; font-size:0.85rem; cursor:pointer; box-shadow:0 4px 15px rgba(255,0,128,0.35);">
-                            ✨ ABRIR FORJA MATRIZ
-                        </button>
-                    </div>
-                `;
-            }
-            let filtered = allCards.filter(t => t.name.toLowerCase().includes(q));
-            if (this.rarityFilter !== 'all') {
-                filtered = filtered.filter(t => (t.preferredRarity || 'common') === this.rarityFilter);
-            }
-
-            // Agrupamento de cópias quando o modo empilhado está ativado
-            let displayCards: any[] = [];
-            if (this.isStacked) {
-                const cardMap = new Map<string, { card: any, count: number, instances: any[] }>();
-                filtered.forEach(c => {
-                    const existing = cardMap.get(c.name);
-                    if (existing) {
-                        existing.count++;
-                        existing.instances.push(c);
-                    } else {
-                        cardMap.set(c.name, { card: { ...c }, count: 1, instances: [c] });
-                    }
-                });
-                displayCards = Array.from(cardMap.values()).map(entry => {
-                    // Ordena cópias da pilha garantindo que a de MAIOR RANK fique na frente (topo)
-                    const sorted = sortStackInstances(entry.instances);
-                    const topCard = { ...sorted[0] };
-                    topCard._count = entry.count;
-                    topCard._instances = sorted;
-                    return topCard;
-                });
-            } else {
-                displayCards = filtered;
-            }
-
-            const grouped = {
-                'favorites': displayCards.filter(t => this.favorites.includes(t.name)),
-                'legendary': displayCards.filter(t => t.preferredRarity === 'legendary' && !this.favorites.includes(t.name)),
-                'epic': displayCards.filter(t => t.preferredRarity === 'epic' && !this.favorites.includes(t.name)),
-                'rare': displayCards.filter(t => t.preferredRarity === 'rare' && !this.favorites.includes(t.name)),
-                'common': displayCards.filter(t => (t.preferredRarity === 'common' || !t.preferredRarity) && !this.favorites.includes(t.name)),
-            };
-
-            this.viewerList = [...grouped.favorites, ...grouped.legendary, ...grouped.epic, ...grouped.rare, ...grouped.common];
-
-            let html = '';
-            
-            const rarityTargets: Record<string, number> = {
-                'legendary': 6,
-                'epic': 10,
-                'rare': 16,
-                'common': 28
-            };
-
-            if (grouped.favorites.length > 0) {
-                const favsCollapsed = this.collapsedSections.has('favs');
-                html += `<div class="ars-section-header" data-collapse="favs" style="cursor:pointer; user-select:none;">${favsCollapsed ? '▶' : '▼'} ${i18nT('ars.favs')} (${grouped.favorites.length})</div>
-                         <div class="ars-grid ars-columns-${this.gridSize}" style="${favsCollapsed ? 'display:none;' : ''}">${grouped.favorites.map(t => this.renderCardThumb(t, true)).join('')}</div>`;
-            }
-
-            ['common', 'rare', 'epic', 'legendary'].forEach(r => {
-                const sect = (grouped as any)[r];
-                const ownedCount = sect ? sect.length : 0;
-                const target = rarityTargets[r] || 10;
-                const lockedCount = Math.max(2, target - ownedCount);
-
-                html += `<div class="ars-rarity-divider rarity-${r}" data-collapse="rar:${r}" style="cursor:pointer; user-select:none;">${this.collapsedSections.has('rar:' + r) ? '▶' : '▼'} ${i18nT('ars.' + r)} (${ownedCount})</div>`;
-                html += `<div class="ars-grid ars-columns-${this.gridSize}" style="${this.collapsedSections.has('rar:' + r) ? 'display:none;' : ''}">`;
-                
-                if (sect) html += sect.map((t: any) => this.renderCardThumb(t, false)).join('');
-                
-                for (let i = 0; i < lockedCount; i++) {
-                    html += `
-                        <div class="ars-card-thumb locked" style="cursor:not-allowed;">
-                            <div class="ars-thumb-art" style="overflow:hidden; border-radius:8px; opacity:0.35; filter:grayscale(1) blur(1px); aspect-ratio:680/990;">${renderMatrixCardBackSVG()}</div>
-                            <div class="ars-locked-icon">🔒</div>
-                            <div class="ars-thumb-info"><div class="ars-thumb-name" style="color:#666; font-size: 0.45rem;">${i18nT('ars.locked')}</div></div>
-                        </div>
-                    `;
-                }
-                html += `</div>`;
-            });
-
-            return html;
-        }
-
-        if (this.activeTab === 'artifacts') {
-            const items = this.artifacts.filter(s => s.name.toLowerCase().includes(q));
-            
-            // Organize items by category
-            const grouped = items.reduce((acc, skill) => {
-                if (!acc[skill.category]) acc[skill.category] = [];
-                acc[skill.category].push(skill);
-                return acc;
-            }, {} as Record<string, Skill[]>);
-
-            let html = '';
-            for (const [category, skills] of Object.entries(grouped)) {
-                html += `
-                    <div class="ars-rarity-divider rarity-common" data-collapse="art:${category}" style="border-left: 2px solid #ffd700; cursor:pointer; user-select:none;">${this.collapsedSections.has('art:' + category) ? '▶' : '▼'} ${category.toUpperCase()}</div>
-                    <div class="ars-artifact-grid" style="${this.collapsedSections.has('art:' + category) ? 'display:none;' : ''}">
-                        ${skills.map(s => {
-                            const isEquipped = this.isArtifactInDeck(s.id);
-                            return `
-                                <div class="ars-artifact-item ${isEquipped ? 'equipped' : ''}" data-id="${s.id}">
-                                    <div class="ars-artifact-image" style="${s.image ? `background-image:url('${s.image}')` : ''}">${s.image ? '' : s.icon}</div>
-                                    <div class="ars-artifact-content">
-                                        <div class="ars-artifact-name">${s.name}</div>
-                                    </div>
-                                    <button class="ars-artifact-equip-btn equip-artifact">${isEquipped ? `✓ ${i18nT('ars.inDeck')}` : i18nT('ars.equip')}</button>
-                                </div>
-                            `;
-                        }).join('')}
-                        ${Array.from({ length: 4 }).map(() => `
-                            <div class="ars-artifact-item locked" style="cursor:not-allowed;">
-                                <div class="ars-artifact-image" style="background-image: url('/cards/cardback.png'); filter: grayscale(1) blur(2px); border-color: rgba(255,255,255,0.05); opacity: 0.3;"></div>
-                                <div class="ars-locked-icon" style="font-size: 1rem;">🔒</div>
-                                <div class="ars-artifact-content">
-                                    <div class="ars-artifact-name" style="background: rgba(0,0,0,0.5); color:#888; font-size: 0.5rem;">${i18nT('ars.locked')}</div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
-
-            return html || `<div style="text-align:center; opacity:0.3; padding:40px;">${i18nT('ars.noArtifacts')}</div>`;
-        }
-
-        if (this.activeTab === 'boards') {
-            const grid = `<div class="ars-grid ars-columns-2">${this.boards.map(bg => `
-                <div class="board-select ${this.selectedBoard === bg ? 'active' : ''}" data-url="${bg}">
-                    <div class="ars-board-item" style="aspect-ratio:16/9; border-radius:4px; overflow:hidden; background-image:url('${bg}'); background-size:cover; background-position:center;"></div>
-                    ${this.selectedBoard === bg ? `<div class="ars-board-check">✓</div>` : ''}
-                </div>`).join('')}</div>`;
-            return grid;
-        }
-        return '';
-    }
-
-    private renderCardThumb(t: any, isFav: boolean): string {
-        const inDeckCount = this.preDeckCards.filter(c => c && c.name === t.name).length;
-        const totalCount = t._count || 1;
-        const allInDeck = inDeckCount >= totalCount;
-        const inDeck = inDeckCount > 0;
-        const isStackedCard = this.isStacked && totalCount > 1;
-        const topRank = getCardRank(t);
-
-        return `
-            <div class="ars-card-thumb ${inDeck ? 'in-deck' : ''} ${isStackedCard ? 'stacked' : ''}" data-name="${t.name}">
-                <div class="ars-thumb-art matrix-thumb-art" style="overflow:hidden; border-radius:8px; position:relative; aspect-ratio:680/990;">
-                    ${renderMatrixCardSVG(t, { mode: 'thumb', animateChroma: false })}
-                    <div class="ars-fav-indicator ${isFav ? 'active' : ''}">⭐</div>
-                    
-                    ${isStackedCard ? `<div class="ars-stack-badge" data-action="expand-stack" title="Clique para expandir pilha (${totalCount} cartas da Matriz - Topo: Rank ${topRank})">🎴 x${totalCount} ▾</div>` : ''}
-
-                    ${inDeck ? `<div class="ars-deck-badge ${isStackedCard && !allInDeck ? 'partial' : ''}">${isStackedCard && totalCount > 1 ? `${inDeckCount}/${totalCount} ${i18nT('ars.inDeck')}` : i18nT('ars.inDeck')}</div>` : ''}
-                    
-                    <div class="ars-thumb-overlay">
-                        ${isStackedCard ? `<button class="ars-btn-action inline-expand-stack" style="background:linear-gradient(135deg, #7928ca, #ff0080); font-size:0.75rem; margin-bottom:4px;">📂 VER PILHA (${totalCount})</button>` : ''}
-                        <button class="ars-btn-action inline-equip">${allInDeck ? i18nT('ars.remove') : (isStackedCard && inDeckCount > 0 ? `+ EQUIPAR (${inDeckCount}/${totalCount})` : (inDeck ? i18nT('ars.remove') : i18nT('ars.equip')))}</button>
-                        <button class="ars-btn-action secondary inline-view">${i18nT('ars.details')}</button>
-                    </div>
-                </div>
-                <div class="ars-thumb-info"><div class="ars-thumb-name">${t.name}</div></div>
-            </div>`;
-    }
-
-    private bind(container: HTMLElement) {
-        container.querySelector('#ars-confirm')?.addEventListener('click', () => {
-            if (this.onConfirm) {
-                // Return only valid (non-null) slots
-                const cards = this.preDeckCards.filter(c => c !== null);
-                const arts = this.preDeckArtifacts.filter(a => a !== null) as Skill[];
-                this.onConfirm(cards, arts, this.selectedBoard);
-            }
-        });
-
-        // Alternar modo de empilhamento de cópias (ícone discreto e circular)
-        container.querySelector('#ars-stack-btn')?.addEventListener('click', () => {
-            SoundManager.playAction('clique_geral', 0.5);
-            this.isStacked = !this.isStacked;
-            try {
-                localStorage.setItem('arsenal_stack_copies', JSON.stringify(this.isStacked));
-            } catch {}
-            this.render(container);
-        });
-
-        container.querySelector('#ars-search')?.addEventListener('input', (e) => {
-            const input = e.target as HTMLInputElement;
-            this.searchQuery = input.value;
-            this.updatePanel(container);
-        });
-
-        container.querySelector('#ars-rarity-filter')?.addEventListener('change', (e) => {
-            this.rarityFilter = (e.target as HTMLSelectElement).value as any;
-            SoundManager.playAction('clique_geral', 0.4);
-            this.updatePanel(container);
-        });
-
-        container.querySelectorAll('.ars-grid-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                SoundManager.playAction('clique_geral', 0.4);
-                this.gridSize = parseInt((btn as HTMLElement).dataset.size!) as any;
-                this.render(container);
-            });
-        });
-
-        container.querySelectorAll('.ars-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                SoundManager.playAction('clique_geral', 0.5);
-                this.activeTab = (tab as HTMLElement).dataset.tab as any;
-                this.render(container);
-            });
-        });
-
-        // Slots interaction (Focus + Clear)
-        container.querySelectorAll('.ars-slot').forEach(slot => {
-            slot.addEventListener('click', () => {
-                const type = (slot as HTMLElement).dataset.type;
-                const idx = parseInt((slot as HTMLElement).dataset.idx || '0');
-                
-                if (type === 'card' && this.activeTab !== 'cards') { this.activeTab = 'cards'; this.render(container); return; }
-                if (type === 'artifact' && this.activeTab !== 'artifacts') { this.activeTab = 'artifacts'; this.render(container); return; }
-                if (type === 'board' && this.activeTab !== 'boards') { this.activeTab = 'boards'; this.render(container); return; }
-
-                if (type === 'card' && this.preDeckCards[idx]) {
-                    SoundManager.playAction('clique_geral', 0.3);
-                    this.preDeckCards[idx] = null;
-                    this.savePreDeck();
-                } else if (type === 'artifact' && this.preDeckArtifacts[idx]) {
-                    SoundManager.playAction('clique_geral', 0.3);
-                    this.preDeckArtifacts[idx] = null;
-                    this.savePreDeck();
-                } else {
-                    SoundManager.playAction('clique_geral', 0.4);
-                }
-                this.render(container);
-            });
-
-            // LONG PRESS TO VIEW DETAILS
-            const type = (slot as HTMLElement).dataset.type;
-            const idx = parseInt((slot as HTMLElement).dataset.idx || '0');
-            const item = type === 'card' ? this.preDeckCards[idx] : this.preDeckArtifacts[idx];
-            if (item) {
-                bindLongPress(slot as HTMLElement, () => {
-                    if (type === 'card') {
-                        // Find this card in the viewer list to allow navigation
-                        const vIdx = this.viewerList.findIndex(t => t.name === item.name);
-                        if (vIdx !== -1) this.showViewer(vIdx);
-                        else {
-                            // Temporary viewer for single card
-                            this.viewerList = [item];
-                            this.showViewer(0);
-                        }
-                    } else {
-                        this.showArtifactViewer(item);
-                    }
-                });
-            }
-        });
-
-        // UI Header Controls
-        container.querySelector('#ars-collapse-btn')?.addEventListener('click', () => {
-            this.isPreDeckCollapsed = !this.isPreDeckCollapsed;
-            this.render(container);
-        });
-
-        // Collapsible collection sections (rarities, favorites, artifact categories)
-        container.querySelectorAll('[data-collapse]').forEach(el => {
-            el.addEventListener('click', () => {
-                SoundManager.playAction('clique_geral', 0.3);
-                this.toggleSection((el as HTMLElement).dataset.collapse!, container);
-            });
-        });
-
-        container.querySelectorAll('.ars-slot-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const target = parseInt((btn as HTMLElement).dataset.slot!);
-                if (target === this.currentSlot) return;
-                SoundManager.playAction('clique_geral', 0.5);
-                this.targetSlot = target;
-                this.showConfirmSwitch = true;
-                this.render(container);
-            });
-        });
-
-        container.querySelector('#switch-confirm')?.addEventListener('click', () => {
-            SoundManager.playAction('clique_geral', 0.6);
-            this.currentSlot = this.targetSlot;
-            this.showConfirmSwitch = false;
-            localStorage.setItem('arsenal_current_slot', this.currentSlot.toString());
-            this.loadSlotData(this.currentSlot);
-            this.render(container);
-        });
-
-        container.querySelector('#switch-cancel')?.addEventListener('click', () => {
-            SoundManager.playAction('clique_geral', 0.4);
-            this.showConfirmSwitch = false;
-            this.render(container);
-        });
-
-        // SAVE BUTTON
-        container.querySelector('#ars-save-deck')?.addEventListener('click', (e) => {
-            SoundManager.playAction('clique_geral', 0.7);
-            const btn = e.currentTarget as HTMLElement;
-            this.savePreDeck();
-            
-            // Visual feedback
-            const originalText = btn.querySelector('.ars-save-text')!.textContent;
-            const originalIcon = btn.querySelector('.ars-save-icon')!.textContent;
-            
-            btn.classList.add('saved');
-            btn.querySelector('.ars-save-text')!.textContent = i18nT('ars.saved');
-            btn.querySelector('.ars-save-icon')!.textContent = '✅';
-            
-            setTimeout(() => {
-                btn.classList.remove('saved');
-                btn.querySelector('.ars-save-text')!.textContent = originalText;
-                btn.querySelector('.ars-save-icon')!.textContent = originalIcon;
-            }, 1500);
-            
-            gsap.fromTo(btn, { scale: 0.95 }, { scale: 1, duration: 0.4, ease: 'elastic.out(1, 0.3)' });
-        });
-
-        // AUTO-FILL BUTTON
-        container.querySelector('#ars-auto-fill')?.addEventListener('click', () => {
-            SoundManager.playAction('clique_geral', 0.5);
-            this.autoFillDeck();
-            this.render(container);
-            
-            // Visual stagger animation for the slots
-            gsap.fromTo('.ars-slot.filled', { scale: 0.7, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, stagger: 0.02, ease: 'back.out(2)' });
-        });
-
-        // DRAG AND DROP FOR SWAPPING
-        let draggedType: string | null = null;
-        let draggedIdx: number | null = null;
-
-        const allPreSlots = container.querySelectorAll('.ars-slot[draggable="true"]');
-        allPreSlots.forEach(slot => {
-            slot.addEventListener('dragstart', (e: any) => {
-                const el = e.currentTarget as HTMLElement;
-                draggedType = el.dataset.type || null;
-                draggedIdx = parseInt(el.dataset.idx || '-1');
-                el.style.opacity = '0.5';
-                if (e.dataTransfer) {
-                   e.dataTransfer.effectAllowed = 'move';
-                }
-            });
-            slot.addEventListener('dragend', (e: any) => {
-                (e.currentTarget as HTMLElement).style.opacity = '1';
-                draggedType = null;
-                draggedIdx = null;
-            });
-            slot.addEventListener('dragover', (e: any) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            });
-            slot.addEventListener('drop', (e: any) => {
-                e.preventDefault();
-                const el = e.currentTarget as HTMLElement;
-                const targetType = el.dataset.type;
-                const targetIdx = parseInt(el.dataset.idx || '-1');
-
-                if (draggedType === targetType && draggedIdx !== null && targetIdx !== -1 && draggedIdx !== targetIdx) {
-                    if (targetType === 'card') {
-                        const temp = this.preDeckCards[draggedIdx];
-                        this.preDeckCards[draggedIdx] = this.preDeckCards[targetIdx];
-                        this.preDeckCards[targetIdx] = temp;
-                    } else if (targetType === 'artifact') {
-                        const temp = this.preDeckArtifacts[draggedIdx];
-                        this.preDeckArtifacts[draggedIdx] = this.preDeckArtifacts[targetIdx];
-                        this.preDeckArtifacts[targetIdx] = temp;
-                    }
-                    this.savePreDeck();
-                    this.render(container);
-                }
-            });
-        });
-
-        // delegation
-        const panel = container.querySelector('#ars-panel');
-        panel?.addEventListener('click', (e) => {
-            const trg = e.target as HTMLElement;
-            const thumb = trg.closest('.ars-card-thumb') as HTMLElement;
-            if (thumb) {
-                if (Date.now() < this.suppressThumbClickUntil) return;
-                const name = thumb.dataset.name;
-                const c = this.viewerList.find(t => t.name === name) || this.templates.find(t => t.name === name);
-                if (trg.classList.contains('inline-expand-stack') || trg.closest('.ars-stack-badge') || trg.classList.contains('ars-stack-badge')) {
-                    SoundManager.playAction('clique_geral', 0.5);
-                    const instances = (c as any)?._instances || (this.getCardsList().filter(x => x.name === name));
-                    this.openStackExplorerModal(name!, instances.length > 0 ? instances : [c], container);
-                    return;
-                }
-                if (trg.classList.contains('inline-equip')) { this.equipToDeck('card', c, thumb); return; }
-                if (trg.classList.contains('inline-view')) { 
-                    const vIdx = this.viewerList.findIndex(t => t.name === name);
-                    if (vIdx !== -1) this.showViewer(vIdx); 
-                    return; 
-                }
-                if (trg.classList.contains('ars-fav-indicator')) {
-                    SoundManager.playAction('clique_geral', 0.4);
-                    this.toggleFavorite(name!);
-                    this.updatePanel(container);
-                    return;
-                }
-                // default view details
-                const vIdx = this.viewerList.findIndex(t => t.name === name);
-                if (vIdx !== -1) this.showViewer(vIdx);
-            }
-
-            const artRow = trg.closest('.ars-artifact-item') as HTMLElement;
-            if (artRow && trg.classList.contains('equip-artifact')) {
-                const art = this.artifacts.find(a => a.id === artRow.dataset.id);
-                if (art) this.equipToDeck('artifact', art, artRow);
-                return;
-            } else if (artRow && !artRow.classList.contains('locked')) {
-                const art = this.artifacts.find(a => a.id === artRow.dataset.id);
-                if (art) this.showArtifactViewer(art);
-                return;
-            }
-
-            const boardItem = trg.closest('.board-select') as HTMLElement;
-            if (boardItem) {
-                SoundManager.playAction('clique_geral', 0.5);
-                this.selectedBoard = boardItem.dataset.url!;
-                this.savePreDeck();
-                this.render(container);
-            }
-        });
-
-        document.getElementById('ars-artifact-modal')?.addEventListener('click', (e) => {
-            if (e.target === document.getElementById('ars-artifact-modal')) {
-                document.getElementById('ars-artifact-modal')?.classList.remove('active');
-            }
-        });
-
-        // Long-press drag da colecao para os slots (mouse + touch)
-        this.bindCollectionDrag(container);
-
-        if (panel && panel.children.length > 0) {
-            gsap.fromTo(panel.children, 
-                { y: 40, opacity: 0 },
-                { y: 0, opacity: 1, duration: 0.5, stagger: 0.05, ease: 'back.out(1.2)' }
+        if (Array.isArray(parsed.artifacts)) {
+          this.preDeckArtifacts = [0, 1, 2].map((i) => {
+            const artId = parsed.artifacts[i];
+            if (!artId) return this.artifacts[i] || null;
+            if (typeof artId === 'object') return artId;
+            const cleanId = String(artId).replace(/^art_/, '');
+            return (
+              this.artifacts.find(
+                (a) => a.id === artId || a.id === cleanId || a.name === artId
+              ) ||
+              this.artifacts[i] ||
+              null
             );
-        }
-
-        // Handle the hidden confirm button click
-        const confirmBtn = document.getElementById('ars-confirm');        confirmBtn?.addEventListener('click', () => {
-            if (this.onConfirm) {
-                this.onConfirm(
-                    this.preDeckCards.filter(c => c !== null),
-                    this.preDeckArtifacts.filter(a => a !== null) as Skill[],
-                    this.selectedBoard
-                );
-            }
-        });
-    }
-
-    private bindCollectionDrag(container: HTMLElement) {
-        container.querySelectorAll('.ars-card-thumb').forEach(thumb => {
-            const el = thumb as HTMLElement;
-            let pressTimer: any = null;
-            let dragging = false;
-            let ghost: HTMLElement | null = null;
-            let startX = 0, startY = 0;
-
-            const preventScroll = (e: TouchEvent) => { if (dragging) e.preventDefault(); };
-
-            const cancelPress = () => {
-                if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-            };
-
-            el.addEventListener('pointerdown', (e: PointerEvent) => {
-                if ((e.target as HTMLElement).closest('.ars-btn-action, .ars-fav-indicator')) return;
-                if (e.button !== undefined && e.button !== 0) return;
-                startX = e.clientX; startY = e.clientY;
-                cancelPress();
-                pressTimer = setTimeout(() => {
-                    const card = this.templates.find(t => t.name === el.dataset.name);
-                    if (!card) return;
-                    dragging = true;
-                    this.suppressThumbClickUntil = Date.now() + 500;
-                    ghost = document.createElement('div');
-                    const r = el.getBoundingClientRect();
-                    ghost.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;z-index:99999;pointer-events:none;border-radius:8px;border:3px solid #ffd700;background:url('${card.image || ''}') center/cover, #111;box-shadow:0 12px 40px rgba(0,0,0,0.8), 0 0 24px rgba(255,215,0,0.5);opacity:0.95;`;
-                    document.body.appendChild(ghost);
-                    document.addEventListener('touchmove', preventScroll, { passive: false });
-                    try { SoundManager.playAction('clique_geral', 0.4); } catch {}
-                }, 450);
-            });
-
-            el.addEventListener('pointermove', (e: PointerEvent) => {
-                if (!dragging || !ghost) {
-                    if (pressTimer && Math.hypot(e.clientX - startX, e.clientY - startY) > 12) cancelPress();
-                    return;
-                }
-                ghost.style.left = (e.clientX - ghost.offsetWidth / 2) + 'px';
-                ghost.style.top = (e.clientY - ghost.offsetHeight / 2) + 'px';
-                container.querySelectorAll('.ars-card-slot.drag-over').forEach(s => s.classList.remove('drag-over'));
-                const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-                const slot = under && under.closest ? (under.closest('.ars-card-slot') as HTMLElement | null) : null;
-                if (slot && container.contains(slot)) slot.classList.add('drag-over');
-            });
-
-            const endDrag = (e: PointerEvent) => {
-                cancelPress();
-                if (!dragging) return;
-                dragging = false;
-                document.removeEventListener('touchmove', preventScroll);
-                let placed = false;
-                const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-                const slot = under && under.closest ? (under.closest('.ars-card-slot') as HTMLElement | null) : null;
-                if (slot && container.contains(slot)) {
-                    const idx = parseInt(slot.dataset.idx || '-1');
-                    const card = this.templates.find(t => t.name === el.dataset.name);
-                    if (card && idx >= 0) {
-                        this.preDeckCards[idx] = card;
-                        this.savePreDeck();
-                        try { SoundManager.playAction('carta_sacada', 0.5); } catch {}
-                        placed = true;
-                    }
-                }
-                ghost?.remove(); ghost = null;
-                container.querySelectorAll('.ars-card-slot.drag-over').forEach(s => s.classList.remove('drag-over'));
-                if (placed) {
-                    this.suppressThumbClickUntil = Date.now() + 400;
-                    this.render(container);
-                }
-            };
-            el.addEventListener('pointerup', endDrag);
-            el.addEventListener('pointercancel', endDrag);
-        });
-    }
-
-    private updatePanel(container: HTMLElement) {
-        const panel = container.querySelector('#ars-panel') as HTMLElement;
-        if (!panel) return;
-        gsap.to(panel.children, { y: 20, opacity: 0, duration: 0.2, stagger: 0.02, onComplete: () => {
-            panel.innerHTML = this.renderActiveContent();
-            this.observeLazyBg(panel);
-            gsap.fromTo(panel.children, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.4, stagger: 0.04, ease: 'power2.out' });
-        }});
-    }
-
-    private toggleSection(key: string, container: HTMLElement) {
-        if (this.collapsedSections.has(key)) this.collapsedSections.delete(key);
-        else this.collapsedSections.add(key);
-        try { localStorage.setItem('arsenal_collapsed_sections', JSON.stringify([...this.collapsedSections])); } catch {}
-        this.render(container);
-    }
-
-    // Lazy-load das artes das cartas: só baixa a imagem quando o thumb entra
-    // (ou está perto de entrar) na área visível. Sem isso o navegador dispara
-    // dezenas de downloads de ~700KB de uma vez ao abrir o deck.
-    private observeLazyBg(scope: HTMLElement) {
-        const els = scope.querySelectorAll('[data-lazybg]');
-        if (!els.length) return;
-        const paint = (node: HTMLElement) => {
-            const full = node.getAttribute('data-lazybg') || '';
-            const thumb = node.getAttribute('data-lazythumb') || full;
-            node.removeAttribute('data-lazybg');
-            node.removeAttribute('data-lazythumb');
-            // Tenta o thumb leve; se faltar, cai p/ a imagem full (nunca quebra).
-            const probe = new Image();
-            probe.onload = () => { node.style.backgroundImage = `url('${thumb}')`; };
-            probe.onerror = () => { if (full) node.style.backgroundImage = `url('${full}')`; };
-            probe.src = thumb || full;
-        };
-        if (!('IntersectionObserver' in window)) {
-            els.forEach((el) => paint(el as HTMLElement));
-            return;
-        }
-        const io = new IntersectionObserver((entries) => {
-            entries.forEach((en) => {
-                if (!en.isIntersecting) return;
-                const node = en.target as HTMLElement;
-                paint(node);
-                io.unobserve(node);
-            });
-        }, { root: scope.querySelector('.ars-scroller') || null, rootMargin: '400px' });
-        els.forEach((el) => io.observe(el));
-    }
-
-    private equipToDeck(type: 'card' | 'artifact', item: any, sourceEl: HTMLElement | null, forceAction?: 'equip' | 'remove') {
-        let targetIdx = -1;
-        let isRemoving = false;
-
-        if (type === 'card') {
-            const inDeckMatches: number[] = [];
-            this.preDeckCards.forEach((c, idx) => {
-                if (c && (c.id ? c.id === item.id : c.name === item.name)) inDeckMatches.push(idx);
-            });
-            const inDeckCount = inDeckMatches.length;
-            const totalCount = item._count || 1;
-
-            if (forceAction === 'remove' || (!forceAction && inDeckCount >= totalCount)) {
-                // Remove a cópia equipada
-                const exactIdx = inDeckMatches.find(idx => this.preDeckCards[idx]?.id === item.id);
-                const removeIdx = exactIdx !== undefined ? exactIdx : (inDeckMatches.length > 0 ? inDeckMatches[inDeckMatches.length - 1] : -1);
-                if (removeIdx !== -1) {
-                    this.preDeckCards[removeIdx] = null;
-                    isRemoving = true;
-                }
-            } else {
-                targetIdx = this.preDeckCards.indexOf(null);
-                if (targetIdx === -1) targetIdx = 0;
-                this.preDeckCards[targetIdx] = item;
-            }
+          });
         } else {
-            const existing = this.preDeckArtifacts.indexOf(item);
-            if (existing !== -1) { this.preDeckArtifacts[existing] = null; isRemoving = true; }
-            else { targetIdx = this.preDeckArtifacts.indexOf(null); if (targetIdx === -1) targetIdx = 0; this.preDeckArtifacts[targetIdx] = item; }
+          this.preDeckArtifacts = [
+            this.artifacts[0] || null,
+            this.artifacts[1] || null,
+            this.artifacts[2] || null,
+          ];
         }
+        if (parsed.board) this.selectedBoard = parsed.board;
+        return;
+      }
+    } catch (_) {}
 
-        if (!isRemoving && sourceEl && targetIdx !== -1) {
-            SoundManager.playAction('carta_sacada', 0.5);
-            this.animateToSlot(sourceEl, type, targetIdx, item.image || (item.icon ? '' : item.image));
-            setTimeout(() => this.render(document.querySelector('.arsenal-screen')!.parentElement!), 600);
-        } else {
-            if (isRemoving) SoundManager.playAction('clique_geral', 0.3);
-            this.render(document.querySelector('.arsenal-screen')!.parentElement!);
-        }
-        this.savePreDeck();
+    this.preDeckCards = Array(12)
+      .fill(null)
+      .map((_, i) => this.templates[i] || null);
+    this.preDeckArtifacts = [
+      this.artifacts[0] || null,
+      this.artifacts[1] || null,
+      this.artifacts[2] || null,
+    ];
+  }
+
+  protected saveCurrentSlot() {
+    const payload = {
+      cards: this.preDeckCards.map((c) => (c ? c.name || c.title || c.id : null)),
+      artifacts: this.preDeckArtifacts.map((a) => (a ? a.id || a.name : null)),
+      board: this.selectedBoard,
+    };
+    const json = JSON.stringify(payload);
+    localStorage.setItem(`arsenal_predeck_s${this.currentSlot}`, json);
+    localStorage.setItem(`arsenal_loadout_${this.currentSlot}`, json);
+    localStorage.setItem('arsenal_predeck', json);
+    localStorage.setItem('arsenal_active_slot', String(this.currentSlot));
+  }
+
+  protected renderCardThumbHtml(card: any): string {
+    if (!card) return `<span style="font-size:9px;">CARTA</span>`;
+    return `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative;">${renderMatrixCardSVG(
+      card,
+      { mode: 'thumb', animateChroma: false }
+    )}</div>`;
+  }
+
+  public render(container: HTMLElement) {
+    getMergedGameTemplates(this.templates).then((merged) => {
+      if (merged.length !== this.templates.length) {
+        this.templates = merged;
+        this.loadDeckFromSlot(this.currentSlot);
+        if (document.body.contains(container)) this.paint(container);
+      }
+    });
+    this.paint(container);
+  }
+
+  protected getFilteredCards(): { card: any; count: number }[] {
+    let list = [...this.templates];
+    if (this.searchQuery.trim()) {
+      const q = this.searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (c) =>
+          (c.name || c.title || '').toLowerCase().includes(q) ||
+          (c.race || '').toLowerCase().includes(q) ||
+          (c.class || '').toLowerCase().includes(q)
+      );
+    }
+    if (this.rarityFilter !== 'all') {
+      list = list.filter((c) => {
+        const r = String(c.preferredRarity || c.rarity || 'common').toLowerCase();
+        if (this.rarityFilter === 'legendary') return r.includes('leg') || r.includes('mit');
+        if (this.rarityFilter === 'epic') return r.includes('epi');
+        if (this.rarityFilter === 'rare') return r.includes('rar');
+        if (this.rarityFilter === 'common')
+          return !r.includes('leg') && !r.includes('mit') && !r.includes('epi') && !r.includes('rar');
+        return true;
+      });
     }
 
-    private openStackExplorerModal(cardName: string, instances: any[], container: HTMLElement) {
-        document.querySelectorAll('.ars-stack-modal-overlay').forEach(el => el.remove());
+    list.sort((a, b) => {
+      const favA = this.favorites.includes(a.name || a.id) ? 1 : 0;
+      const favB = this.favorites.includes(b.name || b.id) ? 1 : 0;
+      if (favB !== favA) return favB - favA;
+      return getCardRankWeight(b) - getCardRankWeight(a);
+    });
 
+    if (this.isStacked) {
+      const groups = new Map<string, any[]>();
+      list.forEach((c) => {
+        const key = String(c.name || c.title || c.id).toLowerCase().trim();
+        const arr = groups.get(key) || [];
+        arr.push(c);
+        groups.set(key, arr);
+      });
+      const stackedResult: { card: any; count: number }[] = [];
+      groups.forEach((instances) => {
         const sorted = sortStackInstances(instances);
-        const modal = document.createElement('div');
-        modal.className = 'ars-stack-modal-overlay';
-
-        const total = sorted.length;
-        const fusionTarget = 10;
-        const progressPct = Math.min(100, Math.round((total / fusionTarget) * 100));
-        const canFuse = total >= fusionTarget;
-
-        modal.innerHTML = `
-            <div class="ars-stack-modal-container">
-                <div class="ars-stack-modal-header">
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <span style="font-size:1.8rem;">🎴</span>
-                        <div>
-                            <h3 style="margin:0; font-size:1.15rem; font-weight:900; color:#ffd700; text-transform:uppercase; letter-spacing:1px;">${cardName}</h3>
-                            <div style="font-size:0.75rem; color:#94a3b8; margin-top:2px;">
-                                Pilha de Matriz &bull; <strong style="color:#f1f5f9;">${total} cópias</strong> adquiridas &bull; Maior Rank no Topo: <span style="color:#ffd700; font-weight:900;">RANK ${getCardRank(sorted[0])}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="ars-stack-modal-close" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:50%; width:36px; height:36px; font-size:1.2rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:0.2s;" title="Fechar">✕</button>
-                </div>
-
-                <div class="ars-stack-modal-body">
-                    <!-- Banner de Transmutação / Fusão Máxima (Rank S) -->
-                    <div class="ars-fusion-banner">
-                        <div style="display:flex; align-items:center; gap:14px; flex:1; min-width:280px;">
-                            <span style="font-size:2rem; filter:drop-shadow(0 0 8px rgba(168,85,247,0.8));">🔮</span>
-                            <div style="flex:1;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                                    <strong style="color:#ffd700; font-size:0.85rem; letter-spacing:0.5px;">Transmutação Matriz Máxima (Rank S)</strong>
-                                    <span style="font-weight:900; font-size:0.8rem; color:#cbd5e1;">${total} / ${fusionTarget} Cartas</span>
-                                </div>
-                                <div class="ars-fusion-progress-track">
-                                    <div class="ars-fusion-progress-fill" style="width: ${progressPct}%;"></div>
-                                </div>
-                                <div style="font-size:0.68rem; color:#94a3b8; margin-top:6px; line-height:1.4;">
-                                    ${canFuse 
-                                        ? '✨ <strong style="color:#4ade80;">Condição atingida!</strong> Pronto para fundir em carta suprema de Rank S com PV e ATK máximos.' 
-                                        : `Acumule ${fusionTarget - total} cópias adicionais para converter em uma carta de Rank Máximo S (PV/ATK 500+).`}
-                                </div>
-                            </div>
-                        </div>
-                        <button class="ars-fusion-btn ${canFuse ? 'ready' : ''}" ${canFuse ? '' : 'disabled'}>
-                            ${canFuse ? '✨ TRANSMUTAR EM RANK S MÁXIMO' : `🔒 FUNDIR (REQUER ${fusionTarget})`}
-                        </button>
-                    </div>
-
-                    <!-- Grid de Cópias da Pilha -->
-                    <div class="ars-stack-grid">
-                        ${sorted.map((inst, idx) => {
-                            const isTop = idx === 0;
-                            const rank = getCardRank(inst);
-                            const inDeck = this.preDeckCards.some(c => c && (c.id ? c.id === inst.id : c.name === inst.name && total === 1));
-                            const isFav = this.favorites.includes(inst.name);
-                            const pv = inst.pv || inst.basePv || inst.pvNumber || 100;
-                            const atk = inst.atk || inst.baseAtk || inst.maxDamage || 50;
-
-                            return `
-                                <div class="ars-stack-card-card ${isTop ? 'top-rank' : ''}" data-idx="${idx}">
-                                    <div class="ars-stack-card-art">
-                                        ${renderMatrixCardSVG(inst, { mode: 'thumb', animateChroma: false })}
-                                        ${isTop ? `<div class="ars-stack-top-badge">👑 MAIOR RANK (TOPO)</div>` : ''}
-                                        <div class="ars-stack-rank-pill rank-${rank.toLowerCase()}">RANK ${rank}</div>
-                                        ${inDeck ? `<div class="ars-stack-deck-tag">✅ NO DECK</div>` : ''}
-                                    </div>
-                                    <div class="ars-stack-card-details">
-                                        <div class="ars-stack-card-title-row">
-                                            <span style="color:#94a3b8;">Cópia #${idx + 1}</span>
-                                            <span style="color:#ffd700; font-weight:900;">Rank ${rank}</span>
-                                        </div>
-                                        <div class="ars-stack-stats-row">
-                                            <span class="ars-stat-pv">❤️ ${pv} PV</span>
-                                            <span class="ars-stat-atk">⚔️ ${atk} ATK</span>
-                                        </div>
-                                        <div class="ars-stack-card-actions">
-                                            <button class="ars-stack-action-btn equip-btn ${inDeck ? 'remove' : ''}" data-idx="${idx}">
-                                                ${inDeck ? '✕ Remover' : '+ Equipar'}
-                                            </button>
-                                            <button class="ars-stack-action-btn fav-btn ${isFav ? 'active' : ''}" data-idx="${idx}">
-                                                ${isFav ? '⭐ Favorito' : '☆ Favoritar'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        const closeBtn = modal.querySelector('.ars-stack-modal-close');
-        const closeModal = () => {
-            SoundManager.playAction('clique_geral', 0.3);
-            modal.remove();
-        };
-        closeBtn?.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
-        });
-
-        const fusionBtn = modal.querySelector('.ars-fusion-btn');
-        fusionBtn?.addEventListener('click', () => {
-            if (canFuse) {
-                SoundManager.playAction('carta_sacada', 0.7);
-                alert(`🔮 Transmutação Matriz: ${fusionTarget} cópias de ${cardName} preparadas para forjar a carta Rank S definitivo! (Recurso em validação de balanceamento).`);
-            }
-        });
-
-        modal.querySelectorAll('.ars-stack-action-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const b = e.currentTarget as HTMLElement;
-                const idx = parseInt(b.dataset.idx || '0');
-                const targetCard = sorted[idx];
-                if (!targetCard) return;
-
-                if (b.classList.contains('equip-btn')) {
-                    const isEquipped = this.preDeckCards.some(c => c && (c.id ? c.id === targetCard.id : c.name === targetCard.name));
-                    this.equipToDeck('card', targetCard, null, isEquipped ? 'remove' : 'equip');
-                    this.openStackExplorerModal(cardName, instances, container);
-                    this.render(container);
-                } else if (b.classList.contains('fav-btn')) {
-                    SoundManager.playAction('clique_geral', 0.4);
-                    this.toggleFavorite(cardName);
-                    this.openStackExplorerModal(cardName, instances, container);
-                    this.render(container);
-                }
-            });
-        });
+        stackedResult.push({ card: sorted[0], count: sorted.length });
+      });
+      return stackedResult;
     }
 
-    private animateToSlot(source: HTMLElement, type: string, idx: number, img: string) {
-        const slots = document.querySelectorAll(type === 'card' ? '.ars-card-slot' : '.ars-skill-circle');
-        const target = slots[idx];
-        if (!target) return;
-        const sRect = source.getBoundingClientRect();
-        const tRect = target.getBoundingClientRect();
-        const flyer = document.createElement('div');
-        flyer.className = 'ars-flyer';
-        flyer.style.cssText = `width:${sRect.width}px;height:${sRect.height}px;top:${sRect.top}px;left:${sRect.left}px;`;
-        if (img) flyer.style.backgroundImage = `url('${img}')`;
-        else flyer.innerHTML = `<div style="font-size: 2rem; display: flex; align-items: center; justify-content: center; height: 100%; color: white;">✨</div>`;
-        document.body.appendChild(flyer);
+    return list.map((card) => ({ card, count: 1 }));
+  }
 
-        const tl = gsap.timeline({ onComplete: () => flyer.remove() });
-        tl.to(flyer, { x: tRect.left - sRect.left, y: tRect.top - sRect.top, width: tRect.width, height: tRect.height, rotation: 720, duration: 0.7, ease: 'power3.inOut' });
-        tl.to(target, { scale: 1.2, duration: 0.15, yoyo: true, repeat: 1 }, 0.5);
+  protected paint(container: HTMLElement) {
+    const prevScroller = container.querySelector('.arsenal-scroll-root') as HTMLElement | null;
+    if (prevScroller) {
+      this.lastScrollTop = prevScroller.scrollTop;
     }
 
-    private loadSlotData(slot: number) {
-        const key = `arsenal_predeck_s${slot}`;
-        const savedPre = localStorage.getItem(key) || localStorage.getItem('arsenal_predeck');
-        if (savedPre) {
-            const data = JSON.parse(savedPre);
-            this.preDeckCards = data.cards.map((name: string) =>
-                name ? (this.templates.find(t => t.name === name || t.id === name) || resolveMatrixOrGameCard(name, this.templates) || null) : null
-            );
-            this.preDeckArtifacts = data.artifacts.map((id: string) => this.artifacts.find(a => a.id === id) || null);
-            this.selectedBoard = data.board || (this.boards[0] || '');
-        } else {
-            this.preDeckCards = Array(12).fill(null);
-            this.preDeckArtifacts = Array(3).fill(null);
-            this.selectedBoard = this.boards[0] || '';
-        }
-    }
+    const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
+    const filledCount = this.preDeckCards.filter(Boolean).length;
+    const filteredEntries = this.getFilteredCards();
 
-    private savePreDeck() {
-        const data = {
-            cards: this.preDeckCards.map(c => c?.name || ''),
-            artifacts: this.preDeckArtifacts.map(a => a?.id || ''),
-            board: this.selectedBoard
-        };
-        const key = `arsenal_predeck_s${this.currentSlot}`;
-        localStorage.setItem(key, JSON.stringify(data));
-        // Also keep 'arsenal_predeck' as the legacy/global active one for compatibility
-        localStorage.setItem('arsenal_predeck', JSON.stringify(data));
-    }
+    const deckSelectorButtonsHtml = [1, 2, 3]
+      .map((slot) =>
+        this.currentSlot === slot
+          ? `<button type="button" data-deck-slot="${slot}" class="btn-royal-gold" style="cursor:pointer;"><div class="btn-royal-inner" style="padding:5px 14px; font-family:var(--font-display); font-weight:800; font-size:10px; text-transform:uppercase;">Deck ${slot}</div></button>`
+          : `<button type="button" data-deck-slot="${slot}" class="pearl-pill" style="padding:5px 14px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:10px; color:#5c4b3b; text-transform:uppercase; cursor:pointer;">Deck ${slot}</button>`
+      )
+      .join('');
 
-    private autoFillDeck() {
-        // Sorteio SEM reposicao: nao repete carta (so repete se o acervo < 12)
-        const pool = [...this.templates];
-        this.preDeckCards = [];
-        for (let i = 0; i < 12; i++) {
-            if (pool.length === 0) {
-                if (this.templates.length === 0) break;
-                pool.push(...this.templates);
-            }
-            const rIdx = Math.floor(Math.random() * pool.length);
-            this.preDeckCards.push(pool.splice(rIdx, 1)[0]);
-        }
-        while (this.preDeckCards.length < 12) this.preDeckCards.push(null);
-
-        // Randomize 3 artifacts (ja era sem repeticao + guarda contra acervo vazio)
-        const availableArtifacts = [...this.artifacts];
-        this.preDeckArtifacts = [];
-        for (let i = 0; i < 3; i++) {
-            if (availableArtifacts.length === 0) { this.preDeckArtifacts.push(null); continue; }
-            const rIdx = Math.floor(Math.random() * availableArtifacts.length);
-            this.preDeckArtifacts.push(availableArtifacts[rIdx]);
-            availableArtifacts.splice(rIdx, 1); // Artifacts are usually unique
-        }
-
-        // Randomize board
-        if (this.boards.length > 0) {
-            this.selectedBoard = this.boards[Math.floor(Math.random() * this.boards.length)];
-        }
-
-        this.savePreDeck();
-    }
-
-    private toggleFavorite(name: string) {
-        const idx = this.favorites.indexOf(name);
-        if (idx === -1) this.favorites.push(name);
-        else this.favorites.splice(idx, 1);
-        localStorage.setItem('arsenal_favorites', JSON.stringify(this.favorites));
-    }
-
-    private handleGlobalKeys(e: KeyboardEvent) {
-        if (!isCardViewerOpen()) return;
-        if (e.key === 'ArrowLeft') this.navigateViewer(-1);
-        if (e.key === 'ArrowRight') this.navigateViewer(1);
-    }
-
-    private navigateViewer(dir: number) {
-        cardViewerNav(dir);
-    }
-
-    private showViewer(idx: number, _fromDir: number = 0) {
-        const templ = this.viewerList[idx];
-        if (!templ) return;
-        const inDeck = this.preDeckCards.some(c => c && c.name === templ.name);
-        openCardViewer({
-          card: templ,
-          list: this.viewerList,
-          index: idx,
-          actionLabel: inDeck ? i18nT('ars.remove') : i18nT('ars.equip'),
-          onAction: (card) => {
-            this.equipToDeck('card', card, null);
-            const placed = this.preDeckCards.findIndex(c => c && c.name === card.name);
-            if (placed >= 0) setTimeout(() => this.flashDeckSlot(placed), 80);
-            return { close: true };
+    const deck12GridHtml = this.preDeckCards
+      .map(
+        (card, i) => `
+        <div data-predeck-idx="${i}" style="width:100%; aspect-ratio:680/990; position:relative; overflow:hidden; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; background:${
+          card ? '#0b1830' : 'rgba(8, 20, 42, 0.55)'
+        }; border:${
+          card ? '1.5px solid #f5d98b' : '1.5px dashed rgba(212, 168, 75, 0.55)'
+        }; box-shadow:${card ? '0 8px 18px rgba(0,0,0,0.6)' : 'none'};" title="${
+          card ? `${card.name || card.title} (Toque para abrir em Tela Cheia)` : `Slot ${i + 1}`
+        }">
+          ${
+            card
+              ? `
+                ${this.renderCardThumbHtml(card)}
+                <button type="button" data-quick-remove-predeck="${i}" style="position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:9999px; background:rgba(153,27,27,0.92); border:1px solid #fecaca; color:#fff; font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; z-index:12; cursor:pointer; padding:0;" title="Remover do Deck">✕</button>
+              `
+              : `<span style="font-family:var(--font-display); font-size:11px; font-weight:800; color:rgba(245,217,139,0.6);">${i + 1}</span>`
           }
-        });
-    }
+        </div>
+      `
+      )
+      .join('');
 
-    private flashDeckSlot(idx: number) {
-        const slot = document.querySelector(`.ars-card-slot[data-idx="${idx}"]`) as HTMLElement | null;
-        if (!slot) return;
-        try {
-          slot.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          gsap.fromTo(slot,
-            { boxShadow: '0 0 0 rgba(255,215,0,0)' },
-            { boxShadow: '0 0 26px rgba(255,215,0,0.95)', duration: 0.3, yoyo: true, repeat: 3 });
-        } catch {}
-    }
-
-    private showArtifactViewer(skill: Skill) {
-        const modal = document.getElementById('ars-artifact-modal')!;
-        const content = document.getElementById('ars-artifact-content')!;
-
-        content.innerHTML = `
-            <!-- Close Button (X) -->
-            <button style="position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(180deg, #5a4128, #2a1c0d); border: 3px solid #0e0903; color: #ffe9a8; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 3px 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,236,190,0.35); text-shadow: 0 2px 0 #000;" onclick="document.getElementById('ars-artifact-modal').classList.remove('active')">X</button>
-            
-            <!-- Centered Circular Image -->
-            <div style="width: 180px; height: 180px; border-radius: 50%; background-color: #111; background-size: cover; background-position: center; display:flex; align-items:center; justify-content:center; font-size: 5rem; margin: 0 auto 20px; border: 4px solid #d4af37; box-shadow: 0 6px 0 rgba(0,0,0,0.55), 0 0 28px rgba(212,175,55,0.45), inset 0 3px 8px rgba(255,236,190,0.25); ${skill.image ? `background-image:url('${skill.image}')` : ''}">${skill.image ? '' : skill.icon}</div>
-            
-            <!-- Type (Habilidade) -->
-            <div style="font-size: 0.7rem; font-weight: 950; letter-spacing: 3px; color: #d4af37; margin-bottom: 8px; text-shadow: 0 2px 0 #000;">${i18nT('ars.ability')}</div>
-            
-            <div style="font-size: 1.25rem; font-weight: 950; margin-bottom: 10px; color: #ffe9a8; letter-spacing: 1px; text-shadow: -1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 3px 0 rgba(0,0,0,0.6);">${skill.name}</div>
-            
-            <!-- Desc -->
-            <div style="font-size: 0.95rem; line-height: 1.5; color: #fff; margin-bottom: 16px; text-shadow: 0 1px 0 #000;">
-                ${skill.description}
-            </div>
-            
-            <!-- Flavor -->
-            ${skill.flavorText ? `
-            <div style="font-size: 0.85rem; line-height: 1.4; margin-bottom: 24px; font-style: italic; color: #ffd76a; text-shadow: 0 1px 0 #000;">
-                "${skill.flavorText}"
-            </div>
-            ` : '<div style="margin-bottom: 24px;"></div>'}
-            
-            <!-- Action Button -->
-            <button class="equip-artifact" data-id="${skill.id}" style="width: 80%; padding: 13px; background: linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); border: 3px solid #0e1f00; border-radius: 14px; font-size: 0.85rem; color: #0f1f00; font-weight: 950; letter-spacing: 2px; cursor: pointer; display: block; margin: 0 auto; box-shadow: 0 5px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.5); text-shadow: 0 1px 0 rgba(255,255,255,0.35);">${i18nT('ars.equipVerb')}</button>
-        `;
-        
-        // Add listener to the specific equip button inside modal
-        setTimeout(() => {
-            const btn = content.querySelector('.equip-artifact') as HTMLElement;
-            if (btn) {
-                btn.addEventListener('click', () => {
-                    const row = document.querySelector(`.ars-artifact-item[data-id="${skill.id}"]`) as HTMLElement;
-                    if (row) {
-                        this.equipToDeck('artifact', skill, row);
-                        modal.classList.remove('active');
-                    }
-                });
+    const artifacts3SlotsHtml = [0, 1, 2]
+      .map((i) => {
+        const art = this.preDeckArtifacts[i];
+        return `
+          <div data-preart-idx="${i}" style="width:48px; height:48px; min-width:48px; border-radius:9999px; cursor:pointer; display:flex; align-items:center; justify-content:center; overflow:hidden; border:2px solid #f5d98b; background:rgba(8,22,48,0.82); box-shadow:0 4px 12px rgba(0,0,0,0.55); flex-shrink:0;" title="${
+          art?.name || `Artefato ${i + 1}`
+        }">
+            ${
+              art
+                ? (art as any).image
+                  ? `<img src="${thumbFor((art as any).image)}" alt="${art.name}" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                  : `<span style="font-size:18px;">${(art as any).icon || '🔮'}</span>`
+                : `<span style="font-family:var(--font-display); font-size:10px; font-weight:800; color:#f5d98b;">A${i + 1}</span>`
             }
-        }, 10);
-        
-        modal.classList.add('active');
-        gsap.fromTo(content, { scale: 0.8, opacity: 0, y: 30 }, { scale: 1, opacity: 1, y: 0, duration: 0.4, ease: 'back.out(1.5)' });
+          </div>
+        `;
+      })
+      .join('');
+
+    const colColsCount =
+      this.gridSize === 2
+        ? isLandscape
+          ? 3
+          : 2
+        : this.gridSize === 3
+        ? isLandscape
+          ? 4
+          : 3
+        : isLandscape
+        ? 5
+        : 4;
+
+    const collectionItemsHtml =
+      this.activeTab === 'cards'
+        ? filteredEntries
+            .map(({ card, count }, idx) => {
+              const cardKey = card.name || card.title || card.id;
+              const inDeckCount = this.preDeckCards.filter(
+                (c) => c && (c.name === cardKey || c.title === cardKey || c.id === card.id)
+              ).length;
+              const isFav = this.favorites.includes(cardKey);
+              return `
+                <div data-col-card="${idx}" style="width:100%; aspect-ratio:680/990; position:relative; overflow:hidden; border-radius:11px; cursor:pointer; background:#0b1830; border:${
+                inDeckCount > 0 ? '2px solid #f5d98b' : '1.5px solid rgba(212,168,75,0.42)'
+              }; box-shadow:${
+                inDeckCount > 0
+                  ? '0 10px 22px rgba(0,0,0,0.68), 0 0 14px rgba(245,217,139,0.45)'
+                  : '0 8px 18px rgba(0,0,0,0.55)'
+              };">
+                  ${this.renderCardThumbHtml(card)}
+                  ${
+                    inDeckCount > 0
+                      ? `<div style="position:absolute; top:5px; left:5px; padding:2px 6px; border-radius:5px; background:rgba(6,35,86,0.94); border:1px solid #f5d98b; font-family:var(--font-display); font-weight:900; font-size:8px; color:#fff3c2; z-index:10; box-shadow:0 2px 6px rgba(0,0,0,0.6);">NO DECK x${inDeckCount}</div>`
+                      : ''
+                  }
+                  ${
+                    this.isStacked && count > 1
+                      ? `<div style="position:absolute; top:5px; right:5px; padding:2px 6px; border-radius:5px; background:rgba(43,31,20,0.92); border:1px solid #d4a84b; font-family:var(--font-display); font-weight:800; font-size:8.5px; color:#fff3c2; z-index:10;">x${count}</div>`
+                      : ''
+                  }
+                  <button type="button" data-fav-card="${idx}" style="position:absolute; bottom:5px; left:5px; width:24px; height:24px; border-radius:9999px; background:rgba(15,23,42,0.88); border:1px solid rgba(245,217,139,0.65); color:#f5d98b; font-size:11px; display:flex; align-items:center; justify-content:center; z-index:10; cursor:pointer; padding:0;" title="Favoritar">${
+                isFav ? '★' : '☆'
+              }</button>
+                  <button type="button" data-quick-equip="${idx}" style="position:absolute; bottom:5px; right:5px; width:24px; height:24px; border-radius:9999px; background:linear-gradient(180deg, #16a34a, #14532d); border:1px solid #bbf7d0; color:#fff; font-family:var(--font-display); font-weight:900; font-size:13px; display:flex; align-items:center; justify-content:center; z-index:10; cursor:pointer; padding:0; box-shadow:0 2px 6px rgba(0,0,0,0.6);" title="Equipar Rápido no Deck">+</button>
+                </div>
+              `;
+            })
+            .join('')
+        : this.activeTab === 'artifacts'
+        ? this.artifacts
+            .map((art, idx) => {
+              const isEquipped = this.preDeckArtifacts.some((a) => a && a.id === art.id);
+              return `
+                <div data-col-artifact="${idx}" style="padding:12px; border-radius:14px; background:rgba(7, 18, 38, 0.68); display:flex; flex-direction:column; align-items:center; text-align:center; gap:7px; cursor:pointer; border:${
+                isEquipped ? '2px solid #f5d98b' : '1.5px solid rgba(212,168,75,0.4)'
+              }; box-shadow:0 6px 16px rgba(0,0,0,0.5);">
+                  <div style="width:58px; height:58px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:22px; overflow:hidden; border:1.5px solid #d4a84b; background:#091834;">
+                    ${
+                      (art as any).image
+                        ? `<img src="${thumbFor((art as any).image)}" alt="${art.name}" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                        : `<span>${(art as any).icon || '🔮'}</span>`
+                    }
+                  </div>
+                  <span style="font-family:var(--font-display); font-weight:800; font-size:10.5px; color:#fff3c2; width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${
+                    art.name
+                  }</span>
+                  <span style="font-family:var(--font-display); font-size:8.5px; color:#cbd5e1; line-height:1.35;">${
+                    (art as any).description || 'Habilidade tática de combate.'
+                  }</span>
+                </div>
+              `;
+            })
+            .join('')
+        : this.boards
+            .map(
+              (b, idx) => `
+              <div data-col-board="${idx}" style="padding:10px; border-radius:14px; background:rgba(7, 18, 38, 0.68); display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; border:${
+                this.selectedBoard === b ? '2px solid #f5d98b' : '1.5px solid rgba(212,168,75,0.4)'
+              }; box-shadow:0 6px 16px rgba(0,0,0,0.5);">
+                <div style="width:100%; height:96px; border-radius:10px; overflow:hidden; border:1px solid rgba(212,168,75,0.45);">
+                  <img src="${thumbFor(b)}" alt="Tabuleiro ${idx + 1}" style="width:100%; height:100%; object-fit:cover; display:block;" />
+                </div>
+                <span style="font-family:var(--font-display); font-weight:800; font-size:10px; color:#fff3c2; text-transform:uppercase;">TABULEIRO ${
+                  idx + 1
+                }</span>
+              </div>
+            `
+            )
+            .join('');
+
+    const segmentedTabsHtml = `
+      <div class="pearl-pill" style="padding:3px; border-radius:9999px; display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; align-items:center;">
+        ${(['cards', 'artifacts', 'boards'] as const)
+          .map((tabKey) => {
+            const label =
+              tabKey === 'cards' ? 'CARTAS' : tabKey === 'artifacts' ? 'ARTEFATOS' : 'TABULEIROS';
+            const active = this.activeTab === tabKey;
+            return active
+              ? `<button type="button" data-arsenal-tab="${tabKey}" class="btn-royal-gold" style="width:100%; cursor:pointer;"><div class="btn-royal-inner" style="padding:6px 10px; font-family:var(--font-display); font-weight:800; font-size:10px; text-transform:uppercase;">${label}</div></button>`
+              : `<button type="button" data-arsenal-tab="${tabKey}" style="background:transparent; border:none; padding:6px 10px; font-family:var(--font-display); font-weight:800; font-size:10px; color:#5c4b3b; text-transform:uppercase; text-align:center; cursor:pointer;">${label}</button>`;
+          })
+          .join('')}
+      </div>
+    `;
+
+    const modalsHtml = `
+      ${
+        this.inspectedArtifact
+          ? `
+        <div id="arsenal-art-modal-backdrop" style="position:fixed; inset:0; z-index:1500; background:rgba(4,8,20,0.84); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+          <div style="width:100%; max-width:350px;">
+            ${renderOrnateWindowHtml({
+              title: 'ARTEFATO',
+              compactHeader: true,
+              showClose: true,
+              closeBtnAttrs: 'id="arsenal-art-modal-close"',
+              bodyStyle: 'padding: 12px 16px 16px; gap: 10px;',
+              childrenHtml: `
+                <div style="display:flex; flex-direction:column; align-items:center; text-align:center; gap:6px;">
+                  <div class="wire-slot" style="width:60px; height:60px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:20px; overflow:hidden;">
+                    ${
+                      (this.inspectedArtifact as any).image
+                        ? `<img src="${thumbFor((this.inspectedArtifact as any).image)}" alt="${
+                            this.inspectedArtifact.name
+                          }" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                        : `<span>${(this.inspectedArtifact as any).icon || '🔮'}</span>`
+                    }
+                  </div>
+                  <span style="font-family:var(--font-display); font-weight:800; font-size:12px; color:#2b1f14; text-transform:uppercase;">${
+                    this.inspectedArtifact.name
+                  }</span>
+                  <div class="pearl-pill" style="padding:2px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:8px; color:#8c6518;">ARTEFATO DE COMBATE</div>
+                </div>
+                <div class="wire-slot" style="min-height:56px; padding:8px; border-radius:10px; display:flex; align-items:center; justify-content:center; text-align:center;">
+                  <span style="font-size:9.5px; line-height:1.4;">${
+                    (this.inspectedArtifact as any).description ||
+                    'Concede bônus estratégico às cartas aliadas durante o combate.'
+                  }</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; padding-top:4px;">
+                  ${[0, 1, 2]
+                    .map(
+                      (slotIdx) => `
+                    <button type="button" data-equip-art-slot="${slotIdx}" class="btn-royal-gold" style="cursor:pointer;">
+                      <div class="btn-royal-inner" style="padding:6px 4px; font-family:var(--font-display); font-weight:800; font-size:9px; text-transform:uppercase;">SLOT ${
+                        slotIdx + 1
+                      }</div>
+                    </button>
+                  `
+                    )
+                    .join('')}
+                </div>
+              `,
+            })}
+          </div>
+        </div>
+      `
+          : ''
+      }
+      ${
+        this.showConfirmSwitch
+          ? `
+        <div style="position:fixed; inset:0; z-index:1500; background:rgba(4,8,20,0.84); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+          <div style="width:100%; max-width:350px;">
+            ${renderOrnateWindowHtml({
+              title: 'TROCAR DECK?',
+              compactHeader: true,
+              showClose: true,
+              closeBtnAttrs: 'id="arsenal-switch-cancel"',
+              bodyStyle: 'padding: 12px 16px 16px; gap: 10px;',
+              childrenHtml: `
+                <div class="wire-slot" style="height:52px; padding:0 12px; border-radius:10px; text-align:center; display:flex; align-items:center; justify-content:center;">
+                  <span style="font-family:var(--font-display); font-weight:700; font-size:11px;">CARREGAR DECK ${this.targetSlot}?</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <button type="button" id="arsenal-switch-save" class="btn-royal-gold" style="width:100%; cursor:pointer;">
+                    <div class="btn-royal-inner" style="padding:7px 12px; font-family:var(--font-display); font-weight:800; font-size:10px; text-transform:uppercase;">SALVAR E TROCAR</div>
+                  </button>
+                  <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:6px;">
+                    <button type="button" id="arsenal-switch-discard" class="btn-pearl-gold" style="width:100%; cursor:pointer;">
+                      <div class="btn-pearl-inner" style="padding:6px 8px; font-family:var(--font-display); font-weight:800; font-size:9px; text-transform:uppercase;">TROCAR SEM SALVAR</div>
+                    </button>
+                    <button type="button" id="arsenal-switch-abort" class="btn-pearl-gold" style="width:100%; cursor:pointer;">
+                      <div class="btn-pearl-inner" style="padding:6px 8px; font-family:var(--font-display); font-weight:800; font-size:9px; text-transform:uppercase;">CANCELAR</div>
+                    </button>
+                  </div>
+                </div>
+              `,
+            })}
+          </div>
+        </div>
+      `
+          : ''
+      }
+    `;
+
+    const cardBackSvgHtml = `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; overflow:hidden;">${renderMatrixCardBackSVG()}</div>`;
+
+    if (isLandscape) {
+      const topPanelHtml = `
+        <div style="padding:12px 14px; border-radius:18px; background:rgba(7, 18, 38, 0.54); border:1.5px solid rgba(212, 168, 75, 0.45); backdrop-filter:blur(6px); display:flex; flex-direction:column; gap:10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-family:var(--font-display); font-weight:900; font-size:13px; color:#fff3c2; text-shadow:0 2px 5px rgba(0,0,0,0.85); letter-spacing:0.06em; text-transform:uppercase;">PREPARAÇÃO DO DECK</span>
+              <div style="display:flex; gap:6px;">
+                ${deckSelectorButtonsHtml}
+              </div>
+            </div>
+            <div class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:10px; color:#8c6518;">${filledCount}/12 CARTAS</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:68% 14px 1fr; gap:12px; align-items:center;">
+            <div style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:8px;">
+              ${deck12GridHtml}
+            </div>
+            <div style="height:100%; display:flex; justify-content:center;">
+              ${renderGoldDividerVHtml('margin:0;')}
+            </div>
+            <div style="display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
+              <div>
+                <span style="font-family:var(--font-display); font-weight:800; font-size:10px; color:#f5d98b; letter-spacing:0.06em; text-transform:uppercase; display:block; margin-bottom:6px; text-align:center;">ARTEFATOS</span>
+                <div style="display:flex; justify-content:center; gap:10px;">
+                  ${artifacts3SlotsHtml}
+                </div>
+              </div>
+              ${renderGoldDividerHHtml('margin: 2px 0;')}
+              <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px;">
+                <div data-arsenal-tab="boards" style="height:64px; border-radius:10px; overflow:hidden; cursor:pointer; position:relative; border:1.5px solid #d4a84b;" title="Tabuleiro Selecionado">
+                  ${
+                    this.selectedBoard
+                      ? `<img src="${thumbFor(this.selectedBoard)}" alt="Tabuleiro" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                      : `<span style="font-size:9px; color:#fff3c2;">TABULEIRO</span>`
+                  }
+                </div>
+                <div style="height:64px; border-radius:10px; overflow:hidden; position:relative; border:1.5px solid #d4a84b;" title="Verso Oficial da Carta">
+                  ${cardBackSvgHtml}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:center; gap:12px; padding-top:4px;">
+            <button type="button" id="ars-confirm" class="btn-royal-gold" style="min-width:190px; cursor:pointer;">
+              <div class="btn-royal-inner" style="padding:8px 18px; font-family:var(--font-display); font-weight:900; font-size:11px; letter-spacing:0.08em; text-transform:uppercase;">
+                ${this.isPrepMode ? '⚔️ INICIAR BATALHA' : '💾 SALVAR DECK'}
+              </div>
+            </button>
+            <button type="button" id="arsenal-autofill-deck" class="btn-pearl-gold" style="min-width:160px; cursor:pointer;">
+              <div class="btn-pearl-inner" style="padding:8px 18px; font-family:var(--font-display); font-weight:900; font-size:11px; letter-spacing:0.06em; text-transform:uppercase;">AUTO-PREENCHER</div>
+            </button>
+          </div>
+        </div>
+      `;
+
+      const bottomPanelHtml = `
+        <div style="display:flex; flex-direction:column; gap:12px; width:100%;">
+          <div style="padding:10px 14px; border-radius:16px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.45); backdrop-filter:blur(6px); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px;">
+            <div style="min-width:250px;">${segmentedTabsHtml}</div>
+            <div class="pearl-pill" style="padding:5px 12px; border-radius:9999px; display:flex; align-items:center; gap:6px; flex:1; min-width:160px;">
+              <span style="color:#8c7a64; font-size:11px;">🔍</span>
+              <input id="arsenal-search-input" type="text" value="${this.searchQuery}" placeholder="Buscar carta na coleção (${filteredEntries.length})..." style="background:transparent; border:none; outline:none; font-family:var(--font-display); font-size:10.5px; color:#2b1f14; width:100%;" />
+            </div>
+            <select id="arsenal-rarity-select" class="pearl-pill" style="padding:5px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:9.5px; color:#3a2b1c; outline:none; cursor:pointer;">
+              <option value="all" ${this.rarityFilter === 'all' ? 'selected' : ''}>Todas Raridades (${
+        filteredEntries.length
+      }) ⌄</option>
+              <option value="common" ${this.rarityFilter === 'common' ? 'selected' : ''}>Comum</option>
+              <option value="rare" ${this.rarityFilter === 'rare' ? 'selected' : ''}>Rara</option>
+              <option value="epic" ${this.rarityFilter === 'epic' ? 'selected' : ''}>Épica</option>
+              <option value="legendary" ${this.rarityFilter === 'legendary' ? 'selected' : ''}>Lendária & Mítica</option>
+            </select>
+            <div class="pearl-pill" style="padding:2px; border-radius:9999px; display:flex; align-items:center; gap:2px;">
+              ${([2, 3, 4] as const)
+                .map(
+                  (g) => `
+                <button type="button" data-grid-size="${g}" style="padding:4px 9px; border-radius:9999px; border:none; font-family:var(--font-display); font-weight:800; font-size:9px; cursor:pointer; background:${
+                    this.gridSize === g ? '#062356' : 'transparent'
+                  }; color:${this.gridSize === g ? '#f5d98b' : '#5c4b3b'};">${g}x</button>
+              `
+                )
+                .join('')}
+            </div>
+            <button type="button" id="arsenal-stack-toggle" class="pearl-pill" style="padding:4px 10px; border-radius:9999px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <span style="font-family:var(--font-display); font-weight:800; font-size:9px; color:#5c4b3b; text-transform:uppercase;">Agrupar</span>
+              <div style="width:24px; height:14px; border-radius:9999px; background:${
+                this.isStacked ? '#082b66' : '#9ea4ab'
+              }; border:1px solid #d4a84b; padding:1px; display:flex; align-items:center; justify-content:${
+                this.isStacked ? 'flex-end' : 'flex-start'
+              };">
+                <div style="width:9px; height:9px; border-radius:9999px; background:#f5d98b;"></div>
+              </div>
+            </button>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(${colColsCount}, minmax(0, 1fr)); gap:12px; width:100%;">
+            ${collectionItemsHtml}
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = `
+        <div class="arsenal-scroll-root nova-scroll" style="width:100%; height:100%; overflow-y:auto; overflow-x:hidden; padding:56px 16px 100px 16px; box-sizing:border-box; display:flex; justify-content:center; align-items:flex-start; background:transparent;">
+          <div style="width:100%; max-width:940px; margin:0 auto; display:flex; flex-direction:column; gap:14px;">
+            ${topPanelHtml}
+            ${renderGoldDividerHHtml('margin: 2px 0;')}
+            ${bottomPanelHtml}
+          </div>
+        </div>
+        ${modalsHtml}
+      `;
+    } else {
+      const portraitContentHtml = `
+        <div style="padding:10px 12px; border-radius:16px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.45); backdrop-filter:blur(6px); display:flex; flex-direction:column; gap:9px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12px; color:#fff3c2; text-shadow:0 2px 4px rgba(0,0,0,0.88); text-transform:uppercase;">PREPARAÇÃO DO DECK</span>
+            <button type="button" id="arsenal-collapse-toggle" class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9px; color:#8c6518; cursor:pointer;">
+              ${this.isPreDeckCollapsed ? `Expandir (${filledCount}/12) ⌄` : `Recolher (${filledCount}/12) ⌃`}
+            </button>
+          </div>
+          <div style="display:flex; gap:6px;">
+            ${deckSelectorButtonsHtml}
+          </div>
+          ${
+            !this.isPreDeckCollapsed
+              ? `
+            <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:7px; padding-top:2px;">
+              ${deck12GridHtml}
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:4px;">
+              <div style="display:flex; align-items:center; gap:7px;">
+                ${artifacts3SlotsHtml}
+              </div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <button type="button" id="ars-confirm" class="btn-royal-gold" style="cursor:pointer;">
+                  <div class="btn-royal-inner" style="padding:6px 14px; font-family:var(--font-display); font-weight:900; font-size:9.5px; text-transform:uppercase;">
+                    ${this.isPrepMode ? '⚔️ BATALHAR' : '💾 SALVAR DECK'}
+                  </div>
+                </button>
+                <button type="button" id="arsenal-autofill-deck" class="btn-pearl-gold" style="cursor:pointer;">
+                  <div class="btn-pearl-inner" style="padding:5px 14px; font-family:var(--font-display); font-weight:800; font-size:9px; text-transform:uppercase;">AUTO-PREENCHER</div>
+                </button>
+              </div>
+            </div>
+          `
+              : ''
+          }
+        </div>
+
+        ${renderGoldDividerHHtml('margin: 2px 0;')}
+
+        <div style="display:flex; flex-direction:column; gap:10px; width:100%;">
+          <div style="padding:10px; border-radius:16px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.45); backdrop-filter:blur(6px); display:flex; flex-direction:column; gap:8px;">
+            ${segmentedTabsHtml}
+
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <div class="pearl-pill" style="padding:6px 12px; border-radius:9999px; display:flex; align-items:center; gap:8px;">
+                <span style="color:#8c7a64; font-size:10.5px;">🔍</span>
+                <input id="arsenal-search-input" type="text" value="${this.searchQuery}" placeholder="Buscar carta (${
+        filteredEntries.length
+      })..." style="background:transparent; border:none; outline:none; font-family:var(--font-display); font-size:10.5px; color:#2b1f14; width:100%;" />
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                <select id="arsenal-rarity-select" class="pearl-pill" style="padding:4px 9px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:9px; color:#3a2b1c; outline:none; cursor:pointer;">
+                  <option value="all" ${this.rarityFilter === 'all' ? 'selected' : ''}>Todas (${
+        filteredEntries.length
+      }) ⌄</option>
+                  <option value="common" ${this.rarityFilter === 'common' ? 'selected' : ''}>Comum</option>
+                  <option value="rare" ${this.rarityFilter === 'rare' ? 'selected' : ''}>Rara</option>
+                  <option value="epic" ${this.rarityFilter === 'epic' ? 'selected' : ''}>Épica</option>
+                  <option value="legendary" ${this.rarityFilter === 'legendary' ? 'selected' : ''}>Lendária</option>
+                </select>
+                <div class="pearl-pill" style="padding:2px; border-radius:9999px; display:flex; align-items:center; gap:2px;">
+                  ${([2, 3, 4] as const)
+                    .map(
+                      (g) => `
+                    <button type="button" data-grid-size="${g}" style="padding:3px 8px; border-radius:9999px; border:none; font-family:var(--font-display); font-weight:800; font-size:8.5px; cursor:pointer; background:${
+                        this.gridSize === g ? '#062356' : 'transparent'
+                      }; color:${this.gridSize === g ? '#f5d98b' : '#5c4b3b'};">${g}x</button>
+                  `
+                    )
+                    .join('')}
+                </div>
+                <button type="button" id="arsenal-stack-toggle" class="pearl-pill" style="padding:3px 9px; border-radius:9999px; display:flex; align-items:center; gap:5px; cursor:pointer;">
+                  <span style="font-family:var(--font-display); font-weight:800; font-size:8.5px; color:#5c4b3b;">Agrupar</span>
+                  <div style="width:22px; height:12px; border-radius:9999px; background:${
+                    this.isStacked ? '#082b66' : '#9ea4ab'
+                  }; border:1px solid #d4a84b; padding:1px; display:flex; align-items:center; justify-content:${
+                    this.isStacked ? 'flex-end' : 'flex-start'
+                  };">
+                    <div style="width:8px; height:8px; border-radius:9999px; background:#f5d98b;"></div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(${colColsCount}, minmax(0, 1fr)); gap:9px; width:100%;">
+            ${collectionItemsHtml}
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = `
+        <div class="arsenal-scroll-root nova-scroll" style="width:100%; height:100%; overflow-y:auto; overflow-x:hidden; padding:64px 10px 108px 10px; box-sizing:border-box; display:flex; justify-content:center; align-items:flex-start; background:transparent;">
+          <div style="width:100%; max-width:460px; margin:0 auto; display:flex; flex-direction:column; gap:10px;">
+            ${portraitContentHtml}
+          </div>
+        </div>
+        ${modalsHtml}
+      `;
     }
+
+    const newScroller = container.querySelector('.arsenal-scroll-root') as HTMLElement | null;
+    if (newScroller && this.lastScrollTop > 0) {
+      newScroller.scrollTop = this.lastScrollTop;
+    }
+
+    this.bindEvents(container, filteredEntries);
+  }
+
+  protected bindEvents(container: HTMLElement, filteredEntries: { card: any; count: number }[]) {
+    const scroller = container.querySelector('.arsenal-scroll-root') as HTMLElement | null;
+    if (scroller) {
+      let prevY = scroller.scrollTop;
+      scroller.addEventListener(
+        'scroll',
+        () => {
+          const curY = scroller.scrollTop;
+          const dy = curY - prevY;
+          this.lastScrollTop = curY;
+          if (curY > 36 && dy > 4) {
+            document.body.classList.add('hub-scroll-hide-bars');
+          } else if (dy < -4 || curY <= 24) {
+            document.body.classList.remove('hub-scroll-hide-bars');
+          }
+          prevY = curY;
+        },
+        { passive: true }
+      );
+    }
+
+    container.querySelector('#arsenal-collapse-toggle')?.addEventListener('click', () => {
+      SoundManager.play('ui_click');
+      this.isPreDeckCollapsed = !this.isPreDeckCollapsed;
+      this.paint(container);
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-deck-slot]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slot = Number(btn.dataset.deckSlot || 1);
+        if (slot === this.currentSlot) return;
+        SoundManager.play('ui_click');
+        this.targetSlot = slot;
+        this.showConfirmSwitch = true;
+        this.paint(container);
+      });
+    });
+
+    container.querySelector('#arsenal-switch-save')?.addEventListener('click', () => {
+      SoundManager.play('ui_confirm');
+      this.saveCurrentSlot();
+      this.currentSlot = this.targetSlot;
+      this.loadDeckFromSlot(this.currentSlot);
+      this.showConfirmSwitch = false;
+      this.paint(container);
+    });
+
+    container.querySelector('#arsenal-switch-discard')?.addEventListener('click', () => {
+      SoundManager.play('ui_click');
+      this.currentSlot = this.targetSlot;
+      this.loadDeckFromSlot(this.currentSlot);
+      this.showConfirmSwitch = false;
+      this.paint(container);
+    });
+
+    const closeSwitch = () => {
+      SoundManager.play('ui_cancel');
+      this.showConfirmSwitch = false;
+      this.paint(container);
+    };
+    container.querySelector('#arsenal-switch-cancel')?.addEventListener('click', closeSwitch);
+    container.querySelector('#arsenal-switch-abort')?.addEventListener('click', closeSwitch);
+
+    container.querySelector('#ars-confirm')?.addEventListener('click', () => {
+      SoundManager.play('ui_confirm');
+      this.saveCurrentSlot();
+      if (this.onConfirm) {
+        const validCards = this.preDeckCards.filter(Boolean);
+        const validArts = this.preDeckArtifacts.filter((a): a is Skill => !!a);
+        this.onConfirm(validCards, validArts, this.selectedBoard);
+      }
+    });
+
+    container.querySelector('#arsenal-autofill-deck')?.addEventListener('click', () => {
+      SoundManager.play('ui_confirm');
+      const sorted = sortStackInstances(this.templates);
+      this.preDeckCards = Array(12)
+        .fill(null)
+        .map((_, idx) => sorted[idx % sorted.length] || null);
+      this.saveCurrentSlot();
+      this.paint(container);
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-quick-remove-predeck]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.quickRemovePredeck || 0);
+        if (this.preDeckCards[idx]) {
+          SoundManager.play('ui_cancel');
+          this.preDeckCards[idx] = null;
+          this.saveCurrentSlot();
+          this.paint(container);
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-predeck-idx]').forEach((slotEl) => {
+      const idx = Number(slotEl.dataset.predeckIdx || 0);
+      const cardInSlot = this.preDeckCards[idx];
+      if (!cardInSlot) return;
+
+      const openPreDeckFullscreen = () => {
+        const filledSlots = this.preDeckCards
+          .map((c, slotIndex) => ({ c, slotIndex }))
+          .filter((item): item is { c: any; slotIndex: number } => Boolean(item.c));
+        const list = filledSlots.map((item) => item.c);
+        const viewerIdx = Math.max(
+          0,
+          filledSlots.findIndex((item) => item.slotIndex === idx)
+        );
+        SoundManager.play('ui_click');
+        openCardViewer({
+          card: cardInSlot,
+          list,
+          index: viewerIdx,
+          actionLabel: 'REMOVER DO DECK',
+          onAction: (selectedCard) => {
+            const targetKey = selectedCard?.name || selectedCard?.title || selectedCard?.id;
+            const slotToRemove =
+              this.preDeckCards[idx] &&
+              (this.preDeckCards[idx].name === targetKey ||
+                this.preDeckCards[idx].title === targetKey ||
+                this.preDeckCards[idx].id === selectedCard?.id)
+                ? idx
+                : this.preDeckCards.findIndex(
+                    (c) => c && (c.name === targetKey || c.title === targetKey || c.id === selectedCard?.id)
+                  );
+            if (slotToRemove !== -1) {
+              SoundManager.play('ui_cancel');
+              this.preDeckCards[slotToRemove] = null;
+              this.saveCurrentSlot();
+              this.paint(container);
+            }
+            return { close: true };
+          },
+        });
+      };
+
+      bindLongPress(slotEl, openPreDeckFullscreen);
+      slotEl.addEventListener('click', (ev) => {
+        if ((ev.target as HTMLElement).closest('[data-quick-remove-predeck]')) return;
+        openPreDeckFullscreen();
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-preart-idx]').forEach((slotEl) => {
+      slotEl.addEventListener('click', () => {
+        const idx = Number(slotEl.dataset.preartIdx || 0);
+        const art = this.preDeckArtifacts[idx];
+        if (art) {
+          this.inspectedArtifact = art;
+          this.paint(container);
+        } else {
+          this.activeTab = 'artifacts';
+          this.paint(container);
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-arsenal-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.arsenalTab as 'cards' | 'artifacts' | 'boards';
+        if (tab) {
+          SoundManager.play('ui_click');
+          this.activeTab = tab;
+          this.paint(container);
+        }
+      });
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>('#arsenal-search-input');
+    searchInput?.addEventListener('input', () => {
+      this.searchQuery = searchInput.value;
+      this.paint(container);
+      const refocused = container.querySelector<HTMLInputElement>('#arsenal-search-input');
+      if (refocused) {
+        refocused.focus();
+        refocused.setSelectionRange(refocused.value.length, refocused.value.length);
+      }
+    });
+
+    const raritySelect = container.querySelector<HTMLSelectElement>('#arsenal-rarity-select');
+    raritySelect?.addEventListener('change', () => {
+      this.rarityFilter = raritySelect.value as any;
+      this.paint(container);
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-grid-size]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const g = Number(btn.dataset.gridSize || 3) as 2 | 3 | 4;
+        SoundManager.play('ui_click');
+        this.gridSize = g;
+        this.paint(container);
+      });
+    });
+
+    container.querySelector('#arsenal-stack-toggle')?.addEventListener('click', () => {
+      SoundManager.play('ui_click');
+      this.isStacked = !this.isStacked;
+      localStorage.setItem('arsenal_stack_copies', String(this.isStacked));
+      this.paint(container);
+    });
+
+    const openCollectionCardFullscreen = (idx: number) => {
+      const entry = filteredEntries[idx];
+      if (!entry?.card) return;
+      const collectionList = filteredEntries.map((e) => e.card);
+      SoundManager.play('ui_click');
+      openCardViewer({
+        card: entry.card,
+        list: collectionList,
+        index: idx,
+        actionLabel: 'EQUIPAR NO DECK',
+        getActionLabel: (c) => {
+          const emptySlot = this.preDeckCards.findIndex((s) => !s);
+          const key = c?.name || c?.title || c?.id;
+          const inDeck = this.preDeckCards.some(
+            (s) => s && (s.name === key || s.title === key || s.id === c?.id)
+          );
+          if (emptySlot === -1 && inDeck) return 'REMOVER DO DECK';
+          return emptySlot !== -1 ? 'EQUIPAR NO DECK' : 'SUBSTITUIR SLOT 12';
+        },
+        onAction: (selectedCard) => {
+          const emptySlot = this.preDeckCards.findIndex((s) => !s);
+          const key = selectedCard?.name || selectedCard?.title || selectedCard?.id;
+          const existingIdx = this.preDeckCards.findIndex(
+            (s) => s && (s.name === key || s.title === key || s.id === selectedCard?.id)
+          );
+          if (emptySlot !== -1) {
+            SoundManager.play('ui_confirm');
+            this.preDeckCards[emptySlot] = selectedCard;
+            this.saveCurrentSlot();
+            this.paint(container);
+          } else if (existingIdx !== -1) {
+            SoundManager.play('ui_cancel');
+            this.preDeckCards[existingIdx] = null;
+            this.saveCurrentSlot();
+            this.paint(container);
+          } else {
+            SoundManager.play('ui_confirm');
+            this.preDeckCards[11] = selectedCard;
+            this.saveCurrentSlot();
+            this.paint(container);
+          }
+          return { close: true };
+        },
+      });
+    };
+
+    container.querySelectorAll<HTMLElement>('[data-quick-equip]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.quickEquip || 0);
+        const entry = filteredEntries[idx];
+        if (!entry?.card) return;
+        const emptySlot = this.preDeckCards.findIndex((c) => !c);
+        if (emptySlot !== -1) {
+          SoundManager.play('ui_confirm');
+          this.preDeckCards[emptySlot] = entry.card;
+          this.saveCurrentSlot();
+          this.paint(container);
+        } else {
+          openCollectionCardFullscreen(idx);
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-col-card]').forEach((el) => {
+      const idx = Number(el.dataset.colCard || 0);
+      bindLongPress(el, () => {
+        openCollectionCardFullscreen(idx);
+      });
+      el.addEventListener('click', (ev) => {
+        if (
+          (ev.target as HTMLElement).closest('[data-quick-equip]') ||
+          (ev.target as HTMLElement).closest('[data-fav-card]')
+        )
+          return;
+        openCollectionCardFullscreen(idx);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-fav-card]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const idx = Number(btn.dataset.favCard || 0);
+        const card = filteredEntries[idx]?.card;
+        if (!card) return;
+        const key = card.name || card.title || card.id;
+        SoundManager.play('ui_click');
+        if (this.favorites.includes(key)) {
+          this.favorites = this.favorites.filter((f) => f !== key);
+        } else {
+          this.favorites.push(key);
+        }
+        localStorage.setItem('arsenal_favorites', JSON.stringify(this.favorites));
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-col-artifact]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.colArtifact || 0);
+        const art = this.artifacts[idx];
+        if (art) {
+          SoundManager.play('ui_click');
+          this.inspectedArtifact = art;
+          this.paint(container);
+        }
+      });
+    });
+
+    container.querySelector('#arsenal-art-modal-close')?.addEventListener('click', () => {
+      this.inspectedArtifact = null;
+      this.paint(container);
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-equip-art-slot]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slotIdx = Number(btn.dataset.equipArtSlot || 0);
+        if (this.inspectedArtifact) {
+          SoundManager.play('ui_confirm');
+          this.preDeckArtifacts[slotIdx] = this.inspectedArtifact;
+          this.inspectedArtifact = null;
+          this.saveCurrentSlot();
+          this.paint(container);
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-col-board]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.colBoard || 0);
+        const b = this.boards[idx];
+        if (b) {
+          SoundManager.play('ui_confirm');
+          this.selectedBoard = b;
+          this.saveCurrentSlot();
+          this.paint(container);
+        }
+      });
+    });
+  }
 }

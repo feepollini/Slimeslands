@@ -358,8 +358,8 @@ export const PlayerHeaderHudWidget: React.FC<{
   onClickHeader?: () => void;
 }> = ({ project, config, isLandscape = false, onClickHeader }) => {
   const qCfg = ensureProjectQuestsConfig(project);
-  const currentHp = project.player?.stats?.hp ?? 180;
-  const maxHp = Math.max(1, project.player?.stats?.maxHp ?? 180);
+  const currentHp = project.player?.stats?.hp ?? project.player?.Stats_Base?.HP_Max ?? 180;
+  const maxHp = Math.max(1, project.player?.stats?.maxHp ?? project.player?.Stats_Base?.HP_Max ?? 180);
 
   const currentExp =
     qCfg.playerState?.totalCumulativeXp ??
@@ -368,127 +368,189 @@ export const PlayerHeaderHudWidget: React.FC<{
     project.player?.currentXp ??
     0;
   const maxExp = 1000;
+  const playerLevel =
+    qCfg.playerState?.level ??
+    project.player?.Progression_Global?.Level ??
+    project.player?.level ??
+    Math.max(1, Math.floor(currentExp / 1000) + 1);
 
-  const ringColor = config?.ringColor || '#5c2604';
-  const circleBgColor = config?.circleBgColor || '#ffffff';
-  const hpBarColor = config?.hpBarColor || '#ff1a0a';
-  const expBarColor = config?.expBarColor || '#ffcc00';
-  const numberFormat = config?.numberFormat || 'padded_7';
+  const hpBarColor = config?.hpBarColor || '#ef4444';
+  const expBarColor = config?.expBarColor || '#e5c168';
+  const numberFormat = config?.numberFormat || 'current_max';
 
   const avatarSrc =
     config?.customIconUrl ||
     (config?.showPlayerAvatar !== false
-      ? project.player?.avatarPng || project.player?.avatarDownPng
-      : undefined);
+      ? project.player?.avatarPng || project.player?.avatarDownPng || '/cards/1.jpg'
+      : '/cards/1.jpg');
 
-  const hpPercent = Math.max(15, Math.min(100, (currentHp / maxHp) * 100));
-  const expPercent = currentExp > 0 ? Math.max(25, Math.min(100, (currentExp / maxExp) * 100)) : 100;
+  const hpPercent = Math.max(12, Math.min(100, (currentHp / maxHp) * 100));
+  const expPercent = currentExp > 0 ? Math.max(12, Math.min(100, ((currentExp % maxExp) / maxExp) * 100)) : 14;
 
-  const pvText = formatHudStatNumber(currentHp, maxHp, 'PV', numberFormat);
-  const expText = formatHudStatNumber(currentExp, maxExp, 'EXP', numberFormat);
+  const pvText =
+    numberFormat === 'padded_7' && config?.numberFormat === 'padded_7'
+      ? `${currentHp}/${maxHp} PV`
+      : formatHudStatNumber(currentHp, maxHp, 'PV', numberFormat);
+  const expText =
+    numberFormat === 'padded_7' && config?.numberFormat === 'padded_7'
+      ? `${currentExp}/${maxExp} EXP`
+      : formatHudStatNumber(currentExp, maxExp, 'EXP', numberFormat);
 
-  const circleSize = isLandscape ? 60 : 72;
-  const ringWidth = isLandscape ? 6 : 8;
-  const hpHeight = isLandscape ? 25 : 30;
-  const hpWidth = isLandscape ? 178 : 205;
-  const expHeight = isLandscape ? 20 : 23;
-  const expWidth = isLandscape ? 145 : 166;
+  const circleSize = isLandscape ? 42 : 44;
+  const barWidth = isLandscape ? 148 : 138;
 
   return (
     <div
       onClick={onClickHeader}
-      className="inline-flex items-center select-none cursor-pointer group"
-      style={{
-        fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif',
-      }}
+      className="inline-flex items-center select-none cursor-pointer group transition-transform hover:-translate-y-0.5"
     >
-      {/* Aro Circular à Esquerda (Estilo Madeira/Bronze 3D com Interior Claro e Sombra de Jogo) */}
+      {/* Medalhão Circular Pearl & Gold idêntico ao Header do Hub */}
       <div
-        className="relative z-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden transition-transform group-hover:scale-[1.04]"
+        className="relative z-10 rounded-full flex items-center justify-center shrink-0 transition-transform group-hover:scale-[1.03]"
         style={{
           width: `${circleSize}px`,
           height: `${circleSize}px`,
-          backgroundColor: circleBgColor,
-          border: `${ringWidth}px solid ${ringColor}`,
-          boxShadow: '2px 4px 0px rgba(0, 0, 0, 0.75), inset 0 3px 6px rgba(0,0,0,0.18)',
+          border: '2.5px solid #fff3c2',
+          outline: '2px solid #9b701e',
+          background: 'radial-gradient(circle at 35% 30%, #fcfaf5, #d8c8ab)',
+          boxShadow: '0 4px 10px rgba(0, 0, 0, 0.78), 0 0 12px rgba(229, 193, 104, 0.45)',
         }}
       >
-        {avatarSrc ? (
-          <img
-            src={avatarSrc}
-            alt={project.player?.name || 'Player'}
-            className="w-[84%] h-[84%] object-contain select-none pointer-events-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.3)]"
-          />
-        ) : null}
+        <div
+          className="rounded-full overflow-hidden flex items-center justify-center"
+          style={{
+            width: `${circleSize - 7}px`,
+            height: `${circleSize - 7}px`,
+            border: '1px solid #8a6214',
+            background: 'radial-gradient(circle at 50% 35%, #1e293b, #090d16)',
+          }}
+        >
+          {avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt={project.player?.name || 'Player'}
+              className="w-full h-full object-cover select-none pointer-events-none"
+            />
+          ) : null}
+        </div>
+        <span
+          style={{
+            position: 'absolute',
+            bottom: '-3px',
+            right: '-3px',
+            fontFamily: "'Cinzel', serif",
+            fontSize: '0.5rem',
+            color: '#122030',
+            fontWeight: 900,
+            background: 'linear-gradient(180deg, #fff3c2 0%, #e5c168 55%, #b58932 100%)',
+            border: '1.5px solid #523707',
+            borderRadius: '999px',
+            padding: '0 4.5px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.8)',
+            lineHeight: 1.25,
+          }}
+        >
+          {playerLevel}
+        </span>
       </div>
 
-      {/* Barras Horizontais de PV (Vermelha) e EXP (Amarela Dourada) saindo detrás do círculo */}
-      <div className="flex flex-col justify-center -ml-4 z-0 space-y-1.5">
-        {/* Barra Superior: PV */}
+      {/* Cápsula Royal Sapphire & Gold com Barra de PV (Vermelha) e Barra de EXP (Dourada) */}
+      <div
+        className="flex flex-col justify-center z-0"
+        style={{
+          marginLeft: '-12px',
+          padding: '5px 11px 6px 18px',
+          borderRadius: '0 999px 999px 0',
+          background: 'linear-gradient(180deg, rgba(11,47,98,0.95) 0%, rgba(4,20,46,0.98) 100%)',
+          border: '2px solid #d4af53',
+          borderLeft: 'none',
+          boxShadow:
+            '0 6px 16px rgba(0,8,22,0.82), 0 0 0 1px #523707, inset 0 1px 2px rgba(255,243,194,0.4)',
+          gap: '3.5px',
+          minWidth: `${barWidth}px`,
+        }}
+      >
+        {/* Barra Superior: PV (Rubi Carmesim & Ouro) */}
         <div
-          className="relative rounded-r-full flex items-center pl-8 pr-4 overflow-hidden"
+          className="relative rounded-full flex items-center justify-center overflow-hidden"
           style={{
-            height: `${hpHeight}px`,
-            width: `${hpWidth}px`,
-            backgroundColor: '#3b0a07',
-            border: '2px solid #5c2604',
-            borderLeft: 'none',
-            boxShadow: '3px 3px 0px rgba(0, 0, 0, 0.78)',
+            height: '13.5px',
+            width: '100%',
+            background: 'linear-gradient(180deg, #1f0404 0%, #3b0808 100%)',
+            border: '1.5px solid #c59638',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.9)',
           }}
         >
           <div
-            className="absolute inset-y-0 left-0 rounded-r-full transition-all duration-300"
+            className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
             style={{
               width: `${hpPercent}%`,
-              backgroundColor: hpBarColor,
+              background: `linear-gradient(90deg, #991b1b 0%, ${hpBarColor} 58%, #fca5a5 100%)`,
+              boxShadow: '0 0 8px rgba(239,68,68,0.65)',
             }}
           />
-          {/* Reflexo Glossy Superior Estilo Supercell */}
           <div
-            className="absolute top-0.5 left-4 right-2 h-[32%] rounded-full pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.42), rgba(255,255,255,0.05))' }}
+            className="absolute top-[1px] left-1 right-1 h-[38%] rounded-full pointer-events-none"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0))',
+            }}
           />
           <span
-            className={`relative z-10 text-white ${isLandscape ? 'text-[13px]' : 'text-[15px]'} font-bold leading-none tracking-wide underline decoration-white decoration-[1.5px] underline-offset-[3px] whitespace-nowrap`}
             style={{
-              textShadow: '0 1.5px 0 rgba(0,0,0,0.75), 0 2px 4px rgba(0,0,0,0.5)',
+              position: 'relative',
+              zIndex: 2,
+              fontFamily: "'EB Garamond', 'Cinzel', serif",
+              fontSize: '0.56rem',
+              color: '#fff',
+              fontWeight: 800,
+              letterSpacing: '0.3px',
+              textShadow: '0 1px 2px #000, 0 0 4px #000',
+              whiteSpace: 'nowrap',
             }}
           >
-            {pvText}
+            ❤️ {pvText}
           </span>
         </div>
 
-        {/* Barra Inferior: EXP */}
+        {/* Barra Inferior: EXP (Ouro Imperial & Safira) */}
         <div
-          className="relative rounded-r-full flex items-center pl-8 pr-4 overflow-hidden"
+          className="relative rounded-full flex items-center justify-center overflow-hidden"
           style={{
-            height: `${expHeight}px`,
-            width: `${expWidth}px`,
-            backgroundColor: '#423005',
-            border: '2px solid #5c2604',
-            borderLeft: 'none',
-            boxShadow: '3px 3px 0px rgba(0, 0, 0, 0.78)',
+            height: '12.5px',
+            width: '100%',
+            background: 'linear-gradient(180deg, #020917 0%, #061836 100%)',
+            border: '1.5px solid #c59638',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.9)',
           }}
         >
           <div
-            className="absolute inset-y-0 left-0 rounded-r-full transition-all duration-300"
+            className="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
             style={{
               width: `${expPercent}%`,
-              backgroundColor: expBarColor,
+              background: `linear-gradient(90deg, #9b701e 0%, ${expBarColor} 55%, #fff3c2 100%)`,
+              boxShadow: '0 0 8px rgba(229,193,104,0.65)',
             }}
           />
-          {/* Reflexo Glossy Superior Estilo Supercell */}
           <div
-            className="absolute top-0.5 left-4 right-2 h-[32%] rounded-full pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.05))' }}
+            className="absolute top-[1px] left-1 right-1 h-[38%] rounded-full pointer-events-none"
+            style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0))',
+            }}
           />
           <span
-            className={`relative z-10 text-white ${isLandscape ? 'text-[11.5px]' : 'text-[13.5px]'} font-bold leading-none tracking-wide underline decoration-white decoration-[1.5px] underline-offset-[3px] whitespace-nowrap`}
             style={{
-              textShadow: '0 1.5px 0 rgba(0,0,0,0.75), 0 2px 3px rgba(0,0,0,0.45)',
+              position: 'relative',
+              zIndex: 2,
+              fontFamily: "'EB Garamond', 'Cinzel', serif",
+              fontSize: '0.54rem',
+              color: '#fff',
+              fontWeight: 800,
+              letterSpacing: '0.3px',
+              textShadow: '0 1px 2px #000, 0 0 4px #000',
+              whiteSpace: 'nowrap',
             }}
           >
-            {expText}
+            ✦ {expText}
           </span>
         </div>
       </div>
@@ -730,14 +792,21 @@ export const TopGlassAccessBarHudWidget: React.FC<{
   config?: TopGlassBarHudElementConfig;
   isLandscape?: boolean;
   isAudioMuted?: boolean;
+  onExitToWorldMap?: () => void;
   onTriggerAction?: (action: TopGlassBarIconSlotConfig['actionType']) => void;
   onTriggerSlotAction?: (slot: TopGlassBarIconSlotConfig) => void;
-}> = ({ config, isLandscape = false, isAudioMuted = false, onTriggerAction, onTriggerSlotAction }) => {
+}> = ({
+  config,
+  isLandscape = false,
+  isAudioMuted = false,
+  onExitToWorldMap,
+  onTriggerAction,
+  onTriggerSlotAction,
+}) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const slots = useMemo(() => {
     const raw = config?.slots && config.slots.length > 0 ? config.slots : DEFAULT_TOP_GLASS_BAR_SLOTS;
-    // Garante sempre 6 slots disponíveis
     const merged: TopGlassBarIconSlotConfig[] = [];
     for (let i = 0; i < 6; i++) {
       merged.push(raw[i] || DEFAULT_TOP_GLASS_BAR_SLOTS[i]);
@@ -745,63 +814,72 @@ export const TopGlassAccessBarHudWidget: React.FC<{
     return merged.filter((s) => s.visible !== false);
   }, [config?.slots]);
 
-  const rawBorder = config?.borderColor;
-  // Usa contorno dourado na cápsula de fundo por padrão (mesmo se o config legado tinha branco)
-  const capsuleGoldenBorder =
-    !rawBorder || rawBorder.includes('255, 255, 255') ? '#fbbf24' : rawBorder;
-  const glassTint =
-    !config?.glassTint || config.glassTint.includes('255, 255, 255')
-      ? 'rgba(15, 23, 42, 0.44)'
-      : config.glassTint;
   const isGrid = config?.layout === 'grid_3x2';
-  const btnSize = isLandscape ? 'w-7 h-7 text-[15px]' : 'w-7.5 h-7.5 text-[15.5px]';
+  const btnSize = isLandscape ? 'w-7 h-7 text-[13px]' : 'w-6.5 h-6.5 text-[12.5px]';
 
   if (isCollapsed && config?.collapsible !== false) {
     return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsCollapsed(false);
-        }}
-        className="px-3 py-1.5 rounded-full backdrop-blur-md flex items-center gap-1.5 cursor-pointer transition-transform active:scale-95"
-        style={{
-          backgroundColor: glassTint,
-          border: `2.5px solid ${capsuleGoldenBorder}`,
-          boxShadow:
-            '0 3px 0 #78350f, 0 6px 16px rgba(0,0,0,0.4), inset 0 1.5px 2px rgba(255,255,255,0.45)',
-        }}
-        title="Expandir barra de acesso rápido"
-      >
-        <ChevronLeft className="w-3.5 h-3.5 text-[#fbbf24] drop-shadow stroke-[3]" />
-        <span className="text-[11px] font-black text-[#fef08a] drop-shadow">Menu (6)</span>
-      </button>
+      <div className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsCollapsed(false);
+          }}
+          className="px-2.5 h-[36px] rounded-full flex items-center gap-1 cursor-pointer transition-transform active:scale-95"
+          style={{
+            background: 'linear-gradient(180deg, #fcfaf5 0%, #efe6d4 58%, #e2d4ba 100%)',
+            border: '2px solid #c59638',
+            outline: '1px solid #523707',
+            boxShadow: '0 6px 16px rgba(0,8,22,0.75), inset 0 1px 2px rgba(255,255,255,0.95)',
+          }}
+          title="Expandir barra de fase"
+        >
+          <ChevronLeft className="w-3.5 h-3.5 text-[#0b3778] stroke-[3]" />
+          <span style={{ fontFamily: "'Cinzel', serif", fontSize: '0.62rem', fontWeight: 900, color: '#122030' }}>
+            MENU
+          </span>
+        </button>
+        {onExitToWorldMap && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExitToWorldMap();
+            }}
+            title="Sair da Fase / Voltar ao Mapa Mundi"
+            className="w-[34px] h-[34px] rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-90"
+            style={{
+              background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+              border: '2px solid #d4af53',
+              outline: '1px solid #523707',
+              color: '#fff3c2',
+              fontSize: '0.78rem',
+              fontWeight: 900,
+              boxShadow: '0 4px 12px rgba(0,8,22,0.75)',
+            }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
     );
   }
 
   return (
     <div
-      className={`select-none backdrop-blur-md relative overflow-hidden ${
+      className={`select-none relative overflow-hidden ${
         isGrid
           ? 'rounded-2xl p-1.5 grid grid-cols-3 gap-1.5'
-          : 'rounded-full px-2.5 py-1 flex items-center gap-1'
+          : 'rounded-full px-1.5 h-[38px] flex items-center gap-1'
       } transition-all duration-300`}
       style={{
-        backgroundColor: glassTint,
-        border: `2.5px solid ${capsuleGoldenBorder}`,
-        boxShadow:
-          '0 3px 0 #78350f, 0 8px 20px rgba(0,0,0,0.42), inset 0 1.5px 2px rgba(255,255,255,0.45)',
+        background: 'linear-gradient(180deg, #fcfaf5 0%, #efe6d4 58%, #e2d4ba 100%)',
+        border: '2px solid #c59638',
+        outline: '1px solid #523707',
+        boxShadow: '0 6px 16px rgba(0,8,22,0.75), inset 0 1px 2px rgba(255,255,255,0.95)',
       }}
     >
-      {/* Brilho glossy superior da cápsula de vidro com contorno dourado */}
-      <span
-        className="absolute top-0.5 inset-x-3 h-[34%] rounded-full pointer-events-none"
-        style={{
-          background:
-            'linear-gradient(to bottom, rgba(255,255,255,0.38), rgba(255,255,255,0.02))',
-        }}
-      />
-
       {slots.map((slot) => {
         const isAudio = slot.actionType === 'toggle_audio' || slot.actionType === 'toggle_bgm';
         const displayEmoji = isAudio && isAudioMuted ? '🔇' : slot.iconEmoji;
@@ -820,8 +898,18 @@ export const TopGlassAccessBarHudWidget: React.FC<{
               onTriggerAction?.(normalizedAction);
               onTriggerSlotAction?.(slot);
             }}
-            className={`${btnSize} rounded-full flex items-center justify-center relative transition-all duration-150 hover:bg-white/15 hover:scale-115 active:scale-90 cursor-pointer shrink-0 border-0 bg-transparent shadow-none`}
-            title={slot.label}
+            className={`${btnSize} rounded-full flex items-center justify-center relative transition-all duration-150 hover:scale-108 active:scale-90 cursor-pointer shrink-0`}
+            style={{
+              background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+              border: '1.5px solid #d4af53',
+              color: '#fff3c2',
+              boxShadow: '0 2px 5px rgba(0,8,22,0.45)',
+            }}
+            title={
+              slot.actionType === 'toggle_map' && onExitToWorldMap
+                ? 'Voltar ao Mapa Mundi'
+                : slot.label
+            }
           >
             {slot.customIconUrl ? (
               <div className="w-full h-full flex items-center justify-center relative">
@@ -837,7 +925,7 @@ export const TopGlassAccessBarHudWidget: React.FC<{
                 )}
               </div>
             ) : (
-              <span className="relative z-10 leading-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.65)]">
+              <span className="relative z-10 leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)]">
                 {displayEmoji}
               </span>
             )}
@@ -850,6 +938,31 @@ export const TopGlassAccessBarHudWidget: React.FC<{
         );
       })}
 
+      {onExitToWorldMap && (
+        <>
+          <div style={{ width: '1px', height: '16px', background: 'rgba(181,137,50,0.45)' }} />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExitToWorldMap();
+            }}
+            title="Sair da Fase / Voltar ao Mapa Mundi"
+            className={`${btnSize} rounded-full flex items-center justify-center relative transition-all duration-150 hover:scale-108 active:scale-90 cursor-pointer shrink-0`}
+            style={{
+              background: 'linear-gradient(180deg, #991b1b 0%, #450a0a 100%)',
+              border: '1.5px solid #e5c168',
+              color: '#fff3c2',
+              fontSize: '0.68rem',
+              fontWeight: 900,
+              boxShadow: '0 2px 5px rgba(0,8,22,0.55)',
+            }}
+          >
+            ✕
+          </button>
+        </>
+      )}
+
       {config?.collapsible !== false && !isGrid && (
         <button
           type="button"
@@ -857,8 +970,8 @@ export const TopGlassAccessBarHudWidget: React.FC<{
             e.stopPropagation();
             setIsCollapsed(true);
           }}
-          className="w-5 h-5 rounded-full bg-[#fbbf24] hover:bg-[#fef08a] border-[1.5px] border-[#5c2604] shadow-[0_2px_0_#451a03] flex items-center justify-center text-[#451a03] cursor-pointer transition-transform active:scale-90 ml-0.5 shrink-0 relative z-10"
-          title="Recolher barra de vidro"
+          className="w-5 h-5 rounded-full bg-[#e5c168] hover:bg-[#fff3c2] border-[1.5px] border-[#523707] flex items-center justify-center text-[#122030] cursor-pointer transition-transform active:scale-90 ml-0.5 shrink-0 relative z-10"
+          title="Recolher barra de fase"
         >
           <ChevronRight className="w-3 h-3 stroke-[3]" />
         </button>
@@ -996,6 +1109,7 @@ export const QuestJourneyPopupModal: React.FC<{
   onSwitchToBackpack?: () => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
   isInsideEmulator?: boolean;
+  isHubFullScreen?: boolean;
   isLandscape?: boolean;
 }> = ({
   project,
@@ -1005,6 +1119,7 @@ export const QuestJourneyPopupModal: React.FC<{
   onSwitchToBackpack,
   onUpdateProject,
   isInsideEmulator = true,
+  isHubFullScreen = false,
   isLandscape = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'jornada' | 'tarefas'>(initialTab);
@@ -1379,6 +1494,168 @@ export const QuestJourneyPopupModal: React.FC<{
     );
   };
 
+  if (isHubFullScreen) {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const curY = el.scrollTop;
+          const prevY = Number(el.dataset.prevScroll || 0);
+          const dy = curY - prevY;
+          el.dataset.prevScroll = String(curY);
+          if (curY > 30 && dy > 3) {
+            document.body.classList.add('hub-scroll-hide-bars');
+          } else if (dy < -3 || curY <= 20) {
+            document.body.classList.remove('hub-scroll-hide-bars');
+          }
+        }}
+        className="w-full h-full overflow-y-auto overflow-x-hidden nova-scroll select-none"
+        style={{
+          padding: isLandscape ? '56px 16px 110px 16px' : '64px 10px 116px 10px',
+          boxSizing: 'border-box',
+          background: 'transparent',
+        }}
+      >
+        <div
+          className="w-full mx-auto flex flex-col gap-3"
+          style={{ maxWidth: isLandscape ? '920px' : '460px' }}
+        >
+          {/* Barra Superior Limpa sem Container Branco Externo */}
+          <div
+            style={{
+              padding: '5px',
+              borderRadius: '9999px',
+              background: 'rgba(7, 18, 38, 0.65)',
+              border: '1.5px solid rgba(212, 168, 75, 0.5)',
+              backdropFilter: 'blur(6px)',
+              display: 'grid',
+              gridTemplateColumns: onSwitchToBackpack ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
+              gap: '5px',
+              alignItems: 'center',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('jornada');
+                setSelectedQuestId(null);
+              }}
+              className={
+                activeTab === 'jornada'
+                  ? 'btn-royal-gold cursor-pointer w-full'
+                  : 'pearl-pill cursor-pointer w-full py-1.5 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase text-center'
+              }
+            >
+              <div
+                className={
+                  activeTab === 'jornada'
+                    ? 'btn-royal-inner py-1.5 px-2 flex items-center justify-center gap-1 font-cinzel font-bold text-[10px] uppercase'
+                    : 'flex items-center justify-center gap-1'
+                }
+              >
+                <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
+                <span>JORNADA ({jornada.length})</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('tarefas');
+                setSelectedQuestId(null);
+              }}
+              className={
+                activeTab === 'tarefas'
+                  ? 'btn-royal-gold cursor-pointer w-full'
+                  : 'pearl-pill cursor-pointer w-full py-1.5 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase text-center'
+              }
+            >
+              <div
+                className={
+                  activeTab === 'tarefas'
+                    ? 'btn-royal-inner py-1.5 px-2 flex items-center justify-center gap-1 font-cinzel font-bold text-[10px] uppercase'
+                    : 'flex items-center justify-center gap-1'
+                }
+              >
+                <span>📋 SECUNDÁRIAS ({tarefas.length})</span>
+              </div>
+            </button>
+
+            {onSwitchToBackpack && (
+              <button
+                type="button"
+                onClick={onSwitchToBackpack}
+                className="btn-pearl-gold cursor-pointer w-full"
+              >
+                <div className="btn-pearl-inner py-1.5 px-2 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1">
+                  <span>🎒 MOCHILA</span>
+                </div>
+              </button>
+            )}
+          </div>
+
+          {/* Lista Unificada de Missões */}
+          <div className="flex flex-col gap-3">
+            {currentList.map((q) => {
+              const isSelected = selectedQuest?.id === q.id;
+              return (
+                <div
+                  key={q.id}
+                  onClick={() => setSelectedQuestId(q.id)}
+                  className={`p-3 rounded-2xl border-[2.5px] transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#fffbeb] border-[#d97706] shadow-[0_6px_18px_rgba(0,0,0,0.45)]'
+                      : q.isLocked
+                      ? 'bg-[#e2e8f0]/95 border-[#94a3b8]'
+                      : q.isCompleted
+                      ? 'bg-[#dcfce7]/95 border-[#22c55e]'
+                      : 'bg-[#fff8e7]/95 border-[#f59e0b]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="px-2 py-0.5 rounded-lg bg-[#5c2604] text-[#fef08a] font-black text-[10px] shrink-0">
+                        {q.iconEmoji} #{q.orderIndex}
+                      </span>
+                      <span
+                        className={`text-sm font-black truncate ${
+                          q.isLocked
+                            ? 'text-[#475569]'
+                            : q.isCompleted
+                            ? 'text-[#14532d] line-through'
+                            : 'text-[#451a03]'
+                        }`}
+                      >
+                        {q.title}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleSelectQuestForMap(q, e)}
+                        className={`px-2.5 py-0.5 rounded-full border-2 font-black text-[10px] flex items-center gap-1 transition-all cursor-pointer ${
+                          q.isSelectedForMap
+                            ? 'bg-[#22c55e] border-[#14532d] text-white'
+                            : 'bg-[#e0f2fe] border-[#0284c7] text-[#075985]'
+                        }`}
+                      >
+                        <span>{q.isSelectedForMap ? '🎯 No Mapa ✓' : '📍 Mapa'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isSelected && <div className="mt-3">{renderQuestDetailsBoard(q)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
@@ -1398,32 +1675,27 @@ export const QuestJourneyPopupModal: React.FC<{
             : isLandscape
             ? 'max-w-4xl h-[82vh] max-h-[540px]'
             : 'max-w-xl h-[85vh] max-h-[680px]'
-        } rounded-[32px] bg-[#fff8e7] border-[4px] border-[#5c2604] ring-4 ring-[#fbbf24]/80 shadow-[0_10px_0_#3b1702,0_22px_50px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden`}
+        } pearl-surface flex flex-col overflow-hidden`}
       >
-        {/* TOPO VIBRANTE DOURADO/LARANJA ESTILO SUPERCELL COM ABAS 3D + ACESSO DIRETO À MOCHILA */}
-        <div className="px-3.5 py-2.5 bg-gradient-to-b from-[#fbbf24] via-[#f59e0b] to-[#d97706] border-b-[4px] border-[#78350f] relative flex items-center justify-between gap-2 shrink-0">
-          {/* Reflexo superior glossy */}
-          <div className="absolute top-0.5 left-4 right-4 h-1.5 rounded-full bg-white/45 pointer-events-none" />
-
-          {/* Abas 3D: Jornada | Tarefas. | Mochila */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+        {/* TOPO NOVA UI V1.2 PEARL & ROYAL SAPPHIRE COM ABAS E ACESSO À MOCHILA */}
+        <div className="px-3.5 py-2.5 bg-gradient-to-b from-[#f5efe2] to-[#e3d7c3] border-b-[2px] border-[#b88928] relative flex items-center justify-between gap-2 shrink-0">
+          <div className="pearl-pill p-0.5 flex items-center gap-1 flex-wrap">
             <button
               type="button"
               onClick={() => {
                 setActiveTab('jornada');
                 setSelectedQuestId(null);
               }}
-              className={`px-3 py-1.5 rounded-full border-[3px] font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={
                 activeTab === 'jornada'
-                  ? 'bg-gradient-to-b from-[#fffbeb] to-[#fef08a] border-[#5c2604] text-[#5c2604] shadow-[0_4px_0_#5c2604] -translate-y-0.5'
-                  : 'bg-[#92400e]/60 border-[#78350f] text-[#fef3c7] hover:bg-[#92400e]'
-              }`}
+                  ? 'btn-royal-gold cursor-pointer'
+                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
+              }
             >
-              <HudFourPointStarIcon className="w-3.5 h-3.5 shrink-0" />
-              <span className="underline decoration-2 underline-offset-2">Jornada</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#5c2604] text-[#fef08a] text-[10px]">
-                {jornada.length}
-              </span>
+              <div className={activeTab === 'jornada' ? 'btn-royal-inner px-3 py-1 flex items-center gap-1 font-cinzel font-bold text-[10px] uppercase' : 'flex items-center gap-1'}>
+                <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
+                <span>JORNADA ({jornada.length})</span>
+              </div>
             </button>
 
             <button
@@ -1432,59 +1704,57 @@ export const QuestJourneyPopupModal: React.FC<{
                 setActiveTab('tarefas');
                 setSelectedQuestId(null);
               }}
-              className={`px-3 py-1.5 rounded-full border-[3px] font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={
                 activeTab === 'tarefas'
-                  ? 'bg-gradient-to-b from-[#ecfccb] to-[#a3e635] border-[#365314] text-[#1a2e05] shadow-[0_4px_0_#365314] -translate-y-0.5'
-                  : 'bg-[#92400e]/60 border-[#78350f] text-[#fef3c7] hover:bg-[#92400e]'
-              }`}
+                  ? 'btn-royal-gold cursor-pointer'
+                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
+              }
             >
-              <span>📋</span>
-              <span className="underline decoration-2 underline-offset-2">Tarefas.</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#365314] text-[#ecfccb] text-[10px]">
-                {tarefas.length}
-              </span>
+              <div className={activeTab === 'tarefas' ? 'btn-royal-inner px-3 py-1 flex items-center gap-1 font-cinzel font-bold text-[10px] uppercase' : 'flex items-center gap-1'}>
+                <span>📋 SECUNDÁRIAS ({tarefas.length})</span>
+              </div>
             </button>
 
             {onSwitchToBackpack && (
               <button
                 type="button"
                 onClick={onSwitchToBackpack}
-                className="px-3 py-1.5 rounded-full border-[3px] border-[#581c87] bg-gradient-to-b from-[#f472b6] via-[#d946ef] to-[#9333ea] text-white font-black text-xs flex items-center gap-1.5 shadow-[0_4px_0_#4a044e] hover:brightness-110 active:translate-y-0.5 transition-all cursor-pointer"
+                className="btn-pearl-gold cursor-pointer"
                 title="Ir direto para o Pop-up de Mochila (Equipamento & Inventário)"
               >
-                <span>🎒</span>
-                <span>Mochila</span>
+                <div className="btn-pearl-inner px-3 py-1 font-cinzel font-bold text-[10px] uppercase flex items-center gap-1">
+                  <span>🎒 MOCHILA</span>
+                </div>
               </button>
             )}
           </div>
 
-          {/* Badge de Nível/EXP + Botão Fechar 3D Vermelho */}
           <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#5c2604] border-2 border-[#fef08a] text-[#fef08a] text-[11px] font-black shadow-inner">
+            <div className="hidden sm:flex items-center gap-1.5 pearl-pill px-2.5 py-1 font-cinzel font-bold text-[10px] text-[#3a2b1c]">
               <span>⭐ NV {playerLevel}</span>
-              <span className="text-white/60">•</span>
+              <span>•</span>
               <span>{playerXp} EXP</span>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-gradient-to-b from-[#ff5252] to-[#dc2626] hover:brightness-110 border-[3px] border-white text-white font-black flex items-center justify-center shadow-[0_4px_0_#991b1b,0_6px_10px_rgba(0,0,0,0.4)] active:translate-y-1 transition-all cursor-pointer shrink-0"
+              className="close-btn-outer cursor-pointer shrink-0"
               title="Fechar Pop-up"
             >
-              <X className="w-5 h-5 stroke-[3]" />
+              <div className="close-btn-inner">✕</div>
             </button>
           </div>
         </div>
 
-        {/* SUB-BARRA INFORMATIVA CLARA */}
-        <div className="px-4 py-1.5 bg-[#fde68a] border-b-2 border-[#e5a913] flex items-center justify-between text-[11px] font-black text-[#78350f] shrink-0">
+        {/* SUB-BARRA INFORMATIVA PEARL */}
+        <div className="px-4 py-1.5 bg-[#e6dac6] border-b border-[#c9b493] flex items-center justify-between text-[10px] font-cinzel font-bold text-[#3a2b1c] shrink-0">
           <span>
             {activeTab === 'jornada'
-              ? `🏆 CAMPANHA PRINCIPAL • Selecione uma quest (📍) para mostrar seu ícone no Mapa`
-              : `⚡ TAREFAS SECUNDÁRIAS • Selecione uma quest (📍) para mostrar seu ícone no Mapa`}
+              ? `🏆 JORNADA PRINCIPAL • Selecione uma missão (📍) para rastrear no Mapa`
+              : `⚡ SECUNDÁRIAS • Selecione uma missão (📍) para rastrear no Mapa`}
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/80 border border-[#d97706]">
+          <span className="text-[9px] pearl-pill px-2 py-0.5 text-[#8c6518]">
             { [...jornada, ...tarefas].filter((q) => q.isSelectedForMap).length } no Mapa 📍
           </span>
         </div>
@@ -2052,6 +2322,7 @@ export const GameBackpackPopupModal: React.FC<{
   onDropItemToMap?: (item: UnifiedBackpackSlotItem) => void;
   isInsideEmulator?: boolean;
   isLandscape?: boolean;
+  isHubFullScreen?: boolean;
 }> = ({
   project,
   mapCollectedInventory = {},
@@ -2061,6 +2332,7 @@ export const GameBackpackPopupModal: React.FC<{
   onDropItemToMap,
   isInsideEmulator = true,
   isLandscape = false,
+  isHubFullScreen = false,
 }) => {
   // Abas Superiores em Pasta: 'equipamento' | 'inventario_geral' | 'deck'
   const [topFolderTab, setTopFolderTab] = useState<'equipamento' | 'inventario_geral' | 'deck'>('equipamento');
@@ -2747,7 +3019,7 @@ export const GameBackpackPopupModal: React.FC<{
   const renderEquipmentHeroStage = () => (
     <div
       className={`relative rounded-[24px] p-2 bg-gradient-to-b from-[#fef3c7] via-[#fde68a] to-[#f59e0b] border-[3px] border-[#d97706] shadow-[0_4px_0_#92400e] shrink-0 ${
-        isLandscape ? 'w-[45%] h-full flex flex-col' : 'w-full'
+        isLandscape && !isHubFullScreen ? 'w-[45%] h-full flex flex-col' : 'w-full'
       }`}
     >
       {/* Borda interna tracejada fiel ao design do usuário com paleta dourada/creme */}
@@ -2834,8 +3106,10 @@ export const GameBackpackPopupModal: React.FC<{
   // Sub-bloco: Carrossel Horizontal de Categorias + Grade de Slots Circulares + Barra de Ações Inferior
   const renderSlotsAndActionsSection = () => (
     <div
-      className={`flex flex-col flex-1 min-h-0 min-w-0 justify-between ${
-        isLandscape ? 'h-full pl-1' : 'mt-2'
+      className={`flex flex-col ${
+        isHubFullScreen
+          ? 'w-full gap-2.5 mt-2.5'
+          : `flex-1 min-h-0 min-w-0 justify-between ${isLandscape ? 'h-full pl-1' : 'mt-2'}`
       }`}
     >
       {/* CARROSSEL HORIZONTAL DESLIZANTE DE CATEGORIAS + BOTÃO SELECIONAR/SOLTAR */}
@@ -2899,10 +3173,18 @@ export const GameBackpackPopupModal: React.FC<{
         </button>
       </div>
 
-      {/* GRADE DE SLOTS CIRCULARES NO TEMA DO QUEST MENU + SCROLLBAR VERTICAL DOURADA */}
-      <div className="relative flex-1 min-h-0 flex items-stretch gap-2 overflow-hidden">
-        <div className="flex-1 overflow-y-auto pr-1 pb-2.5 scrollbar-none">
-          <div className={`grid ${colsClass} gap-2`}>
+      {/* GRADE DE SLOTS CIRCULARES NO TEMA DO QUEST MENU */}
+      <div
+        className={`relative ${
+          isHubFullScreen ? 'w-full' : 'flex-1 min-h-0 flex items-stretch gap-2 overflow-hidden'
+        }`}
+      >
+        <div
+          className={
+            isHubFullScreen ? 'w-full pb-1' : 'flex-1 overflow-y-auto pr-1 pb-2.5 scrollbar-none'
+          }
+        >
+          <div className={`grid ${colsClass} gap-2.5`}>
             {Array.from({ length: totalSlotsCount }).map((_, idx) => {
               const slotItem = filteredItems[idx] || null;
               const isSelected = selectedSlotIndex === idx;
@@ -2976,13 +3258,17 @@ export const GameBackpackPopupModal: React.FC<{
           </div>
         </div>
 
-        {/* Scrollbar Vertical Dourada 3D à direita */}
-        <div className="w-3.5 rounded-full bg-[#fde68a] border-2 border-[#78350f] shadow-inner p-0.5 flex flex-col items-center shrink-0 my-0.5">
-          <div className="w-full h-9 rounded-full bg-gradient-to-b from-[#f59e0b] to-[#b45309] border border-[#fef08a] shadow-xs" />
-        </div>
+        {!isHubFullScreen && (
+          <>
+            {/* Scrollbar Vertical Dourada 3D à direita */}
+            <div className="w-3.5 rounded-full bg-[#fde68a] border-2 border-[#78350f] shadow-inner p-0.5 flex flex-col items-center shrink-0 my-0.5">
+              <div className="w-full h-9 rounded-full bg-gradient-to-b from-[#f59e0b] to-[#b45309] border border-[#fef08a] shadow-xs" />
+            </div>
 
-        {/* Fade suave na base dos slots */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-5 h-4 bg-gradient-to-t from-[#fff8e7] to-transparent" />
+            {/* Fade suave na base dos slots */}
+            <div className="pointer-events-none absolute bottom-0 left-0 right-5 h-4 bg-gradient-to-t from-[#fff8e7] to-transparent" />
+          </>
+        )}
       </div>
 
       {/* FAIXA RÁPIDA DO ITEM SELECIONADO */}
@@ -3006,33 +3292,34 @@ export const GameBackpackPopupModal: React.FC<{
         )}
       </div>
 
-      {/* BARRA INFERIOR COM OS 3 BOTÕES TÁTEIS 3D ALINHADOS AO TEMA QUEST */}
+      {/* BARRA INFERIOR COM OS 3 BOTÕES NOVA UI V1.2 (BTN-ROYAL-GOLD & BTN-PEARL-GOLD) */}
       <div className="flex items-center gap-2 pt-0.5 shrink-0">
-        {/* 1. Botão Verde/Esmeralda 3D: Equipar / Desequipar / Usar */}
+        {/* 1. Botão Royal Sapphire & Gold: Equipar / Desequipar / Usar */}
         <button
           type="button"
           onClick={handlePrimaryEquipOrUse}
-          className="flex-1 h-9.5 px-3 rounded-full bg-gradient-to-b from-[#4ade80] via-[#22c55e] to-[#16a34a] hover:brightness-105 border-[2.5px] border-[#14532d] shadow-[0_3.5px_0_#14532d] active:translate-y-0.5 transition-all flex items-center justify-center gap-1.5 text-white font-black text-[11px] cursor-pointer truncate"
-          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.45)' }}
+          className="flex-1 btn-royal-gold cursor-pointer truncate"
         >
-          <span>
-            {!selectedItem
-              ? '🐾 Equipar / Usar'
-              : selectedItem.category === 'pets' || selectedItem.equipSlot === 'pet'
-              ? `🐾 Equipar no Slot ${targetPetSlotIdx + 1}`
-              : selectedItem.category === 'item_pet'
-              ? '🍖 Dar ao Pet'
-              : selectedItem.category === 'equipaveis'
-              ? isSelectedItemEquipped
-                ? '🛡️ Desequipar'
-                : '⚔️ Equipar'
-              : selectedItem.category === 'consumiveis'
-              ? '🧪 Consumir'
-              : '📖 Abrir'}
-          </span>
+          <div className="btn-royal-inner py-1.5 px-3 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1.5 truncate">
+            <span>
+              {!selectedItem
+                ? '🐾 EQUIPAR / USAR'
+                : selectedItem.category === 'pets' || selectedItem.equipSlot === 'pet'
+                ? `🐾 EQUIPAR SLOT ${targetPetSlotIdx + 1}`
+                : selectedItem.category === 'item_pet'
+                ? '🍖 DAR AO PET'
+                : selectedItem.category === 'equipaveis'
+                ? isSelectedItemEquipped
+                  ? '🛡️ DESEQUIPAR'
+                  : '⚔️ EQUIPAR'
+                : selectedItem.category === 'consumiveis'
+                ? '🧪 CONSUMIR'
+                : '📖 ABRIR'}
+            </span>
+          </div>
         </button>
 
-        {/* 2. Botão Dourado/Âmbar Central: Saber Mais (Abre tela com Desfoque de Lente) */}
+        {/* 2. Botão Pearl & Gold Central: Saber Mais (Abre tela com Desfoque de Lente) */}
         <button
           type="button"
           onClick={() => {
@@ -3043,30 +3330,36 @@ export const GameBackpackPopupModal: React.FC<{
             setBookPageIndex(0);
             setLensInspectItem(selectedItem);
           }}
-          className="flex-[1.25] h-9.5 px-3 rounded-full bg-gradient-to-b from-[#fde047] via-[#fbbf24] to-[#d97706] hover:brightness-105 border-[2.5px] border-[#5c2604] shadow-[0_3.5px_0_#5c2604] active:translate-y-0.5 transition-all flex items-center justify-center gap-1 text-[#451a03] font-black text-[11px] cursor-pointer truncate"
+          className="flex-[1.15] btn-pearl-gold cursor-pointer truncate"
         >
-          <span>🔍 Saber mais</span>
+          <div className="btn-pearl-inner py-1.5 px-3 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1 truncate">
+            <span>🔍 SABER MAIS</span>
+          </div>
         </button>
 
-        {/* 3. Botão Circular Vermelho à Direita: Soltar (se modo soltar ativo) ou Fechar */}
-        <button
-          type="button"
-          onClick={() => {
-            if (selectDropMode && selectedItem) {
-              handleDropSelectedItem(selectedItem);
-            } else {
-              onClose();
+        {/* 3. Botão Circular Fechar / Soltar (no Hub Fullscreen só exibe quando selectDropMode está ativo) */}
+        {(!isHubFullScreen || (selectDropMode && selectedItem)) && (
+          <button
+            type="button"
+            onClick={() => {
+              if (selectDropMode && selectedItem) {
+                handleDropSelectedItem(selectedItem);
+              } else {
+                onClose();
+              }
+            }}
+            title={
+              selectDropMode && selectedItem
+                ? `Soltar 1x ${selectedItem.name}`
+                : 'Fechar Pop-up de Mochila'
             }
-          }}
-          title={
-            selectDropMode && selectedItem
-              ? `Soltar 1x ${selectedItem.name}`
-              : 'Fechar Pop-up de Mochila'
-          }
-          className="w-9.5 h-9.5 rounded-full bg-gradient-to-b from-[#ff5252] to-[#dc2626] hover:brightness-110 border-[2.5px] border-[#7f1d1d] shadow-[0_3.5px_0_#7f1d1d] active:translate-y-0.5 transition-all flex items-center justify-center text-white font-black text-xs cursor-pointer shrink-0"
-        >
-          {selectDropMode && selectedItem ? '📤' : <X className="w-4 h-4 stroke-[3.5]" />}
-        </button>
+            className="close-btn-outer cursor-pointer shrink-0"
+          >
+            <div className="close-btn-inner">
+              {selectDropMode && selectedItem ? '📤' : '✕'}
+            </div>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -3076,83 +3369,156 @@ export const GameBackpackPopupModal: React.FC<{
   const gemsCount =
     project.player?.defaultCurrencies?.gems ?? project.playerInventory?.currencies.gems ?? 10;
 
+  const lastScrollYRef = React.useRef(0);
+  const handleHubScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (!isHubFullScreen) return;
+    const curY = e.currentTarget.scrollTop;
+    const dy = curY - lastScrollYRef.current;
+    lastScrollYRef.current = curY;
+    if (curY > 28 && dy > 3) {
+      document.body.classList.add('hub-scroll-hide-bars');
+    } else if (dy < -3 || curY <= 20) {
+      document.body.classList.remove('hub-scroll-hide-bars');
+    }
+  };
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className={`${
-        isInsideEmulator
-          ? 'absolute inset-0 z-80 p-2.5 flex items-center justify-center bg-black/50 backdrop-blur-[2px]'
-          : 'fixed inset-0 z-90 p-4 flex items-center justify-center bg-black/65 backdrop-blur-sm'
-      } select-none`}
+      onScroll={handleHubScroll}
+      className={
+        isHubFullScreen
+          ? 'w-full h-full overflow-y-auto overflow-x-hidden nova-scroll select-none'
+          : `${
+              isInsideEmulator
+                ? 'absolute inset-0 z-80 p-2.5 flex items-center justify-center bg-black/50 backdrop-blur-[2px]'
+                : 'fixed inset-0 z-90 p-4 flex items-center justify-center bg-black/65 backdrop-blur-sm'
+            } select-none`
+      }
+      style={
+        isHubFullScreen
+          ? {
+              padding: isLandscape ? '56px 16px 112px 16px' : '64px 10px 118px 10px',
+              boxSizing: 'border-box',
+              background: 'transparent',
+            }
+          : undefined
+      }
     >
-      {/* MOLDURA 3D IDÊNTICA AO MENU QUEST (MESMO TEMA E MESMO TAMANHO VERTICAL NO MODO RETRATO) */}
+      {/* MOLDURA 3D OU CONTAINER LIVRE TRANSPARENTE NO HUB */}
       <div
         className={`relative w-full ${
-          isInsideEmulator
-            ? isLandscape
-              ? 'max-w-[760px] h-[90%] max-h-[410px]'
-              : 'max-w-[445px] h-[85%] max-h-[620px]'
-            : isLandscape
-            ? 'max-w-4xl h-[82vh] max-h-[540px]'
-            : 'max-w-xl h-[85vh] max-h-[680px]'
-        } rounded-[32px] bg-[#fff8e7] border-[4px] border-[#5c2604] ring-4 ring-[#fbbf24]/80 shadow-[0_10px_0_#3b1702,0_22px_50px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden`}
+          isHubFullScreen
+            ? 'max-w-[960px] mx-auto flex flex-col gap-3'
+            : `${
+                isInsideEmulator
+                  ? isLandscape
+                    ? 'max-w-[760px] h-[90%] max-h-[410px]'
+                    : 'max-w-[445px] h-[85%] max-h-[620px]'
+                  : isLandscape
+                  ? 'max-w-4xl h-[82vh] max-h-[540px]'
+                  : 'max-w-xl h-[85vh] max-h-[680px]'
+              } pearl-surface flex flex-col overflow-hidden`
+        }`}
       >
-        {/* =====================================================================
-            TOPO VIBRANTE DOURADO/LARANJA IGUAL AO MENU QUEST COM ABAS 3D
-            (EQUIPAMENTO | INVENTÁRIO GERAL | QUESTS) + BOTÃO FECHAR
-           ===================================================================== */}
-        <div className="px-3.5 py-2.5 bg-gradient-to-b from-[#fbbf24] via-[#f59e0b] to-[#d97706] border-b-[4px] border-[#78350f] relative flex items-center justify-between gap-2 shrink-0">
-          {/* Reflexo superior glossy */}
-          <div className="absolute top-0.5 left-4 right-4 h-1.5 rounded-full bg-white/45 pointer-events-none" />
-
-          <div className="flex items-center gap-1.5 flex-wrap">
+        {/* TOPO COM ABAS DA MOCHILA DE FASE */}
+        <div
+          className={
+            isHubFullScreen
+              ? 'p-1.5 rounded-2xl flex items-center justify-between gap-1.5 shrink-0'
+              : 'px-3.5 py-2.5 bg-gradient-to-b from-[#f5efe2] to-[#e3d7c3] border-b-[2px] border-[#b88928] relative flex items-center justify-between gap-2 shrink-0'
+          }
+          style={
+            isHubFullScreen
+              ? {
+                  background: 'rgba(7, 18, 38, 0.68)',
+                  border: '1.5px solid rgba(212, 175, 83, 0.45)',
+                  backdropFilter: 'blur(8px)',
+                }
+              : undefined
+          }
+        >
+          <div
+            className={
+              isHubFullScreen
+                ? 'grid grid-cols-4 gap-1.5 w-full'
+                : 'pearl-pill p-0.5 flex items-center gap-1 flex-wrap'
+            }
+          >
             {/* Aba 1: Equipamento */}
             <button
               type="button"
               onClick={() => setTopFolderTab('equipamento')}
-              className={`px-3 py-1.5 rounded-full border-[3px] font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={
                 topFolderTab === 'equipamento'
-                  ? 'bg-gradient-to-b from-[#fffbeb] to-[#fef08a] border-[#5c2604] text-[#5c2604] shadow-[0_4px_0_#5c2604] -translate-y-0.5'
-                  : 'bg-[#92400e]/60 border-[#78350f] text-[#fef3c7] hover:bg-[#92400e]'
-              }`}
+                  ? 'btn-royal-gold cursor-pointer w-full'
+                  : isHubFullScreen
+                  ? 'btn-pearl-gold cursor-pointer w-full'
+                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
+              }
             >
-              <span>🛡️</span>
-              <span className="underline decoration-2 underline-offset-2">Equipamento</span>
+              <div
+                className={
+                  topFolderTab === 'equipamento'
+                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : isHubFullScreen
+                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : ''
+                }
+              >
+                🛡️ EQUIPAR
+              </div>
             </button>
 
             {/* Aba 2: Inventário Geral */}
             <button
               type="button"
               onClick={() => setTopFolderTab('inventario_geral')}
-              className={`px-3 py-1.5 rounded-full border-[3px] font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={
                 topFolderTab === 'inventario_geral'
-                  ? 'bg-gradient-to-b from-[#ecfccb] to-[#a3e635] border-[#365314] text-[#1a2e05] shadow-[0_4px_0_#365314] -translate-y-0.5'
-                  : 'bg-[#92400e]/60 border-[#78350f] text-[#fef3c7] hover:bg-[#92400e]'
-              }`}
+                  ? 'btn-royal-gold cursor-pointer w-full'
+                  : isHubFullScreen
+                  ? 'btn-pearl-gold cursor-pointer w-full'
+                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
+              }
             >
-              <span>🎒</span>
-              <span className="underline decoration-2 underline-offset-2">Inventário</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#365314] text-[#ecfccb] text-[10px]">
-                {allUnifiedItems.length}
-              </span>
+              <div
+                className={
+                  topFolderTab === 'inventario_geral'
+                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : isHubFullScreen
+                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : ''
+                }
+              >
+                🎒 ITENS ({allUnifiedItems.length})
+              </div>
             </button>
 
-            {/* Aba 3: Gerenciador de Deck (Cartas de Monstros Escaneados & 3 Slots de Invocação) */}
+            {/* Aba 3: Gerenciador de Deck (3 Slots de Pets) */}
             <button
               type="button"
               onClick={() => setTopFolderTab('deck')}
-              className={`px-3 py-1.5 rounded-full border-[3px] font-black text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={
                 topFolderTab === 'deck'
-                  ? 'bg-gradient-to-b from-[#e0e7ff] to-[#818cf8] border-[#312e81] text-[#1e1b4b] shadow-[0_4px_0_#312e81] -translate-y-0.5'
-                  : 'bg-[#92400e]/60 border-[#78350f] text-[#fef3c7] hover:bg-[#92400e]'
-              }`}
+                  ? 'btn-royal-gold cursor-pointer w-full'
+                  : isHubFullScreen
+                  ? 'btn-pearl-gold cursor-pointer w-full'
+                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
+              }
               title="Gerenciador de Deck de Cartas de Monstros Escaneados (3 Slots de Pets)"
             >
-              <span>🃏</span>
-              <span className="underline decoration-2 underline-offset-2">Deck</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#312e81] text-[#e0e7ff] text-[10px]">
-                {resolvedPetConfig.petGallery.length}
-              </span>
+              <div
+                className={
+                  topFolderTab === 'deck'
+                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : isHubFullScreen
+                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
+                    : ''
+                }
+              >
+                🃏 PETS ({resolvedPetConfig.petGallery.length})
+              </div>
             </button>
 
             {/* Aba 4: Acesso Direto ao Pop-up de Quests (Jornada / Tarefas) */}
@@ -3160,75 +3526,86 @@ export const GameBackpackPopupModal: React.FC<{
               <button
                 type="button"
                 onClick={onSwitchToQuests}
-                className="px-3 py-1.5 rounded-full border-[3px] border-[#5c2604] bg-gradient-to-b from-[#fde047] via-[#f59e0b] to-[#b45309] text-[#451a03] font-black text-xs flex items-center gap-1.5 shadow-[0_4px_0_#5c2604] hover:brightness-110 active:translate-y-0.5 transition-all cursor-pointer"
-                title="Alternar para o Pop-up de Quests (Jornada & Tarefas)"
+                className="btn-pearl-gold cursor-pointer w-full"
+                title="Alternar para Quests (Jornada & Tarefas)"
               >
-                <HudFourPointStarIcon className="w-3.5 h-3.5 shrink-0" />
-                <span>Quests</span>
+                <div className="btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase flex items-center justify-center gap-1 truncate">
+                  <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
+                  <span>JORNADA</span>
+                </div>
               </button>
             )}
           </div>
 
-          {/* Moedas Rápidas + Botão Fechar 3D Vermelho */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#5c2604] border-2 border-[#fef08a] text-[#fef08a] text-[11px] font-black shadow-inner">
-              <span>🪙 {goldCount}</span>
-              <span className="text-white/60">•</span>
-              <span>💎 {gemsCount}</span>
+          {!isHubFullScreen && (
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="hidden sm:flex items-center gap-1.5 pearl-pill px-2.5 py-1 font-cinzel font-bold text-[10px] text-[#3a2b1c]">
+                <span>🪙 {goldCount}</span>
+                <span>•</span>
+                <span>💎 {gemsCount}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="close-btn-outer cursor-pointer shrink-0"
+                title="Fechar Pop-up de Mochila"
+              >
+                <div className="close-btn-inner">✕</div>
+              </button>
             </div>
+          )}
+        </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-9 h-9 rounded-full bg-gradient-to-b from-[#ff5252] to-[#dc2626] hover:brightness-110 border-[3px] border-white text-white font-black flex items-center justify-center shadow-[0_4px_0_#991b1b,0_6px_10px_rgba(0,0,0,0.4)] active:translate-y-1 transition-all cursor-pointer shrink-0"
-              title="Fechar Pop-up de Mochila"
-            >
-              <X className="w-5 h-5 stroke-[3]" />
-            </button>
+        {/* SUB-BARRA INFORMATIVA PEARL (Oculta no modo Hub Fullscreen para evitar sobreposição) */}
+        {!isHubFullScreen && (
+          <div className="px-4 py-1 bg-[#e6dac6] border-b border-[#c9b493] flex items-center justify-between text-[9px] font-cinzel font-bold text-[#3a2b1c] shrink-0">
+            <span>
+              {topFolderTab === 'equipamento'
+                ? `🛡️ EQUIPAMENTO & 3 SLOTS DE PETS • ${project.title || 'FASE ATIVA'}`
+                : topFolderTab === 'deck'
+                ? `🃏 GERENCIADOR DE DECK • EQUIPE ATÉ 3 CARTAS PARA INVOCAR COMO PETS`
+                : `🎒 MOCHILA DE FASE COMPLETA • ${allUnifiedItems.length}/${totalSlotsCount} SLOTS`}
+            </span>
+            <span className="pearl-pill px-2 py-0.5 text-[#8c6518]">
+              🪙 {goldCount} • 💎 {gemsCount}
+            </span>
           </div>
-        </div>
-
-        {/* SUB-BARRA INFORMATIVA CLARA IGUAL AO QUEST MENU */}
-        <div className="px-4 py-1 bg-[#fde68a] border-b-2 border-[#e5a913] flex items-center justify-between text-[10px] font-black text-[#78350f] shrink-0">
-          <span>
-            {topFolderTab === 'equipamento'
-              ? `🛡️ EQUIPAMENTO & 3 SLOTS DE PETS • ${project.title || 'FASE ATIVA'}`
-              : topFolderTab === 'deck'
-              ? `🃏 GERENCIADOR DE DECK • EQUIPE ATÉ 3 CARTAS PARA INVOCAR COMO PETS`
-              : `🎒 INVENTÁRIO GERAL COMPLETO • ${allUnifiedItems.length}/${totalSlotsCount} SLOTS`}
-          </span>
-          <span className="px-2 py-0.5 rounded-full bg-white/80 border border-[#d97706]">
-            🪙 {goldCount} • 💎 {gemsCount}
-          </span>
-        </div>
+        )}
 
         {/* =====================================================================
-            CORPO PRINCIPAL DA MOCHILA (#fff8e7) IGUAL AO MENU QUEST
+            CORPO PRINCIPAL DA MOCHILA (SEM FUNDO BRANCO NO MODO HUB FULLSCREEN)
            ===================================================================== */}
-        <div className="flex-1 min-h-0 bg-[#fff8e7] p-3 flex flex-col overflow-hidden relative">
+        <div
+          className={
+            isHubFullScreen
+              ? 'flex flex-col gap-3 relative'
+              : 'flex-1 min-h-0 bg-[#fff8e7] p-3 flex flex-col overflow-hidden relative'
+          }
+        >
           {/* Toast rápido de feedback */}
           {statusToast && (
-            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-40 px-3.5 py-1 rounded-full bg-[#451a03] border-2 border-[#fef08a] text-[#fef08a] font-black text-[10px] shadow-lg whitespace-nowrap pointer-events-none">
+            <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[1500] px-3.5 py-1 rounded-full bg-[#451a03] border-2 border-[#fef08a] text-[#fef08a] font-black text-[10px] shadow-lg whitespace-nowrap pointer-events-none">
               {statusToast}
             </div>
           )}
 
           {topFolderTab === 'equipamento' ? (
-            /* ABA 1: EQUIPAMENTO (Palco Tracejado + Carrossel + Slots Circulares + 3 Botões) */
-            isLandscape ? (
+            /* ABA 1: EQUIPAMENTO (Fluxo vertical unificado no Hub para rolar toda a tela de cima a baixo) */
+            isLandscape && !isHubFullScreen ? (
               <div className="flex-1 min-h-0 flex flex-row gap-3 items-stretch">
                 {renderEquipmentHeroStage()}
                 {renderSlotsAndActionsSection()}
               </div>
             ) : (
-              <div className="flex-1 min-h-0 flex flex-col">
+              <div className={isHubFullScreen ? 'flex flex-col gap-2.5' : 'flex-1 min-h-0 flex flex-col'}>
                 {renderEquipmentHeroStage()}
                 {renderSlotsAndActionsSection()}
               </div>
             )
           ) : topFolderTab === 'deck' ? (
             /* ABA 3: GERENCIADOR DE DECK DE CARTAS ESCANEADAS (3 SLOTS DE INVOCAÇÃO + COLEÇÃO DE CARTAS) */
-            <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
+            <div className={isHubFullScreen ? 'flex flex-col gap-3' : 'flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden'}>
               {/* Seletor Superior com os 3 Slots de Cartas Equipadas para Invocação */}
               <div className="p-2.5 rounded-2xl bg-gradient-to-b from-[#fef3c7] via-[#fde68a] to-[#f59e0b] border-[3px] border-[#b45309] shadow-[0_4px_0_#78350f] shrink-0">
                 <div className="flex items-center justify-between mb-1.5 px-1">
@@ -3333,7 +3710,7 @@ export const GameBackpackPopupModal: React.FC<{
               </div>
 
               {/* Coleção de Cartas Escaneadas & Galeria de Pets */}
-              <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+              <div className={isHubFullScreen ? 'w-full' : 'flex-1 min-h-0 overflow-y-auto pr-1'}>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pb-2">
                   {resolvedPetConfig.petGallery.map((card) => {
                     const equippedSlotIndex = resolvedPetConfig.equippedPetIds.findIndex(
@@ -3440,7 +3817,7 @@ export const GameBackpackPopupModal: React.FC<{
             </div>
           ) : (
             /* ABA 2: INVENTÁRIO GERAL (Resumo de Moedas, Capacidade Expandida e Todos os Slots) */
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className={isHubFullScreen ? 'flex flex-col gap-2.5' : 'flex-1 min-h-0 flex flex-col'}>
               <div className="mb-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#fef3c7] via-[#fde68a] to-[#fef3c7] border-[2.5px] border-[#d97706] flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-0.5 rounded-full bg-[#d97706] text-white font-black text-[10px] border border-white shadow-xs">
@@ -3473,7 +3850,9 @@ export const GameBackpackPopupModal: React.FC<{
           {lensInspectItem && (
             <div
               onClick={() => setLensInspectItem(null)}
-              className="absolute inset-0 z-50 bg-slate-950/65 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center animate-fadeIn"
+              className={`${
+                isHubFullScreen ? 'fixed inset-0 z-[2000]' : 'absolute inset-0 z-50'
+              } bg-slate-950/75 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center animate-fadeIn`}
             >
               {/* Efeito de Lente / Bokeh luminoso */}
               <div className="w-56 h-56 rounded-full bg-gradient-to-tr from-[#fbbf24]/35 via-[#f59e0b]/25 to-[#fef08a]/35 blur-2xl absolute pointer-events-none" />

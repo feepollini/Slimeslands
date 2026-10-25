@@ -7,7 +7,7 @@ const DICT: Record<string, Record<Lang, string>> = {
 'nav.battle': { pt: 'BATALHAR', en: 'BATTLE', es: 'BATALLA' },
 'nav.start': { pt: 'INICIAR!', en: 'START!', es: '¡INICIAR!' },
 'nav.map': { pt: 'MAPA', en: 'MAP', es: 'MAPA' },
-'nav.academy': { pt: 'ACADEMIA', en: 'ACADEMY', es: 'ACADEMIA' },
+'nav.academy': { pt: 'INVENTÁRIO', en: 'INVENTORY', es: 'INVENTARIO' },
 'nav.store': { pt: 'LOJA', en: 'STORE', es: 'TIENDA' },
 // ─── HEADER ───
 'header.name': { pt: 'CRIADOR DE LENDAS', en: 'LEGEND MAKER', es: 'CREADOR DE LEYENDAS' },

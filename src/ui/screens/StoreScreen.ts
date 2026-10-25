@@ -1,4 +1,3 @@
-import { gsap } from 'gsap';
 import { CARD_TEMPLATES, SKILL_POOL } from '../../core/constants';
 import { ProgressionManager } from '../../core/ProgressionManager';
 import { SoundManager } from '../utils/SoundManager';
@@ -10,33 +9,64 @@ import {
   getMergedGameTemplates,
   resolveMatrixOrGameCard,
   getAvailableCustomDecks,
+  syncActiveDeckWithArsenal,
 } from './forge_v2/utils/HestridiaMatrixRenderer';
 import { t } from '../../core/i18n';
 import storeData from '../../core/store.json';
 import { BoosterPackViewer } from '../components/booster/BoosterPackViewer';
 import { resolveBoosterCards } from './forge_v2/utils/boosterResolver';
+import {
+  renderOrnateWindowHtml,
+  renderGoldDividerHHtml,
+  renderGoldDividerVHtml,
+  renderCarouselArrowButtonHtml,
+} from '../components/OrnateFrameHtml';
 
-// Vitrine da loja no GAME: banner slider, diárias rotativas, raras,
-// decks completos e pacotes. Lê src/core/store.json (forja v2).
-// Raras, decks e pacotes em CARROSSÉIS VERTICAIS (trilho ▲▼ + páginas).
+const VALID_BOOSTER_FALLBACK_BY_ID: Record<string, string> = {
+  booster_starter: '/cards/Batalha_dos_slimes_fant_sticos.png',
+  booster_divinos: '/cards/Cavaleiro_slime_branco_de__ries.png',
+  booster_elementais: '/cards/10_lava.png',
+  booster_sombras: '/cards/20_eclipse.png',
+  booster_guerreiros: '/cards/Cavaleiro_slime_prateado_bloqueia_o_golpe-16.png',
+  booster_gourmet: '/cards/Desfile_de_seis_slimes_deliciosos.png',
+  booster_grimorio: '/cards/Slime_alquimista_desviando_da_explos_o-10.png',
+};
+
+const BROKEN_IMAGE_REMAP: Record<string, string> = {
+  '/cards/01_sol.png': '/cards/Cavaleiro_slime_branco_de__ries.png',
+  '/cards/10 lava.png': '/cards/10_lava.png',
+  '/cards/halloween_original_4_ceifador.png': '/cards/20_eclipse.png',
+  '/cards/5241c360-0176-4455-87ca-d6263cb64e8e.png':
+    '/cards/Cavaleiro_slime_prateado_bloqueia_o_golpe-16.png',
+  '/cards/Slime coelhinho leva ovo brilhante ao ninho-1.png':
+    '/cards/Desfile_de_seis_slimes_deliciosos.png',
+  '/cards/item 01.png': '/cards/Slime_alquimista_desviando_da_explos_o-10.png',
+};
+
 export class StoreScreen {
   private static activeTimers: number[] = [];
 
-  private data: any;
-  private dailyPage = 0;
-  private rarePage = 0;
-  private artPage = 0;
-  private readonly rarePageSize = 6;
-  private readonly artPageSize = 4;
+  protected data: any;
+  protected bannerIdx = 0;
+  protected dailyPage = 0;
+  protected rarePage = 0;
+  protected artPage = 0;
+  protected readonly rarePageSize = 6;
+  protected readonly artPageSize = 4;
 
-  private boosterActiveIdx = 0;
-  private boosterQty = 1;
-  private boosterSplitIdx = 0;
-  private boosterSplitQty = 1;
-  private boosterDisplayMode: 'carousel' | 'split' = 'carousel';
-  private deckActiveIdx = 0;
+  protected boosterActiveIdx = 0;
+  protected boosterQty = 1;
+  protected boosterSplitIdx = 0;
+  protected boosterSplitQty = 1;
+  protected boosterDisplayMode: 'carousel' | 'split' = 'carousel';
+  protected deckActiveIdx = 0;
+  protected activeSectionFilter = 'all';
+  protected inspectingDeck: any | null = null;
+  protected isLandscapeMode = false;
+  protected lastRenderOpts: { headerSpace?: boolean } = { headerSpace: true };
+  protected lastScrollTop = 0;
 
-  private customTemplates: any[] = [];
+  protected customTemplates: any[] = [];
 
   constructor(customData?: any) {
     let localOverride: any = null;
@@ -48,40 +78,51 @@ export class StoreScreen {
     }
     const d: any = customData || localOverride || storeData || {};
     this.customTemplates = getMergedGameTemplatesSync(d.templates || []);
-    this.boosterDisplayMode = (d.boosterDisplayMode === 'split') ? 'split' : 'carousel';
+    this.boosterDisplayMode = d.boosterDisplayMode === 'split' ? 'split' : 'carousel';
+
+    const existingDeckIds = new Set((d.decks || []).map((dk: any) => dk.id));
+    const extraCustomDecks = getAvailableCustomDecks()
+      .filter((cd) => Array.isArray(cd.cards) && cd.cards.length > 0 && !existingDeckIds.has(cd.id))
+      .map((cd) => ({
+        id: cd.id,
+        name: cd.name,
+        price: 400,
+        currency: 'gold',
+        cards: cd.cards,
+        theme: cd.archetype || 'custom',
+        desc: `Deck completo com ${cd.cards.length} cartas prontas para batalha.`,
+        published: true,
+      }));
 
     this.data = {
       titles: d.titles || {},
       banners: (d.banners || []).filter((u: string) => !!u).slice(0, 3),
       dailyPool: (d.dailyPool || []).filter((o: any) => o && o.card),
       rare: (d.rare || []).filter((o: any) => o && o.card),
-      decks: [
-        ...(d.decks || []),
-        ...getAvailableCustomDecks()
-          .filter((cd) => Array.isArray(cd.cards) && cd.cards.length > 0)
-          .map((cd) => ({
-            id: cd.id,
-            name: cd.name,
-            price: 400,
-            currency: 'gold',
-            cards: cd.cards,
-            theme: cd.archetype || 'custom',
-            published: true
-          }))
+      decks: [...(d.decks || []), ...extraCustomDecks],
+      packs: (d.packs || []).length ? d.packs : (storeData as any).packs || [],
+      coinPacks: (d.coinPacks || []).length ? d.coinPacks : (storeData as any).coinPacks || [],
+      gemPacks: (d.gemPacks || []).length ? d.gemPacks : (storeData as any).gemPacks || [],
+      artifacts: ((d.artifacts || []).length ? d.artifacts : (storeData as any).artifacts || []).filter(
+        (o: any) => o && o.id
+      ),
+      sectionOrder: d.sectionOrder || [
+        'banners',
+        'packs',
+        'packs_split',
+        'daily',
+        'rare',
+        'decks',
+        'coins',
+        'gems',
+        'artifacts',
       ],
-      packs: d.packs || [],
-      coinPacks: d.coinPacks || [],
-      gemPacks: d.gemPacks || [],
-      artifacts: (d.artifacts || []).filter((o: any) => o && o.id),
-      sectionOrder: d.sectionOrder || ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'],
       sectionVisibility: d.sectionVisibility || {},
       deckLayoutMode: d.deckLayoutMode || 'carousel',
-      boosterDisplayMode: d.boosterDisplayMode || 'carousel'
+      boosterDisplayMode: d.boosterDisplayMode || 'carousel',
     };
   }
 
-  // Títulos das seções: nome customizado na forja prevalece; se for o
-  // padrão em PT, traduz p/ o idioma atual.
   private static readonly PT_SECTION_DEFAULTS: Record<string, string> = {
     packs: 'PACOTES & BOOSTERS (CARROSSEL)',
     packs_split: 'DESTAQUES ESPECIAIS (SPLIT)',
@@ -93,1434 +134,1237 @@ export class StoreScreen {
     artifacts: 'ARTEFATOS',
   };
 
-  private title(key: string, fallback: string): string {
-    const custom = this.data.titles[key];
+  protected title(key: string, fallback: string): string {
+    const custom = this.data.titles?.[key];
     if (custom && custom !== (StoreScreen.PT_SECTION_DEFAULTS[key] ?? fallback)) return custom;
     const tr = t('st.' + key);
     if (tr !== 'st.' + key) return tr;
     return custom || fallback;
   }
 
-  private resolveCard(name: string): any {
-    if (!name) return null;
-    return (
-      resolveMatrixOrGameCard(name, [
-        ...(this.customTemplates || []),
-      ]) || null
+  protected resolveBoosterArtUrl(pack: any): string {
+    const raw = pack?.customFront || pack?.pouchUrl || pack?.image || '';
+    if (raw && BROKEN_IMAGE_REMAP[raw]) {
+      return BROKEN_IMAGE_REMAP[raw];
+    }
+    if (pack?.id && VALID_BOOSTER_FALLBACK_BY_ID[pack.id]) {
+      if (!raw || BROKEN_IMAGE_REMAP[raw]) {
+        return VALID_BOOSTER_FALLBACK_BY_ID[pack.id];
+      }
+    }
+    return raw || '/cards/Batalha_dos_slimes_fant_sticos.png';
+  }
+
+  protected renderFoilBoosterPouch(
+    pack: any,
+    wPx: number,
+    hPx: number,
+    extraStyle = '',
+    extraAttrs = ''
+  ): string {
+    const imgUrl = this.resolveBoosterArtUrl(pack);
+    const fallbackUrl =
+      (pack?.id && VALID_BOOSTER_FALLBACK_BY_ID[pack.id]) ||
+      '/cards/Batalha_dos_slimes_fant_sticos.png';
+    const crimpH = Math.max(9, Math.round(hPx * 0.055));
+
+    return `
+      <div ${extraAttrs} style="width:${wPx}px; height:${hPx}px; min-width:${wPx}px; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; position:relative; background:linear-gradient(180deg, #2a1c0e 0%, #120c06 100%); box-shadow:0 12px 26px rgba(0,0,0,0.68), 0 0 0 1.5px #d4a84b; flex-shrink:0; user-select:none; ${extraStyle}">
+        <!-- Selo Metálico Frisado Superior do Booster -->
+        <div style="width:100%; height:${crimpH}px; background:repeating-linear-gradient(90deg, #b88928 0px, #fff3c2 2.5px, #7d5b19 5px); border-bottom:1.5px solid #523707; flex-shrink:0; position:relative; z-index:3; box-shadow:0 2px 4px rgba(0,0,0,0.45);"></div>
+
+        <!-- Corpo Alongado do Pacote -->
+        <div style="flex:1; width:100%; position:relative; overflow:hidden; background:#140d07;">
+          <img
+            src="${thumbFor(imgUrl)}"
+            alt="${pack?.name || 'Booster'}"
+            onerror="this.onerror=null;this.src='${fallbackUrl}';"
+            style="width:100%; height:100%; object-fit:cover; display:block;"
+          />
+          <!-- Reflexo Foil Holográfico Diagonal -->
+          <div style="position:absolute; inset:0; background:linear-gradient(125deg, rgba(255,255,255,0) 20%, rgba(255,243,194,0.22) 46%, rgba(255,255,255,0) 70%); pointer-events:none;"></div>
+          <!-- Topo Badge Quantidade de Cartas -->
+          <div style="position:absolute; top:6px; right:6px; padding:2px 6px; border-radius:9999px; background:rgba(6,35,86,0.9); border:1px solid #f5d98b; font-family:var(--font-display); font-weight:900; font-size:8px; color:#fff3c2; letter-spacing:0.04em; box-shadow:0 2px 6px rgba(0,0,0,0.6);">
+            ${pack?.cardsCount || 9} CARTAS
+          </div>
+          <!-- Rodapé Interno com Título do Booster -->
+          <div style="position:absolute; left:0; right:0; bottom:0; background:linear-gradient(0deg, rgba(4,8,18,0.96) 0%, rgba(4,8,18,0.78) 58%, transparent 100%); padding:14px 6px 6px; text-align:center;">
+            <span style="font-family:var(--font-display); font-weight:800; font-size:${
+              wPx >= 130 ? '9.5px' : '8px'
+            }; line-height:1.2; color:#fff3c2; text-shadow:0 1px 3px #000; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+              ${pack?.name || 'BOOSTER OFICIAL'}
+            </span>
+          </div>
+        </div>
+
+        <!-- Selo Metálico Frisado Inferior do Booster -->
+        <div style="width:100%; height:${crimpH}px; background:repeating-linear-gradient(90deg, #b88928 0px, #fff3c2 2.5px, #7d5b19 5px); border-top:1.5px solid #523707; flex-shrink:0; position:relative; z-index:3;"></div>
+      </div>
+    `;
+  }
+
+  protected resolveCard(nameOrId: string): any {
+    const pool = [...this.customTemplates, ...(CARD_TEMPLATES as any[])];
+    const resolved = resolveMatrixOrGameCard(nameOrId, pool);
+    if (resolved) return resolved;
+    const clean = String(nameOrId || '').toLowerCase().trim();
+    const match = pool.find(
+      (c: any) =>
+        c &&
+        (String(c.name || '').toLowerCase().trim() === clean ||
+          String(c.id || '').toLowerCase().trim() === clean ||
+          String(c.name || '').toLowerCase().includes(clean))
     );
+    return match || pool[0];
   }
 
-  private getOwned(): { cards: string[]; decks: string[]; artifacts: string[] } {
-    try {
-      const raw = localStorage.getItem('store_owned');
-      if (raw) {
-        const o = JSON.parse(raw);
-        return { cards: o.cards || [], decks: o.decks || [], artifacts: o.artifacts || [] };
-      }
-    } catch {}
-    return { cards: [], decks: [], artifacts: [] };
-  }
-
-  private saveOwned(o: { cards: string[]; decks: string[]; artifacts: string[] }) {
-    try { localStorage.setItem('store_owned', JSON.stringify(o)); } catch {}
-  }
-
-  private resolveArtifact(id: string): any {
-    return (SKILL_POOL as any[]).find(s => s.id === id) || null;
-  }
-
-  private dayNumber(): number {
-    return Math.floor(Date.now() / 86400000);
-  }
-
-  private dailyItems(): any[] {
-    const pool = this.data.dailyPool;
-    if (pool.length === 0) return [];
-    const off = this.dayNumber() % pool.length;
-    const rotated = pool.map((_: any, i: number) => pool[(i + off) % pool.length]);
-    const out: any[] = [];
-    for (let k = 0; k < 18; k++) out.push(rotated[k % rotated.length]);
-    return out.slice(this.dailyPage * 6, this.dailyPage * 6 + 6);
-  }
-
-  private buyBtn(kind: string, id: string, owned: boolean, price: string = ''): string {
-    if (owned) {
-      return `<button class="store-buy" disabled style="opacity:0.55; cursor:default; padding:8px 10px; border-radius:12px; border:3px solid #0e3a1a; background:linear-gradient(180deg, #3f7a4d, #24522f); color:#d8ffe2; font-weight:950; font-size:0.6rem; letter-spacing:1px; width:100%;">${t('store2.owned')}</button>`;
+  protected renderCardSvgThumb(cardObj: any): string {
+    if (!cardObj) {
+      return `<div class="wire-slot" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:9px;"><span>CARTA</span></div>`;
     }
-    return `<button class="store-buy" data-kind="${kind}" data-id="${this.esc(id)}" style="padding:8px 10px; border-radius:12px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:0.6rem; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.5), 0 0 14px rgba(150,255,70,0.4), inset 0 2px 0 rgba(255,255,255,0.5); position:relative; overflow:hidden; width:100%;">${t('store2.buy')}${price ? ' · ' + price : ''}</button>`;
-  }
-
-  private esc(s: string): string {
-    return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  }
-
-  private ghostCell(): string {
-    return `<div style="aspect-ratio:3/4; border:2px dashed rgba(255,255,255,0.25); border-radius:14px; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,0.35); font-size:1.4rem;">+</div>`;
-  }
-
-  private ghostRow(): string {
-    return `<div style="display:flex; align-items:center; justify-content:center; border:2px dashed rgba(255,255,255,0.25); border-radius:12px; padding:16px; color:rgba(255,255,255,0.4); font-size:0.6rem; letter-spacing:2px; font-weight:900;">+ ${t('store2.empty')}</div>`;
-  }
-
-  private secTitle(text: string, extra: string = ''): string {
-    return `
-      <div style="display:flex; align-items:center; gap:10px; margin:22px 16px 10px 16px;">
-        <div style="flex:1; height:2px; background:linear-gradient(90deg, transparent, rgba(212,175,55,0.6));"></div>
-        <div style="font-weight:950; letter-spacing:3px; font-size:0.8rem; color:#ffd76a; text-shadow:-1px -1px 0 #2a1a00, 1px -1px 0 #2a1a00, -1px 1px 0 #2a1a00, 1px 1px 0 #2a1a00, 0 0 14px rgba(212,175,55,0.4); white-space:nowrap;">${this.esc(text)}${extra}</div>
-        <div style="flex:1; height:2px; background:linear-gradient(90deg, rgba(212,175,55,0.6), transparent);"></div>
-      </div>`;
-  }
-
-  private cardCell(offer: any, currency: string, owned: boolean, key: string): string {
-    const c = this.resolveCard(offer.card) || { name: offer.card, image: '' };
-    return `
-      <div class="store-sec" style="background:linear-gradient(180deg, rgba(58,42,21,0.9), rgba(20,13,6,0.9)); border:3px solid #0e0903; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
-        <div class="store-view-card" data-view-name="${this.esc(offer.card)}" data-view-cur="${currency}" style="aspect-ratio:680/990; position:relative; cursor:pointer; overflow:hidden; border-radius:10px;">
-          ${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}
-          ${owned ? `<div style="position:absolute; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; font-size:2.4rem;">✓</div>` : ''}
-        </div>
-        <div style="padding:7px 6px 8px 6px; display:flex; flex-direction:column; gap:5px; align-items:stretch; text-align:center;">
-          <div style="font-size:0.58rem; font-weight:950; letter-spacing:0.5px; color:#ffe9a8; text-shadow:0 2px 0 #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this.esc(offer.card).toUpperCase()}</div>
-          <div>${this.buyBtn('card:' + currency, key, owned, `${currency === 'gems' ? '💎' : '🪙'} ${offer.price}`)}</div>
-        </div>
-      </div>`;
-  }
-
-  private bannerHtml(): string {
-    const d = this.data;
-    const inner = d.banners.length > 0 ? `
-        <div id="store-banner-track" data-banner-track="top" style="display:flex; transition:transform 0.6s cubic-bezier(0.4,0,0.2,1);">
-          ${d.banners.map((u: string) => `
-            <div style="min-width:100%; aspect-ratio:1080/380; background:url('${u}') center/cover, #111;"></div>`).join('')}
-        </div>
-        ${d.banners.length > 1 ? `
-        <div id="store-banner-dots" style="position:absolute; bottom:8px; left:0; right:0; display:flex; gap:6px; justify-content:center;">
-          ${d.banners.map((_: string, i: number) => `
-            <span class="store-dot" data-i="${i}" style="width:8px; height:8px; border-radius:50%; background:${i === 0 ? '#ffd700' : 'rgba(255,255,255,0.35)'}; cursor:pointer; box-shadow:0 1px 3px #000;"></span>`).join('')}
-        </div>` : ''}` : `
-        <div style="aspect-ratio:1080/380; display:flex; align-items:center; justify-content:center; gap:8px; border-top:2px dashed rgba(255,255,255,0.25); border-bottom:2px dashed rgba(255,255,255,0.25); color:rgba(255,255,255,0.4); font-size:0.6rem; letter-spacing:2px; font-weight:900;">+ BANNERS · ${t('store2.empty')}</div>`;
-    return `
-      <div class="store-sec" style="margin:12px 0 0 0; border-radius:0; overflow:hidden; border-top:3px solid #0e0903; border-bottom:3px solid #0e0903; box-shadow:0 5px 0 rgba(0,0,0,0.5), 0 0 20px rgba(212,175,55,0.25); position:relative;">
-        ${inner}
-      </div>`;
-  }
-
-
-
-  private dailyGridHtml(owned: { cards: string[]; decks: string[] }): string {
-    if (this.data.dailyPool.length === 0) {
-      return Array.from({ length: 6 }).map(() => this.ghostCell()).join('');
-    }
-    return this.dailyItems().map(o =>
-      this.cardCell(o, 'gold', owned.cards.includes(o.card), 'daily:' + o.card)).join('');
-  }
-
-  private rareTilesHtml(owned: { cards: string[]; decks: string[] }): string[] {
-    if (this.data.rare.length === 0) {
-      return Array.from({ length: this.rarePageSize }).map(() => this.ghostCell());
-    }
-    return this.data.rare.map((o: any) =>
-      this.cardCell(o, 'gems', owned.cards.includes(o.card), 'rare:' + o.card));
-  }
-
-  private rarePages(): number {
-    return Math.max(1, Math.ceil(this.data.rare.length / this.rarePageSize));
-  }
-
-  private rareSlice(owned: { cards: string[]; decks: string[] }): string {
-    const tiles = this.rareTilesHtml(owned);
-    return tiles.slice(this.rarePage * this.rarePageSize, this.rarePage * this.rarePageSize + this.rarePageSize).join('');
-  }
-
-  private getSectionOrder(): string[] {
-    if (Array.isArray(this.data.sectionOrder)) {
-      return [...this.data.sectionOrder];
-    }
-    return ['banners', 'daily', 'rare', 'decks', 'packs', 'packs_split', 'coins', 'gems', 'artifacts'];
-  }
-
-  private isSectionVisible(secKey: string): boolean {
-    if (this.data.sectionVisibility && typeof this.data.sectionVisibility[secKey] === 'boolean') {
-      return this.data.sectionVisibility[secKey];
-    }
-    return true;
-  }
-
-  private deckSectionsHtml(owned: { cards: string[]; decks: string[] }): string {
-    if (!this.data.decks || this.data.decks.length === 0) return this.ghostRow();
-    return this.renderDeckStandaloneHtml(owned);
-  }
-
-  // SECÇÕES INDEPENDENTES/SEPARADAS (CADA DECK EM SUA PRÓPRIA SECÇÃO DEDICADA)
-  private renderDeckStandaloneHtml(owned: { cards: string[]; decks: string[] }): string {
-    return this.data.decks.map((deck: any) => {
-      const isOwned = owned.decks.includes(deck.id);
-      const cards = deck.cards || [];
-      return `
-        <div class="store-sec" style="display:flex; flex-direction:column; gap:8px; background:linear-gradient(180deg, rgba(58,42,21,0.92), rgba(20,13,6,0.92)); border:3px solid #0e0903; border-radius:14px; padding:12px 14px; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.2);">
-          <!-- Cabeçalho do Deck (clicável para abrir visor) -->
-          <div class="store-view-deck" data-deck="${this.esc(deck.id)}" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="Toque para ver cartas do deck em tela cheia">
-            <div style="font-size:0.8rem; font-weight:950; color:#ffd76a; letter-spacing:1px; text-shadow:0 2px 0 #000;">
-              ${this.esc(deck.name).toUpperCase()}
-            </div>
-            <div style="font-size:0.6rem; color:#7ee7ff; font-weight:900;">
-              ${cards.length} ${t('store2.cards')} 🔍
-            </div>
-          </div>
-
-          <div style="font-size:0.62rem; color:rgba(255,255,255,0.7); line-height:1.35;">${this.esc(deck.desc || '')}</div>
-
-          <!-- Trilho Deslizável com Todas as Cartas do Deck (Deslize para o lado / Toque para ver) -->
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-size:0.56rem; font-weight:900; color:#ffd700; letter-spacing:0.5px;">${t('st.deckCards')}:</span>
-              <span class="store-view-deck" data-deck="${this.esc(deck.id)}" style="font-size:0.56rem; color:#7ee7ff; cursor:pointer; font-weight:900;">🔍 ${t('st.viewAll')}</span>
-            </div>
-            <div style="position:relative; width:100%; display:flex; align-items:center;">
-              <button class="store-strip-scroll-left" data-deck="${this.esc(deck.id)}" style="position:absolute; left:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">‹</button>
-              <div class="store-deck-cards-strip" id="deck-strip-${this.esc(deck.id)}" style="flex:1; display:flex; gap:8px; overflow-x:auto; padding:6px 18px; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x; scroll-behavior:smooth;">
-                ${cards.map((n: string, ci: number) => {
-                  const c = this.resolveCard(n) || { name: n, image: '' };
-                  return `
-                    <div class="store-view-deck-card" data-deck="${this.esc(deck.id)}" data-card-idx="${ci}" style="width:62px; height:90px; border-radius:6px; overflow:hidden; flex-shrink:0; cursor:pointer; position:relative; box-shadow:0 4px 10px rgba(0,0,0,0.6); transition:transform 0.12s ease;" title="${this.esc(n)}">
-                      ${renderMatrixCardSVG(c, { mode: 'thumb', animateChroma: false })}
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-              <button class="store-strip-scroll-right" data-deck="${this.esc(deck.id)}" style="position:absolute; right:-4px; z-index:3; width:22px; height:36px; border-radius:6px; border:1px solid rgba(255,215,0,0.5); background:rgba(0,0,0,0.85); color:#ffd700; font-size:0.85rem; font-weight:900; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px #000;">›</button>
-            </div>
-          </div>
-
-          <div style="margin-top:2px;">
-            ${this.buyBtn('deck', deck.id, isOwned, `${deck.currency === 'gems' ? '💎' : '🪙'} ${deck.price}`)}
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  private readonly themeGradients: Record<string, { bg: string; border: string; glow: string; tag: string; icon: string }> = {
-    charizard: {
-      bg: 'linear-gradient(135deg, rgba(60, 20, 10, 0.95), rgba(20, 8, 4, 0.95))',
-      border: '#f97316',
-      glow: 'rgba(249, 115, 22, 0.45)',
-      tag: 'FOGO / OFENSIVO',
-      icon: '🔥'
-    },
-    pikachu: {
-      bg: 'linear-gradient(135deg, rgba(50, 40, 10, 0.95), rgba(20, 16, 4, 0.95))',
-      border: '#eab308',
-      glow: 'rgba(234, 179, 8, 0.45)',
-      tag: 'RAIO / VELOZ',
-      icon: '⚡'
-    },
-    rayquaza: {
-      bg: 'linear-gradient(135deg, rgba(10, 45, 25, 0.95), rgba(4, 20, 12, 0.95))',
-      border: '#22c55e',
-      glow: 'rgba(34, 197, 94, 0.45)',
-      tag: 'NATUREZA / ÉPICO',
-      icon: '🌿'
-    },
-    mewtwo: {
-      bg: 'linear-gradient(135deg, rgba(40, 15, 60, 0.95), rgba(15, 6, 25, 0.95))',
-      border: '#a855f7',
-      glow: 'rgba(168, 85, 247, 0.45)',
-      tag: 'ARCANO / MÍSTICO',
-      icon: '🔮'
-    },
-    winter: {
-      bg: 'linear-gradient(135deg, rgba(15, 35, 65, 0.95), rgba(6, 15, 30, 0.95))',
-      border: '#38bdf8',
-      glow: 'rgba(56, 189, 248, 0.45)',
-      tag: 'LENDAS DO INVERNO',
-      icon: '❄️'
-    }
-  };
-
-  private renderBoosterPouchHtml(pack: any, isMain: boolean = true, customWidth?: string): string {
-    const styleInfo = this.themeGradients[pack.theme || 'charizard'] || this.themeGradients.charizard;
-    const frontImg = pack.customFront;
-    const w = customWidth || (isMain ? '185px' : '140px');
-    const borderColor = '#ff7a00';
-    const borderGlow = 'rgba(255, 122, 0, 0.45)';
-
-    return `
-      <div class="store-booster-pouch" style="aspect-ratio:1/1.78; width:${w}; border-radius:2px; position:relative; overflow:hidden; background:#0c0d12; border:2px solid ${borderColor}; box-shadow:${isMain ? `0 14px 40px rgba(0,0,0,0.9), 0 0 24px ${borderGlow}` : '0 6px 18px rgba(0,0,0,0.7)'}; display:flex; flex-direction:column; user-select:none; flex-shrink:0;">
-        ${frontImg ? `
-          <div style="width:100%; height:100%; position:relative; overflow:hidden; border-radius:0px; background:#000;">
-            <img src="${frontImg}" alt="${this.esc(pack.name)}" loading="lazy" decoding="async" style="width:100%; height:100%; object-fit:cover; display:block; border-radius:0px;" />
-            <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.02) 40%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.3) 100%);"></div>
-          </div>
-        ` : `
-          <!-- Crimp Top -->
-          <div style="height:16px; width:100%; background:repeating-linear-gradient(90deg, #151515 0px, #151515 2px, #3c3c3c 2px, #3c3c3c 4px); border-bottom:1.5px solid rgba(255,255,255,0.2); z-index:3; flex-shrink:0;"></div>
-
-          <!-- Corpo do Pouch -->
-          <div style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; background:${styleInfo.bg};">
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:10px; width:100%; height:100%;">
-              <div style="font-size:${isMain ? '3rem' : '2rem'}; filter:drop-shadow(0 4px 10px rgba(0,0,0,0.8));">${styleInfo.icon}</div>
-              <div style="font-size:0.65rem; font-weight:950; letter-spacing:2px; color:#ffd700; text-shadow:0 2px 4px #000; margin-top:6px;">BOOSTER</div>
-              <div style="font-size:0.55rem; color:rgba(255,255,255,0.7); font-weight:700;">${styleInfo.tag}</div>
-            </div>
-            <div style="position:absolute; inset:0; pointer-events:none; background:linear-gradient(135deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.06) 38%, rgba(0,0,0,0) 48%, rgba(0,0,0,0.35) 100%);"></div>
-          </div>
-
-          <!-- Crimp Bottom -->
-          <div style="height:16px; width:100%; background:repeating-linear-gradient(90deg, #151515 0px, #151515 2px, #3c3c3c 2px, #3c3c3c 4px); border-top:1.5px solid rgba(255,255,255,0.2); z-index:3; flex-shrink:0;"></div>
-        `}
-      </div>
-    `;
-  }
-
-  private renderCircularPackSelectors(packs: any[], activeIdx: number): string {
-    return `
-      <div style="display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap;">
-        ${packs.map((p, i) => {
-          const isActive = i === activeIdx;
-          const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
-          return `
-            <button class="store-booster-circle-btn" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
-              ${p.customFront ? `
-                <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-              ` : `
-                <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-              `}
-            </button>
-          `;
-        }).join('')}
-      </div>
-    `;
-  }
-
-  private renderBoosterRatesHtml(pack: any, compact: boolean = false): string {
-    if (pack.mode === 'special') {
-      return `
-        <span style="background:rgba(168,85,247,0.2); border:1px solid rgba(168,85,247,0.5); border-radius:4px; padding:${compact ? '2px 6px' : '3px 10px'}; font-size:${compact ? '0.55rem' : '0.62rem'}; color:#d8b4fe; font-weight:900; letter-spacing:0.5px;">
-          ⭐ ${t('st.specialPool')} (${(pack.fixedCards || []).length} ${t('store2.cards')})
-        </span>
-      `;
-    }
-    const rates = pack.rates || { common: 70, rare: 25, legendary: 5 };
-    if (compact) {
-      return `
-        <div style="display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-start; align-items:center;">
-          <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
-          <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
-          <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
-          <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:1.5px 5px; font-size:0.52rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 9}</span>
-        </div>
-      `;
-    }
-    return `
-      <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center; align-items:center;">
-        <span style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#f1f5f9; font-weight:800;">⬜ ${rates.common ?? 70}%</span>
-        <span style="background:rgba(0,240,255,0.12); border:1px solid rgba(0,240,255,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#38bdf8; font-weight:800;">🔷 ${rates.rare ?? 25}%</span>
-        <span style="background:rgba(255,170,0,0.15); border:1px solid rgba(255,170,0,0.4); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#fbbf24; font-weight:800;">⭐ ${rates.legendary ?? 5}%</span>
-        <span style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.2); border-radius:4px; padding:2px 8px; font-size:0.6rem; color:#94a3b8; font-weight:900;">📦 ${pack.cardsCount || 9} ${t('st.cardsCount')}</span>
-      </div>
-    `;
-  }
-
-  private renderBoosterActionBarHtml(activePack: any): string {
-    const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
-    const unitPrice = Number(activePack.price) || 0;
-    const totalPrice = unitPrice * this.boosterQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
-
-    return `
-      <div style="display:flex; align-items:center; justify-content:center; gap:10px; width:100%; max-width:320px; margin:14px auto 0 auto; box-sizing:border-box;">
-        <!-- Botão Quantidade Circular Gamer -->
-        <button id="btn-booster-qty" title="Alternar quantidade" style="width:44px; height:44px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.85rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 12px rgba(255,215,0,0.3); flex-shrink:0; transition:transform 0.1s;">
-          x${this.boosterQty}
-        </button>
-
-        <!-- Cápsula Gamer de Compra / Abertura -->
-        <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:44px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.75rem; letter-spacing:1.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 0 16px rgba(0,180,216,0.4), inset 0 1px 0 rgba(255,255,255,0.3); white-space:nowrap; padding:0 16px;">
-          <span>${btnText}</span>
-        </button>
-      </div>
-    `;
-  }
-
-  // 1: MODO 1: CARROSSEL HORIZONTAL (CONFORME WIREFRAME DA IMAGEM 2)
-  private renderBoosterCarouselModeHtml(packs: any[], activePack: any, activeIdx: number): string {
-    const prevIdx = (activeIdx - 1 + packs.length) % packs.length;
-    const nextIdx = (activeIdx + 1) % packs.length;
-    const prevPack = packs[prevIdx];
-    const nextPack = packs[nextIdx];
-
-    return `
-      <div style="display:flex; flex-direction:column; align-items:center; width:100%; padding:0 0 16px 0; box-sizing:border-box;">
-        <!-- 1. ACIMA: 3 Círculos seletores dos packs (● ● ●) alinhados ao centro -->
-        ${this.renderCircularPackSelectors(packs, activeIdx)}
-
-        <!-- 2. CENTRO: Carrossel com 3 Retângulos Verticais Rígidos (Esquerdo, Centro, Direito) -->
-        <div style="width:100%; position:relative; overflow:hidden; display:flex; justify-content:center; align-items:center; margin:14px 0; min-height:335px;">
-          ${packs.length > 1 ? `
-            <!-- Booster Anterior (Peeking Esquerdo) -->
-            <div class="store-booster-circle-btn" data-idx="${prevIdx}" title="${this.esc(prevPack.name)}" style="position:absolute; left:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:all 0.2s ease;">
-              ${this.renderBoosterPouchHtml(prevPack, false, '140px')}
-            </div>
-          ` : ''}
-
-          <!-- Booster Central Ativo (Alongado, Quinas Rígidas) -->
-          <div style="z-index:3; transform:scale(1); transition:all 0.2s ease; box-shadow:0 0 30px rgba(0,0,0,0.85);">
-            ${this.renderBoosterPouchHtml(activePack, true, '185px')}
-          </div>
-
-          ${packs.length > 1 ? `
-            <!-- Booster Próximo (Peeking Direito) -->
-            <div class="store-booster-circle-btn" data-idx="${nextIdx}" title="${this.esc(nextPack.name)}" style="position:absolute; right:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:all 0.2s ease;">
-              ${this.renderBoosterPouchHtml(nextPack, false, '140px')}
-            </div>
-          ` : ''}
-        </div>
-
-        <!-- 3. ABAIXO: Título, Taxas e Descrição em texto limpo (sem caixa de fundo) -->
-        <div style="display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; max-width:320px; width:100%; padding:0 8px;">
-          <div style="font-size:1.15rem; font-weight:950; letter-spacing:1.5px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4);">
-            ${this.esc(activePack.name).toUpperCase()}
-          </div>
-          ${this.renderBoosterRatesHtml(activePack)}
-          <div style="font-size:0.72rem; color:rgba(255,255,255,0.7); line-height:1.45; margin-top:2px;">
-            ${this.esc(activePack.desc || '')}
-          </div>
-        </div>
-
-        <!-- 4. ABAIXO: Botão circular quantidade à esquerda + Cápsula de compra à direita -->
-        ${this.renderBoosterActionBarHtml(activePack)}
-      </div>
-    `;
-  }
-
-  // 2: MODO 2: SPLIT LATERAL (CONFORME WIREFRAME DO SEGUNDO MODO)
-  private renderBoosterSplitModeHtml(packs: any[], activePack: any, activeIdx: number): string {
-    const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
-    const unitPrice = Number(activePack.price) || 0;
-    const totalPrice = unitPrice * this.boosterQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
-
-    return `
-      <div style="display:flex; flex-direction:row; align-items:center; justify-content:center; gap:14px; width:100%; padding:4px 0 16px 0; box-sizing:border-box;">
-        <!-- Lado Esquerdo: Booster Alongado com Quinas Rígidas -->
-        <div style="flex-shrink:0;">
-          ${this.renderBoosterPouchHtml(activePack, true, '140px')}
-        </div>
-
-        <!-- Lado Direito: Círculos no topo, Texto no meio, Botões embaixo -->
-        <div style="flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;">
-          <!-- 1. ACIMA: 3 Seletores circulares de packs -->
-          <div style="display:flex; align-items:center; gap:8px;">
-            ${this.renderCircularPackSelectors(packs, activeIdx)}
-          </div>
-
-          <!-- 2. MEIO: Título e Descrição (texto limpo, sem caixa de fundo) -->
-          <div style="display:flex; flex-direction:column; gap:4px;">
-            <div style="font-size:1.05rem; font-weight:950; letter-spacing:1px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4); line-height:1.2;">
-              ${this.esc(activePack.name).toUpperCase()}
-            </div>
-            ${this.renderBoosterRatesHtml(activePack)}
-            <div style="font-size:0.68rem; color:rgba(255,255,255,0.7); line-height:1.35; margin-top:2px;">
-              ${this.esc(activePack.desc || '')}
-            </div>
-          </div>
-
-          <!-- 3. EMBAIXO: Botão circular quantidade à esquerda + Cápsula à direita -->
-          <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
-            <button id="btn-booster-qty" title="Alternar quantidade" style="width:40px; height:40px; border-radius:50%; border:2px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.8rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(255,215,0,0.3); flex-shrink:0;">
-              x${this.boosterQty}
-            </button>
-
-            <button id="btn-booster-buy-capsule" data-pack-id="${this.esc(activePack.id)}" style="flex:1; height:40px; border-radius:999px; border:2px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.7rem; letter-spacing:1px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; box-shadow:0 0 14px rgba(0,180,216,0.4); white-space:nowrap; padding:0 12px;">
-              <span>${btnText}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // =========================================================================
-  // MÓDULO 1: CARROSSEL HORIZONTAL DE BOOSTERS (COM ANIMAÇÃO ELEGANTE DE DESLIZAR)
-  // =========================================================================
-  private packBoosterCarouselSectionHtml(): string {
-    const allPacks = this.data.packs || [];
-    const packs = allPacks.filter((p: any) => p.published !== false && p.active !== false);
-    if (packs.length === 0) {
-      return `
-        <div style="opacity:0.6; font-size:0.75rem; text-align:center; padding:24px; color:#aaa; border:1px dashed rgba(255,255,255,0.15); border-radius:10px; margin:0 16px;">
-          Nenhum booster publicado na vitrine no momento.
-        </div>
-      `;
-    }
-
-    if (this.boosterActiveIdx < 0 || this.boosterActiveIdx >= packs.length) {
-      this.boosterActiveIdx = 0;
-    }
-    const activePack = packs[this.boosterActiveIdx] || packs[0];
-    const prevIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
-    const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
-    const prevPack = packs[prevIdx];
-    const nextPack = packs[nextIdx];
-
-    return `
-      <!-- CABEÇALHO LIMPO DA SECÇÃO MÓDULO 1 -->
-      <div style="margin:20px 16px 8px 16px;">
-        ${this.secTitle(this.title('packs', 'PACOTES & BOOSTERS (CARROSSEL)'))}
-      </div>
-
-      <div id="store-booster-viewport" style="display:flex; flex-direction:column; align-items:center; width:100%; padding:0 0 16px 0; box-sizing:border-box;">
-        <!-- 1. ACIMA: 3 Círculos seletores dos packs (● ● ●) alinhados ao centro -->
-        <div style="display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-          ${packs.map((p: any, i: number) => {
-            const isActive = i === this.boosterActiveIdx;
-            const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
-            return `
-              <button class="store-carousel-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:38px; height:38px; border-radius:50%; border:${isActive ? '2.5px solid #ffd700' : '1.5px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(255,215,0,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.15)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 14px rgba(255,215,0,0.8)' : '0 2px 6px rgba(0,0,0,0.4)'}; transition:all 0.15s ease;">
-                ${p.customFront ? `
-                  <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-                ` : `
-                  <span style="font-size:1.1rem; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-                `}
-              </button>
-            `;
-          }).join('')}
-        </div>
-
-        <!-- 2. CENTRO: Pista do Carrossel com deslize elegante (Esquerdo, Centro, Direito) -->
-        <div id="booster-carousel-track" style="width:100%; position:relative; overflow:hidden; display:flex; justify-content:center; align-items:center; margin:8px 0; min-height:335px; touch-action:pan-y;">
-          ${packs.length > 1 ? `
-            <!-- Booster Anterior (Peeking Esquerdo) -->
-            <div id="booster-peek-left" title="${this.esc(prevPack.name)}" style="position:absolute; left:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:opacity 0.2s ease;">
-              ${this.renderBoosterPouchHtml(prevPack, false, '140px')}
-            </div>
-          ` : ''}
-
-          <!-- Booster Central Ativo (Alongado, Quinas Rígidas) -->
-          <div id="booster-center-card" style="z-index:3; transform:scale(1); box-shadow:0 0 32px rgba(0,0,0,0.9);">
-            ${this.renderBoosterPouchHtml(activePack, true, '185px')}
-          </div>
-
-          ${packs.length > 1 ? `
-            <!-- Booster Próximo (Peeking Direito) -->
-            <div id="booster-peek-right" title="${this.esc(nextPack.name)}" style="position:absolute; right:-30px; top:50%; transform:translateY(-50%) scale(0.9); opacity:0.35; filter:brightness(0.4); cursor:pointer; z-index:1; transition:opacity 0.2s ease;">
-              ${this.renderBoosterPouchHtml(nextPack, false, '140px')}
-            </div>
-          ` : ''}
-        </div>
-
-        <!-- 3. ABAIXO: Título, Taxas e Descrição em texto limpo com fade -->
-        <div id="booster-carousel-info" style="display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; max-width:320px; width:100%; padding:0 8px;">
-          <div style="font-size:1.15rem; font-weight:950; letter-spacing:1.5px; color:#ffd76a; text-shadow:0 0 10px rgba(255,215,0,0.4);">
-            ${this.esc(activePack.name).toUpperCase()}
-          </div>
-          ${this.renderBoosterRatesHtml(activePack)}
-          <div style="font-size:0.72rem; color:rgba(255,255,255,0.7); line-height:1.45; margin-top:2px;">
-            ${this.esc(activePack.desc || '')}
-          </div>
-        </div>
-
-        <!-- 4. ABAIXO: Botão circular quantidade à esquerda + Cápsula de compra à direita -->
-        ${this.renderBoosterActionBarHtml(activePack)}
-      </div>
-    `;
-  }
-
-  private switchBoosterCarousel(container: HTMLElement, targetIdx: number, direction: 'left' | 'right' | 'auto' = 'auto') {
-    const packs = (this.data.packs || []).filter((p: any) => p.published !== false && p.active !== false);
-    if (packs.length <= 1) return;
-    if (targetIdx < 0) targetIdx = packs.length - 1;
-    if (targetIdx >= packs.length) targetIdx = 0;
-    if (targetIdx === this.boosterActiveIdx) return;
-
-    const wrap = container.querySelector('#store-boosters-wrapper');
-    if (!wrap) return;
-
-    const track = wrap.querySelector('#booster-carousel-track') as HTMLElement | null;
-    const info = wrap.querySelector('#booster-carousel-info') as HTMLElement | null;
-
-    let dir = 1;
-    if (direction === 'left') dir = -1;
-    else if (direction === 'right') dir = 1;
-    else dir = targetIdx > this.boosterActiveIdx ? 1 : -1;
-
-    if (track) {
-      // Elegante deslizar saindo para o lado com GSAP
-      gsap.to(track, {
-        x: -dir * 110,
-        opacity: 0.15,
-        scale: 0.94,
-        duration: 0.22,
-        ease: 'power2.in',
-        onComplete: () => {
-          this.boosterActiveIdx = targetIdx;
-          this.updateBoosterCarousel(container);
-
-          const newTrack = container.querySelector('#store-boosters-wrapper #booster-carousel-track') as HTMLElement | null;
-          const newInfo = container.querySelector('#store-boosters-wrapper #booster-carousel-info') as HTMLElement | null;
-          if (newTrack) {
-            gsap.fromTo(newTrack,
-              { x: dir * 110, opacity: 0.15, scale: 0.94 },
-              { x: 0, opacity: 1, scale: 1, duration: 0.35, ease: 'power2.out' }
-            );
-          }
-          if (newInfo) {
-            gsap.fromTo(newInfo,
-              { y: 12, opacity: 0 },
-              { y: 0, opacity: 1, duration: 0.28, ease: 'power2.out' }
-            );
-          }
-        }
-      });
-    } else {
-      this.boosterActiveIdx = targetIdx;
-      this.updateBoosterCarousel(container);
-    }
-  }
-
-  private updateBoosterCarousel(container: HTMLElement) {
-    const wrap = container.querySelector('#store-boosters-wrapper');
-    if (!wrap) return;
-    wrap.innerHTML = this.packBoosterCarouselSectionHtml();
-    this.bindBoosterCarousel(container);
-  }
-
-  private bindBoosterCarousel(container: HTMLElement) {
-    const wrap = container.querySelector('#store-boosters-wrapper');
-    if (!wrap) return;
-    const packs = (this.data.packs || []).filter((p: any) => p.published !== false && p.active !== false);
-
-    // Seletores circulares
-    wrap.querySelectorAll('.store-carousel-pack-circle').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = parseInt((btn as HTMLElement).dataset.idx || '0');
-        if (!isNaN(idx)) {
-          this.switchBoosterCarousel(container, idx, 'auto');
-        }
-      });
-    });
-
-    // Peeking Esquerdo (Desliza para trás)
-    wrap.querySelector('#booster-peek-left')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const prevIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
-      this.switchBoosterCarousel(container, prevIdx, 'left');
-    });
-
-    // Peeking Direito (Desliza para frente)
-    wrap.querySelector('#booster-peek-right')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
-      this.switchBoosterCarousel(container, nextIdx, 'right');
-    });
-
-    // Gesto de Swipe Touch no Carrossel para Celular
-    const track = wrap.querySelector('#booster-carousel-track') as HTMLElement | null;
-    if (track) {
-      let touchStartX = 0;
-      let touchStartY = 0;
-      track.addEventListener('touchstart', (e: TouchEvent) => {
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-      }, { passive: true });
-
-      track.addEventListener('touchend', (e: TouchEvent) => {
-        const dx = e.changedTouches[0].clientX - touchStartX;
-        const dy = e.changedTouches[0].clientY - touchStartY;
-        if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy)) {
-          if (dx < 0) {
-            // Swipe esquerda -> próximo
-            const nextIdx = (this.boosterActiveIdx + 1) % packs.length;
-            this.switchBoosterCarousel(container, nextIdx, 'right');
-          } else {
-            // Swipe direita -> anterior
-            const prevIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
-            this.switchBoosterCarousel(container, prevIdx, 'left');
-          }
-        }
-      }, { passive: true });
-    }
-
-    // Botão Quantidade Circular (cicla: 1 -> 3 -> 5 -> 10 -> 1)
-    wrap.querySelector('#btn-booster-qty')?.addEventListener('click', () => {
-      const opts = [1, 3, 5, 10];
-      const curIdx = opts.indexOf(this.boosterQty);
-      this.boosterQty = opts[(curIdx + 1) % opts.length];
-      this.updateBoosterCarousel(container);
-    });
-
-    // Cápsula de Compra / Abertura em 3D
-    wrap.querySelector('#btn-booster-buy-capsule')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const packId = (wrap.querySelector('#btn-booster-buy-capsule') as HTMLElement)?.dataset.packId;
-      if (!packId) return;
-      this.openBoosterModal(container, packId, this.boosterQty);
-    });
-  }
-
-  // =========================================================================
-  // MÓDULO 2: SPLIT LATERAL DE BOOSTERS (SEÇÃO DEDICADA INDEPENDENTE)
-  // =========================================================================
-  private packBoosterSplitSectionHtml(): string {
-    const allPacks = this.data.packs || [];
-    const packs = allPacks.filter((p: any) => p.published !== false && p.active !== false);
-    if (packs.length === 0) return '';
-
-    if (this.boosterSplitIdx < 0 || this.boosterSplitIdx >= packs.length) {
-      this.boosterSplitIdx = 0;
-    }
-    const activePack = packs[this.boosterSplitIdx] || packs[0];
-    const curIcon = activePack.currency === 'gems' ? '💎' : '🪙';
-    const unitPrice = Number(activePack.price) || 0;
-    const totalPrice = unitPrice * this.boosterSplitQty;
-    const btnText = totalPrice === 0 ? 'COMPRAR POR $0' : `COMPRAR POR ${curIcon} ${totalPrice}`;
-
-    return `
-      <!-- CABEÇALHO DA SECÇÃO MÓDULO 2 (SPLIT) -->
-      <div style="margin:20px 10px 6px 10px;">
-        ${this.secTitle(this.title('packs_split', 'DESTAQUES ESPECIAIS (SPLIT)'))}
-      </div>
-
-      <div id="store-booster-split-body" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:10px; width:100%; max-width:100%; padding:4px 10px 14px 10px; box-sizing:border-box; overflow-x:hidden;">
-        <!-- Lado Esquerdo: Booster Alongado Proporcional ao Mobile -->
-        <div id="booster-split-card-pouch" style="flex-shrink:0;">
-          ${this.renderBoosterPouchHtml(activePack, true, '110px')}
-        </div>
-
-        <!-- Lado Direito: Círculos no topo, Texto no meio, Botões embaixo -->
-        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; overflow:hidden;">
-          <!-- 1. ACIMA: Seletores circulares de packs -->
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-            ${packs.map((p: any, i: number) => {
-              const isActive = i === this.boosterSplitIdx;
-              const styleInfo = this.themeGradients[p.theme || 'charizard'] || this.themeGradients.charizard;
-              return `
-                <button class="store-split-pack-circle" data-idx="${i}" title="${this.esc(p.name)}" style="width:28px; height:28px; border-radius:50%; border:${isActive ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)'}; background:${isActive ? 'rgba(56,189,248,0.25)' : 'rgba(0,0,0,0.6)'}; cursor:pointer; padding:0; display:flex; align-items:center; justify-content:center; overflow:hidden; transform:${isActive ? 'scale(1.1)' : 'scale(1)'}; box-shadow:${isActive ? '0 0 10px rgba(56,189,248,0.7)' : '0 2px 4px rgba(0,0,0,0.4)'}; transition:all 0.15s ease; flex-shrink:0;">
-                  ${p.customFront ? `
-                    <img src="${thumbFor(p.customFront)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.customFront}'" style="width:100%; height:100%; object-fit:cover;" />
-                  ` : `
-                    <span style="font-size:0.85rem; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.8));">${styleInfo.icon}</span>
-                  `}
-                </button>
-              `;
-            }).join('')}
-          </div>
-
-          <!-- 2. MEIO: Título e Descrição (texto limpo, sem estourar laterais) -->
-          <div id="booster-split-info-area" style="display:flex; flex-direction:column; gap:3px; min-width:0; overflow:hidden;">
-            <div style="font-size:0.85rem; font-weight:950; letter-spacing:0.5px; color:#ffd76a; text-shadow:0 0 8px rgba(255,215,0,0.4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-              ${this.esc(activePack.name).toUpperCase()}
-            </div>
-            ${this.renderBoosterRatesHtml(activePack, true)}
-            <div style="font-size:0.6rem; color:rgba(255,255,255,0.7); line-height:1.25; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-overflow:ellipsis;">
-              ${this.esc(activePack.desc || '')}
-            </div>
-          </div>
-
-          <!-- 3. EMBAIXO: Botão circular quantidade + Cápsula de compra sem estourar tela -->
-          <div style="display:flex; align-items:center; gap:6px; margin-top:2px; width:100%; min-width:0;">
-            <button id="btn-booster-split-qty" title="Alternar quantidade" style="width:32px; height:32px; border-radius:50%; border:1.5px solid #ffd700; background:linear-gradient(180deg, #30220d, #140d04); color:#ffd700; font-size:0.75rem; font-weight:950; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px rgba(255,215,0,0.3); flex-shrink:0;">
-              x${this.boosterSplitQty}
-            </button>
-
-            <button id="btn-booster-split-buy" data-pack-id="${this.esc(activePack.id)}" style="flex:1; min-width:0; height:34px; border-radius:999px; border:1.5px solid #00f0ff; background:linear-gradient(180deg, #00b4d8 0%, #0077b6 100%); color:#ffffff; font-weight:950; font-size:0.65rem; letter-spacing:0.5px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; box-shadow:0 0 10px rgba(0,180,216,0.35); white-space:nowrap; padding:0 8px; overflow:hidden;">
-              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${btnText}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  private bindBoosterSplit(container: HTMLElement) {
-    const wrap = container.querySelector('#store-boosters-split-wrapper');
-    if (!wrap) return;
-
-    wrap.querySelectorAll('.store-split-pack-circle').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = parseInt((btn as HTMLElement).dataset.idx || '0');
-        if (!isNaN(idx) && idx !== this.boosterSplitIdx) {
-          const pouch = wrap.querySelector('#booster-split-card-pouch') as HTMLElement | null;
-          const info = wrap.querySelector('#booster-split-info-area') as HTMLElement | null;
-          if (pouch) {
-            gsap.to(pouch, { opacity: 0.2, scale: 0.95, duration: 0.15, onComplete: () => {
-              this.boosterSplitIdx = idx;
-              this.updateBoosterSplit(container);
-              const newPouch = container.querySelector('#store-boosters-split-wrapper #booster-split-card-pouch');
-              if (newPouch) gsap.fromTo(newPouch, { opacity: 0.2, scale: 0.95 }, { opacity: 1, scale: 1, duration: 0.25 });
-            }});
-          } else {
-            this.boosterSplitIdx = idx;
-            this.updateBoosterSplit(container);
-          }
-        }
-      });
-    });
-
-    wrap.querySelector('#btn-booster-split-qty')?.addEventListener('click', () => {
-      const opts = [1, 3, 5, 10];
-      const curIdx = opts.indexOf(this.boosterSplitQty);
-      this.boosterSplitQty = opts[(curIdx + 1) % opts.length];
-      this.updateBoosterSplit(container);
-    });
-
-    wrap.querySelector('#btn-booster-split-buy')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const packId = (wrap.querySelector('#btn-booster-split-buy') as HTMLElement)?.dataset.packId;
-      if (!packId) return;
-      this.openBoosterModal(container, packId, this.boosterSplitQty);
-    });
-  }
-
-  private updateBoosterSplit(container: HTMLElement) {
-    const wrap = container.querySelector('#store-boosters-split-wrapper');
-    if (!wrap) return;
-    wrap.innerHTML = this.packBoosterSplitSectionHtml();
-    this.bindBoosterSplit(container);
-  }
-
-  private coinTilesHtml(): string {
-    const d = this.data;
-    if (d.coinPacks.length === 0) return this.ghostRow();
-    return d.coinPacks.map((p: any, i: number) => `
-          <div class="store-sec" style="border:3px solid #0e0903; border-radius:14px; overflow:hidden; background:linear-gradient(180deg, rgba(58,42,21,0.9), rgba(20,13,6,0.9)); box-shadow:0 4px 0 rgba(0,0,0,0.5); display:flex; flex-direction:column;">
-            <div style="aspect-ratio:1/1; ${p.image ? `background:url('${p.image}') center/contain no-repeat #0a0805;` : 'display:flex; align-items:center; justify-content:center; font-size:2rem;'}">${p.image ? '' : '🪙'}</div>
-            <div style="padding:8px; display:flex; flex-direction:column; gap:5px; align-items:stretch; text-align:center; border-top:2px solid #0e0903;">
-            <div style="font-size:0.85rem; font-weight:950; color:#ffe9a8; text-shadow:0 2px 0 #000;">${p.gold} 🪙</div>
-            <button class="store-buy" data-kind="coins" data-id="coins:${i}" style="width:100%; padding:9px 12px; border-radius:12px; border:3px solid #0e1f00; background:linear-gradient(180deg, #b8f54d 0%, #7ed321 38%, #4a9b1f 78%, #2c620d 100%); color:#0f1f00; font-weight:950; font-size:0.65rem; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.5);">${t('store2.buy')} · 💎 ${p.price}</button>
-            </div>
-          </div>`).join('');
-  }
-
-  private gemTilesHtml(): string {
-    const d = this.data;
-    if (d.gemPacks.length === 0) return this.ghostRow();
-    return d.gemPacks.map((p: any, i: number) => `
-          <div class="store-sec" style="border:3px solid #0e0903; border-radius:14px; overflow:hidden; background:linear-gradient(180deg, rgba(30,40,60,0.9), rgba(10,14,24,0.9)); box-shadow:0 4px 0 rgba(0,0,0,0.5); display:flex; flex-direction:column;">
-            <div style="aspect-ratio:1/1; ${p.image ? `background:url('${p.image}') center/contain no-repeat #05070d;` : 'display:flex; align-items:center; justify-content:center; font-size:2rem;'}">${p.image ? '' : '💎'}</div>
-            <div style="padding:8px; display:flex; flex-direction:column; gap:5px; align-items:stretch; text-align:center; border-top:2px solid #0e0903;">
-            <div style="font-size:0.85rem; font-weight:950; color:#7ee7ff; text-shadow:0 2px 0 #000;">${p.gems} 💎</div>
-            <button class="store-buy" data-kind="gems" data-id="gems:${i}" style="width:100%; padding:9px 12px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffe9a8; font-weight:950; font-size:0.65rem; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,236,190,0.35);">${t('store2.buy')} · ${this.esc(p.price)}</button>
-            </div>
-          </div>`).join('');
-  }
-
-  private artTilesHtml(owned: { cards: string[]; decks: string[]; artifacts: string[] }): string[] {
-    if (this.data.artifacts.length === 0) {
-      return Array.from({ length: this.artPageSize }).map(() => this.ghostCell());
-    }
-    return this.data.artifacts.map((o: any) => {
-      const s = this.resolveArtifact(o.id);
-      const isOwned = owned.artifacts.includes(o.id);
-      const art = s && s.image ? `background-image:url('${s.image}');` : '';
-      const icon = s && !s.image ? (s.icon || '✨') : '';
-      return `
-          <div class="store-sec" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:linear-gradient(180deg, rgba(52,32,72,0.92), rgba(16,10,26,0.92)); border:2px solid #0e0903; border-radius:12px; padding:12px 8px; box-shadow:0 4px 0 rgba(0,0,0,0.5), inset 0 2px 0 rgba(216,180,254,0.25);">
-            <div style="width:64px; height:64px; border-radius:50%; ${art} background-size:cover; background-position:center; background-color:rgba(255,255,255,0.06); border:2px solid #a335ee; display:flex; align-items:center; justify-content:center; font-size:1.8rem; box-shadow:0 0 14px rgba(163,53,238,0.4);">${icon}</div>
-            <div style="font-size:0.6rem; font-weight:950; color:#e9d5ff; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${this.esc(s ? s.name : o.id).toUpperCase()}</div>
-            <div style="width:100%;">${this.buyBtn('artifact', 'art:' + o.id, isOwned, `${o.currency === 'gems' ? '💎' : '🪙'} ${o.price}`)}</div>
-          </div>`;
-    });
-  }
-
-  private artPages(): number {
-    const n = this.data.artifacts.length;
-    return Math.max(1, Math.ceil(Math.max(n, 1) / this.artPageSize));
-  }
-
-  private artSlice(owned: { cards: string[]; decks: string[]; artifacts: string[] }): string {
-    const tiles = this.artTilesHtml(owned);
-    return tiles.slice(this.artPage * this.artPageSize, this.artPage * this.artPageSize + this.artPageSize).join('');
-  }
-
-  private markArtifactOwned(container: HTMLElement, artId: string) {
-    container.querySelectorAll('.store-buy[data-kind="artifact"]').forEach(b => {
-      const id = (b as HTMLElement).dataset.id || '';
-      if (id.split(':').slice(1).join(':') === artId) {
-        (b as HTMLButtonElement).disabled = true;
-        (b as HTMLButtonElement).style.opacity = '0.55';
-        b.textContent = t('store2.owned');
-      }
-    });
-  }
-
-  private renderSectionByKey(key: string, owned: any): string {
-    if (!this.isSectionVisible(key)) return '';
-
-    switch (key) {
-      case 'banners':
-        return this.bannerHtml();
-      case 'daily':
-        return `
-          ${this.secTitle(this.title('daily', 'OFERTAS DO DIA'), ` <span id="store-countdown" style="font-size:0.6rem; color:#7ee7ff; letter-spacing:1px;"></span>`)}
-          <div id="store-daily-grid" class="store-sec" style="padding:0 16px; display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;">
-            ${this.dailyGridHtml(owned)}
-          </div>
-          <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:10px;">
-            <button id="store-daily-prev" style="width:44px; height:36px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1rem; font-weight:900; cursor:pointer; flex-shrink:0;">‹</button>
-            <span id="store-daily-page" style="font-size:0.6rem; color:rgba(255,255,255,0.55); letter-spacing:2px; font-weight:900;">1 / 3</span>
-            <button id="store-daily-next" style="width:44px; height:36px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1rem; font-weight:900; cursor:pointer; flex-shrink:0;">›</button>
-          </div>
-        `;
-      case 'rare':
-        return `
-          ${this.secTitle(this.title('rare', 'CARTAS RARAS'))}
-          <div id="store-rare-grid" class="store-sec" style="padding:0 16px; display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
-            ${this.rareSlice(owned)}
-          </div>
-          <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-top:10px;">
-            <button id="store-rare-prev" style="width:44px; height:36px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1rem; font-weight:900; cursor:pointer; flex-shrink:0;">‹</button>
-            <span id="store-rare-page" style="font-size:0.6rem; color:rgba(255,255,255,0.55); letter-spacing:2px; font-weight:900;">1 / 1</span>
-            <button id="store-rare-next" style="width:44px; height:36px; border-radius:12px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-size:1rem; font-weight:900; cursor:pointer; flex-shrink:0;">›</button>
-          </div>
-        `;
-      case 'decks':
-        return `
-          ${this.secTitle(this.title('decks', 'DECKS COMPLETOS'))}
-          <div id="store-decks-wrapper" style="display:flex; flex-direction:column; gap:14px; padding:0 16px;">
-            ${this.deckSectionsHtml(owned)}
-          </div>
-        `;
-      case 'packs':
-        return `
-          <div id="store-boosters-wrapper">
-            ${this.packBoosterCarouselSectionHtml()}
-          </div>
-        `;
-      case 'packs_split':
-        return `
-          <div id="store-boosters-split-wrapper">
-            ${this.packBoosterSplitSectionHtml()}
-          </div>
-        `;
-      case 'coins':
-        return `
-          ${this.secTitle(this.title('coins', 'MOEDAS'))}
-          <div class="store-sec" style="padding:0 16px; display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
-            ${this.coinTilesHtml()}
-          </div>
-        `;
-      case 'gems':
-        return `
-          ${this.secTitle(this.title('gems', 'DIAMANTES'))}
-          <div class="store-sec" style="padding:0 16px; display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
-            ${this.gemTilesHtml()}
-          </div>
-        `;
-      case 'artifacts':
-        return `
-          ${this.secTitle(this.title('artifacts', 'ARTEFATOS'))}
-          <div class="store-sec" style="display:flex; align-items:center; gap:8px; padding:0 16px;">
-            <button id="store-art-prev" style="width:34px; height:60px; border-radius:10px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-weight:900; cursor:pointer; flex-shrink:0;">‹</button>
-            <div id="store-art-grid" style="flex:1; display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
-              ${this.artSlice(owned)}
-            </div>
-            <button id="store-art-next" style="width:34px; height:60px; border-radius:10px; border:3px solid #0e0903; background:linear-gradient(180deg, #5a4128, #2a1c0d); color:#ffd76a; font-weight:900; cursor:pointer; flex-shrink:0;">›</button>
-          </div>
-          <div style="text-align:center; font-size:0.6rem; color:rgba(255,255,255,0.45); letter-spacing:2px; margin-top:6px;"><span id="store-art-page">1 / 1</span></div>
-        `;
-      default:
-        return '';
-    }
-  }
-
-  private renderDynamicSectionsHtml(owned: any): string {
-    const order = this.getSectionOrder();
-    const rendered: string[] = [];
-    order.forEach((key, idx) => {
-      const html = this.renderSectionByKey(key, owned);
-      if (html && html.trim()) {
-        rendered.push(`<div id="sec-${key}-${idx}" class="sec-${key} store-dynamic-sec" data-module-key="${key}" data-order-idx="${idx}" style="width:100%; max-width:100%; overflow-x:hidden; box-sizing:border-box;">${html}</div>`);
-      }
-    });
-    return rendered.join('');
-  }
-
-  private renderCategoryPillsHtml(): string {
-    const order = this.getSectionOrder();
-    const pillsMeta: Record<string, { label: string; color: string; border: string; bg: string }> = {
-      packs: { label: '📦 Boosters Carrossel', color: '#ff9838', border: 'rgba(255,122,0,0.4)', bg: 'rgba(255,122,0,0.15)' },
-      packs_split: { label: '🌓 Boosters Split', color: '#38bdf8', border: 'rgba(56,189,248,0.4)', bg: 'rgba(56,189,248,0.15)' },
-      decks: { label: '🃏 Decks', color: '#d8b4fe', border: 'rgba(168,85,247,0.3)', bg: 'rgba(168,85,247,0.1)' },
-      daily: { label: '☀️ Diárias', color: '#ffd700', border: 'rgba(255,215,0,0.3)', bg: 'rgba(255,215,0,0.1)' },
-      rare: { label: '💎 Raras', color: '#38bdf8', border: 'rgba(56,189,248,0.3)', bg: 'rgba(56,189,248,0.1)' },
-      coins: { label: '🪙 Moedas', color: '#4ade80', border: 'rgba(74,222,128,0.3)', bg: 'rgba(74,222,128,0.1)' },
-      gems: { label: '💎 Gemas', color: '#7ee7ff', border: 'rgba(56,189,248,0.3)', bg: 'rgba(56,189,248,0.1)' },
-      artifacts: { label: '✨ Artefatos', color: '#f472b6', border: 'rgba(244,114,182,0.3)', bg: 'rgba(244,114,182,0.1)' },
-    };
-
-    const seen = new Set<string>();
-    const activeSections: string[] = [];
-    order.forEach(k => {
-      if (k !== 'banners' && this.isSectionVisible(k) && pillsMeta[k] && !seen.has(k)) {
-        seen.add(k);
-        activeSections.push(k);
-      }
-    });
-
-    return activeSections.map(k => {
-      const p = pillsMeta[k];
-      return `<button class="store-cat-pill" data-target="${k}" style="padding:6px 14px; border-radius:999px; font-size:0.68rem; font-weight:900; letter-spacing:0.5px; border:1px solid ${p.border}; background:${p.bg}; color:${p.color}; cursor:pointer; white-space:nowrap; transition:0.2s;">${p.label}</button>`;
-    }).join('');
+    return `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative;">${renderMatrixCardSVG(
+      cardObj,
+      { mode: 'thumb', animateChroma: false }
+    )}</div>`;
   }
 
   public render(container: HTMLElement, opts?: { headerSpace?: boolean }) {
-    const owned = this.getOwned();
-    const bal = ProgressionManager.getPlayerData();
-
-    container.innerHTML = `
-    <div style="position:relative; width:100%; height:100%; flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;">
-      <!-- VINHETA EM DEGRADÊ NO TOPO DA LOJA (ATRÁS DO HEADER QUE RESTOU) -->
-      ${opts && opts.headerSpace ? `
-      <div id="store-top-vignette" style="position:absolute; top:0; left:0; right:0; height:110px; z-index:80; pointer-events:none; background:linear-gradient(180deg, rgba(8,10,16,0.95) 0%, rgba(8,10,16,0.85) 50%, rgba(8,10,16,0.3) 80%, transparent 100%); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);"></div>
-      ` : ''}
-
-      <div class="store-screen" style="flex:1; height:100%; min-height:0; overflow-y:auto; overflow-x:hidden; background:transparent; padding-top:${opts && opts.headerSpace ? '100px' : '0px'}; padding-bottom:110px;">
-        <!-- SEÇÕES DINÂMICAS DA VITRINE (ORDEM CONFIGURÁVEL NA FORJA) -->
-        ${this.renderDynamicSectionsHtml(owned)}
-
-        <div id="store-toast" style="position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:linear-gradient(180deg, #4a351e, #241809); border:2px solid #d4af37; border-radius:12px; color:#ffe9a8; font-size:0.7rem; font-weight:900; letter-spacing:2px; padding:12px 24px; opacity:0; pointer-events:none; z-index:5000; white-space:nowrap; box-shadow:0 6px 24px rgba(0,0,0,0.6);"></div>
-      </div>
-    </div>
-    <style>
-      .store-buy { transition: transform 0.12s ease, filter 0.12s ease; }
-      .store-buy:not(:disabled):hover { filter: brightness(1.12); }
-      .store-buy:not(:disabled):active { transform: scale(0.93); }
-      .store-dot { transition: background 0.3s ease, transform 0.3s ease; }
-    </style>
-    `;
-    this.bind(container);
-
-    if (!container.dataset.matrixStoreSynced) {
-      container.dataset.matrixStoreSynced = '1';
-      getMergedGameTemplates([]).then((merged) => {
-        if (merged && merged.length > 0) {
-          this.customTemplates = merged;
-        }
-      });
-    }
-  }
-
-  private toast(container: HTMLElement, msg: string, ok: boolean = true) {
-    const el = container.querySelector('#store-toast') as HTMLElement | null;
-    if (!el) return;
-    el.textContent = msg;
-    el.style.borderColor = ok ? '#d4af37' : '#ff4444';
-    try {
-      SoundManager.playAction(ok ? 'clique_geral' : 'clique_geral', 0.5);
-    } catch {}
-    gsap.killTweensOf(el);
-    gsap.fromTo(el, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out' });
-    gsap.to(el, { opacity: 0, y: 6, duration: 0.3, delay: 1.6 });
-  }
-
-  private refreshBalances(container: HTMLElement) {
-    const bal = ProgressionManager.getPlayerData();
-    const g = container.querySelector('#store-bal-gold');
-    const d = container.querySelector('#store-bal-gems');
-    if (g) g.textContent = String(bal.gold);
-    if (d) d.textContent = String(bal.diamonds);
-  }
-
-  private spend(container: HTMLElement, currency: string, price: number): boolean {
-    const data = ProgressionManager.getPlayerData();
-    if (currency === 'gems' ? data.diamonds < price : data.gold < price) {
-      this.toast(container, t('store2.noFunds'), false);
-      return false;
-    }
-    if (currency === 'gems') data.diamonds -= price;
-    else data.gold -= price;
-    ProgressionManager.savePlayerData(data);
-    this.refreshBalances(container);
-    return true;
-  }
-
-  private bind(container: HTMLElement) {
-    StoreScreen.activeTimers.forEach(id => window.clearInterval(id));
+    if (opts) this.lastRenderOpts = opts;
+    StoreScreen.activeTimers.forEach((id) => clearInterval(id));
     StoreScreen.activeTimers = [];
 
-    // Delegação reserva p/ abrir booster: sobrevive a re-renders. Os binds
-    // diretos usam stopPropagation, então não há clique duplo.
-    if (!container.dataset.boosterDelegated) {
-      container.dataset.boosterDelegated = '1';
-      container.addEventListener('click', (e) => {
-        const cap = (e.target as HTMLElement).closest?.('#btn-booster-buy-capsule, #btn-booster-split-buy') as HTMLElement | null;
-        if (!cap || !container.isConnected) return;
-        const pid = cap.dataset.packId;
-        if (!pid) return;
-        const qty = cap.id === 'btn-booster-split-buy' ? this.boosterSplitQty : this.boosterQty;
-        try { this.openBoosterModal(container, pid, qty); }
-        catch (err) { this.toast(container, 'Falha ao abrir: ' + String((err as Error)?.message || err).slice(0, 90), false); }
-      });
-    }
-
-    // Entrada animada premium
-    gsap.fromTo(container.querySelectorAll('.store-sec'),
-      { y: 26, opacity: 0 },
-      { y: 0, opacity: 1, duration: 0.5, stagger: 0.06, ease: 'power2.out', clearProps: 'transform' });
-
-    // Navegação rápida por categorias (Scroll suave para a seção)
-    container.querySelectorAll('.store-cat-pill').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const target = (btn as HTMLElement).dataset.target;
-        const targetEl = container.querySelector('.sec-' + target) || container.querySelector('[data-module-key="' + target + '"]');
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const rawOverride = localStorage.getItem('store_config_override');
+    const parsedOverride = rawOverride ? JSON.parse(rawOverride) : null;
+    const baseData = parsedOverride || storeData || {};
+    getMergedGameTemplates(baseData.templates || []).then((merged) => {
+      if (merged.length !== this.customTemplates.length) {
+        this.customTemplates = merged;
+        if (document.body.contains(container)) {
+          this.paint(container);
         }
-      });
-    });
-
-    // Banner slider automático (apenas banner superior)
-    container.querySelectorAll('[data-banner-track]').forEach(trackEl => {
-      const track = trackEl as HTMLElement;
-      const n = this.data.banners.length;
-      if (n <= 1) return;
-      let bi = 0;
-      const dots = Array.from(track.parentElement?.querySelectorAll('.store-dot') || []) as HTMLElement[];
-      const go = (i: number) => {
-        bi = (i + n) % n;
-        track.style.transform = `translateX(-${bi * 100}%)`;
-        dots.forEach((dt, di) => { dt.style.background = di === bi ? '#ffd700' : 'rgba(255,255,255,0.35)'; });
-      };
-      dots.forEach(dt => dt.addEventListener('click', () => go(parseInt(dt.dataset.i || '0'))));
-      StoreScreen.activeTimers.push(window.setInterval(() => go(bi + 1), 4000));
-    });
-
-    // Countdown da virada diária
-    const cd = container.querySelector('#store-countdown') as HTMLElement | null;
-    if (cd) {
-      const tick = () => {
-        const end = new Date();
-        end.setHours(24, 0, 0, 0);
-        let s = Math.max(0, Math.floor((end.getTime() - Date.now()) / 1000));
-        const h = String(Math.floor(s / 3600)).padStart(2, '0');
-        const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-        const ss = String(s % 60).padStart(2, '0');
-        cd.textContent = `${t('store2.endsIn')} ${h}:${m}:${ss}`;
-      };
-      tick();
-      StoreScreen.activeTimers.push(window.setInterval(tick, 1000));
-    }
-
-    // Pager diárias (horizontal)
-    const paintDaily = () => {
-      const grid = container.querySelector('#store-daily-grid');
-      const pg = container.querySelector('#store-daily-page');
-      if (grid) {
-        const owned = this.getOwned();
-        grid.innerHTML = this.dailyGridHtml(owned);
-        this.bindBuyButtons(container);
-        this.bindViewTaps(container);
       }
-      if (pg) pg.textContent = `${this.dailyPage + 1} / 3`;
-    };
-    container.querySelector('#store-daily-prev')?.addEventListener('click', () => {
-      this.dailyPage = (this.dailyPage + 2) % 3;
-      paintDaily();
-    });
-    container.querySelector('#store-daily-next')?.addEventListener('click', () => {
-      this.dailyPage = (this.dailyPage + 1) % 3;
-      paintDaily();
     });
 
-    // Carrosséis verticais: raras / decks / pacotes
-    const paintRareH = () => {
-      const grid = container.querySelector('#store-rare-grid');
-      const pg = container.querySelector('#store-rare-page');
-      if (grid) {
-        const owned = this.getOwned();
-        grid.innerHTML = this.rareSlice(owned);
-        this.bindBuyButtons(container);
-        this.bindViewTaps(container);
-      }
-      if (pg) pg.textContent = `${this.rarePage + 1} / ${this.rarePages()}`;
-    };
-    container.querySelector('#store-rare-prev')?.addEventListener('click', () => {
-      this.rarePage = (this.rarePage + this.rarePages() - 1) % this.rarePages();
-      paintRareH();
-    });
-    container.querySelector('#store-rare-next')?.addEventListener('click', () => {
-      this.rarePage = (this.rarePage + 1) % this.rarePages();
-      paintRareH();
-    });
-
-    // (decks: uma secção por deck, sem pager)
-
-    // packs: linha única com rolagem horizontal nativa (sem pager)
-
-    const paintArtH = () => {
-      const grid = container.querySelector('#store-art-grid');
-      const pg = container.querySelector('#store-art-page');
-      if (grid) {
-        grid.innerHTML = this.artSlice(this.getOwned());
-        this.bindBuyButtons(container);
-      }
-      if (pg) pg.textContent = `${this.artPage + 1} / ${this.artPages()}`;
-    };
-    container.querySelector('#store-art-prev')?.addEventListener('click', () => {
-      this.artPage = (this.artPage + this.artPages() - 1) % this.artPages();
-      paintArtH();
-    });
-    container.querySelector('#store-art-next')?.addEventListener('click', () => {
-      this.artPage = (this.artPage + 1) % this.artPages();
-      paintArtH();
-    });
-
-    this.bindBuyButtons(container);
-    this.bindViewTaps(container);
-
-    this.bindBoosterCarousel(container);
-    this.bindBoosterSplit(container);
+    this.paint(container);
   }
 
-  private async openBoosterModal(container: HTMLElement, packId: string, quantity: number = 1) {
-    const pack = this.data.packs.find((p: any) => p.id === packId);
-    if (!pack) {
-      this.toast(container, 'Booster não encontrado na vitrine', false);
-      return;
+  protected paint(container: HTMLElement) {
+    const prevScroller = container.querySelector('.store-screen') as HTMLElement | null;
+    if (prevScroller) {
+      this.lastScrollTop = prevScroller.scrollTop;
     }
 
-    const cur = pack.currency === 'gems' ? 'gems' : 'gold';
-    const unitPrice = Number(pack.price) || 0;
-    const totalPrice = unitPrice * quantity;
-    if (totalPrice > 0 && !this.spend(container, cur, totalPrice)) return;
+    const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
+    const headerSpace = this.lastRenderOpts.headerSpace !== false;
 
-    try {
-      this.toast(container, `Abrindo ${pack.name}...`);
-      const resolvedCards = await resolveBoosterCards(pack, this.customTemplates);
+    const navTabs = [
+      { id: 'all', label: 'Vitrine Completa' },
+      { id: 'packs', label: 'Boosters' },
+      { id: 'packs_split', label: 'Split' },
+      { id: 'decks', label: 'Decks' },
+      { id: 'daily', label: 'Diárias' },
+      { id: 'rare', label: 'Raras' },
+      { id: 'coins', label: 'Moedas' },
+      { id: 'gems', label: 'Gemas' },
+      { id: 'artifacts', label: 'Artefatos' },
+    ];
 
-      new BoosterPackViewer({
-        theme: pack.theme || 'charizard',
-        customBack: (pack.customBack as any) || 'silver',
-        customFrontUrl: pack.customFront || pack.frontImageUrl || undefined,
-        customBackUrl: pack.customBackUrl || pack.backImageUrl || undefined,
-        customTitle: quantity > 1 ? `${pack.name} (${quantity}x)` : pack.name,
-        quantity,
-        cards: resolvedCards,
-        onComplete: (revealedCards) => {
-          const owned = this.getOwned();
-          revealedCards.forEach((c) => {
-            const cardName = c.name || c.id;
-            owned.cards.push(cardName);
-            this.markCardOwned(container, cardName);
-          });
-          this.saveOwned(owned);
-          this.toast(
-            container,
-            `🎉 ${quantity > 1 ? `${quantity}x ` : ''}${pack.name} aberto! +${revealedCards.length} cartas adicionadas ao seu inventário!`
-          );
+    const tabsRowHtml = `
+      <div class="no-scrollbar" style="display:flex; align-items:center; gap:6px; overflow-x:auto; padding-bottom:4px; width:100%;">
+        ${navTabs
+          .map((tab) => {
+            const active = this.activeSectionFilter === tab.id;
+            return active
+              ? `<button type="button" data-sec-filter="${tab.id}" class="btn-royal-gold" style="flex-shrink:0; cursor:pointer;"><div class="btn-royal-inner" style="padding:6px 14px; font-family:var(--font-display); font-weight:700; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap;">${tab.label}</div></button>`
+              : `<button type="button" data-sec-filter="${tab.id}" class="pearl-pill" style="flex-shrink:0; padding:6px 14px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:10.5px; color:#5c4b3b; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; cursor:pointer;">${tab.label}</button>`;
+          })
+          .join('')}
+      </div>
+    `;
+
+    const order: string[] = Array.isArray(this.data.sectionOrder)
+      ? this.data.sectionOrder
+      : ['banners', 'packs', 'packs_split', 'daily', 'rare', 'decks', 'coins', 'gems', 'artifacts'];
+
+    const sectionsHtmlList: string[] = [];
+
+    order.forEach((secKey, orderIdx) => {
+      if (this.data.sectionVisibility?.[secKey] === false) return;
+      if (this.activeSectionFilter !== 'all' && this.activeSectionFilter !== secKey) return;
+
+      const secHtml = this.renderSectionByKey(secKey, orderIdx, isLandscape);
+      if (secHtml) {
+        sectionsHtmlList.push(`
+          <div class="store-dynamic-sec sec-${secKey}" data-module-key="${secKey}" data-order-idx="${orderIdx}" style="width:100%;">
+            ${secHtml}
+          </div>
+        `);
+      }
+    });
+
+    const bodyContentHtml = `
+      <div style="display:flex; flex-direction:column; gap:14px; width:100%;">
+        ${tabsRowHtml}
+        ${sectionsHtmlList.join(renderGoldDividerHHtml('margin: 6px 0;'))}
+      </div>
+    `;
+
+    const deckModalHtml = this.inspectingDeck
+      ? `
+      <div id="store-deck-modal-backdrop" style="position:fixed; inset:0; z-index:1500; background:rgba(4,8,20,0.88); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
+        <div style="width:100%; max-width:680px;">
+          ${renderOrnateWindowHtml({
+            title: this.inspectingDeck.name || 'CARTAS DO DECK',
+            compactHeader: true,
+            showClose: true,
+            closeBtnAttrs: 'id="store-deck-modal-close"',
+            bodyStyle: 'padding: 12px 16px 16px; gap: 10px;',
+            childrenHtml: `
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <span style="font-family:var(--font-display); font-weight:700; font-size:10px; color:#5c4b3b; text-transform:uppercase;">${
+                  this.inspectingDeck.theme || 'Deck Oficial'
+                } · ${(this.inspectingDeck.cards || []).length} Cartas</span>
+                <span class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:700; font-size:10px; color:#8c6518;">${
+                  this.inspectingDeck.price || 400
+                } ${this.inspectingDeck.currency === 'gems' ? '💎' : '🪙'}</span>
+              </div>
+              <div class="nova-scroll" style="display:grid; grid-template-columns:repeat(${
+                isLandscape ? 4 : 3
+              }, minmax(0, 1fr)); gap:10px; max-height:380px; overflow-y:auto; padding-right:4px;">
+                ${(this.inspectingDeck.cards || [])
+                  .map((cardName: string) => {
+                    const cObj = this.resolveCard(cardName);
+                    return `
+                      <div class="store-view-card" data-card-name="${
+                        cObj?.name || cardName
+                      }" style="width:100%; aspect-ratio:680/990; overflow:hidden; border-radius:10px; cursor:pointer; position:relative; box-shadow:0 6px 14px rgba(0,0,0,0.45);">
+                        ${this.renderCardSvgThumb(cObj)}
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>
+            `,
+          })}
+        </div>
+      </div>
+    `
+      : '';
+
+    const outerPad = headerSpace
+      ? isLandscape
+        ? '56px 16px 96px 16px'
+        : '64px 10px 105px 10px'
+      : '14px 12px 96px 12px';
+
+    container.innerHTML = `
+      <div class="store-screen nova-scroll" style="width:100%; height:100%; overflow-y:auto; overflow-x:hidden; padding:${outerPad}; box-sizing:border-box; display:flex; justify-content:center; align-items:flex-start; background:transparent;">
+        <div style="width:100%; max-width:${isLandscape ? '920px' : '460px'}; margin:0 auto; display:flex; flex-direction:column; gap:14px;">
+          ${bodyContentHtml}
+        </div>
+      </div>
+      ${deckModalHtml}
+    `;
+
+    const newScroller = container.querySelector('.store-screen') as HTMLElement | null;
+    if (newScroller && this.lastScrollTop > 0) {
+      newScroller.scrollTop = this.lastScrollTop;
+    }
+
+    this.bindEvents(container);
+    this.startDailyCountdown(container);
+  }
+
+  protected renderSectionByKey(secKey: string, _orderIdx: number, isLandscape: boolean): string {
+    if (secKey === 'banners') {
+      const banners: string[] =
+        this.data.banners?.length > 0
+          ? this.data.banners
+          : ['/cards/03_toxico.png', '/cards/04_obsidiana.png', '/cards/05_gelo.png'];
+      if (this.bannerIdx >= banners.length) this.bannerIdx = 0;
+      const curBanner = banners[this.bannerIdx] || banners[0];
+      const bannerH = isLandscape ? 176 : 144;
+
+      return `
+        <div style="position:relative; display:flex; align-items:center; width:100%; border-radius:16px; overflow:hidden; box-shadow:0 10px 26px rgba(0,0,0,0.55); border:2px solid #d4a84b;">
+          <div style="width:100%; height:${bannerH}px; position:relative; overflow:hidden; background:#091426;">
+            ${
+              curBanner
+                ? `<img src="${thumbFor(curBanner)}" alt="Banner" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                : `<span style="font-size:11px; color:#fff3c2;">BANNER CARROSSEL</span>`
+            }
+            <div style="position:absolute; left:10px; top:50%; transform:translateY(-50%); z-index:10;">
+              ${renderCarouselArrowButtonHtml('left', 'data-banner-nav="prev"', 'sm')}
+            </div>
+            <div style="position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:10;">
+              ${renderCarouselArrowButtonHtml('right', 'data-banner-nav="next"', 'sm')}
+            </div>
+            <div style="position:absolute; left:0; right:0; bottom:0; height:32px; background:linear-gradient(0deg, rgba(0,0,0,0.75), transparent); display:flex; align-items:center; justify-content:center; gap:8px;">
+              ${banners
+                .map(
+                  (_, idx) =>
+                    `<button type="button" data-banner-dot="${idx}" class="store-dot" style="width:9px; height:9px; padding:0; border-radius:9999px; cursor:pointer; border:${
+                      idx === this.bannerIdx ? '1.5px solid #5c3f0c' : 'none'
+                    }; background:${
+                      idx === this.bannerIdx ? '#f5d98b' : 'rgba(255,255,255,0.55)'
+                    }; transform:${idx === this.bannerIdx ? 'scale(1.2)' : 'scale(1)'};"></button>`
+                )
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'packs') {
+      const packs = (this.data.packs || []).filter((p: any) => p.published !== false);
+      if (packs.length === 0) return '';
+      if (this.boosterActiveIdx >= packs.length) this.boosterActiveIdx = 0;
+
+      const currentPack = packs[this.boosterActiveIdx] || packs[0];
+      const leftIdx = (this.boosterActiveIdx - 1 + packs.length) % packs.length;
+      const rightIdx = (this.boosterActiveIdx + 1) % packs.length;
+      const leftPack = packs[leftIdx] || currentPack;
+      const rightPack = packs[rightIdx] || currentPack;
+
+      const rates = currentPack.rates || { common: 60, rare: 20, epic: 10, legendary: 7, mythic: 3 };
+      const unitPrice = Number(currentPack.price) || 0;
+      const totalPrice = unitPrice * this.boosterQty;
+      const isGems = currentPack.currency === 'gems';
+      const priceLabel = totalPrice <= 0 ? 'GRÁTIS' : `${totalPrice} ${isGems ? '💎' : '🪙'}`;
+
+      const rarityBoxesHtml = [
+        { label: 'Comum', pct: `${rates.common ?? 60}%`, bg: 'rgba(240,237,230,0.92)', border: '#c9c3b8', text: '#3d372e' },
+        { label: 'Rara', pct: `${rates.rare ?? 20}%`, bg: 'rgba(230,240,250,0.92)', border: '#8ebce6', text: '#1d4b78' },
+        { label: 'Épica', pct: `${rates.epic ?? 10}%`, bg: 'rgba(239,230,247,0.92)', border: '#bd96e0', text: '#51237a' },
+        { label: 'Lendária', pct: `${rates.legendary ?? 7}%`, bg: 'rgba(250,242,222,0.95)', border: '#e0bc68', text: '#78530d' },
+        { label: 'Mítica', pct: `${rates.mythic ?? 3}%`, bg: 'rgba(250,230,236,0.95)', border: '#e698ad', text: '#7d1533' },
+      ]
+        .map(
+          (r) => `
+          <div style="background:${r.bg}; border:1.5px solid ${r.border}; border-radius:8px; padding:5px 4px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
+            <span style="font-family:var(--font-display); font-weight:800; font-size:8px; color:${r.text}; text-transform:uppercase;">${r.label}</span>
+            <span style="font-family:var(--font-display); font-weight:900; font-size:10.5px; color:${r.text};">${r.pct}</span>
+          </div>
+        `
+        )
+        .join('');
+
+      const centerW = isLandscape ? 148 : 136;
+      const centerH = isLandscape ? 236 : 216;
+      const sideW = isLandscape ? 112 : 102;
+      const sideH = isLandscape ? 178 : 162;
+      const stageH = isLandscape ? 252 : 232;
+
+      const boosterFanStageHtml = `
+        <div style="position:relative; width:100%; height:${stageH}px; display:flex; align-items:center; justify-content:center; overflow:visible;">
+          <div style="position:absolute; left:2px; top:50%; transform:translateY(-50%); z-index:25;">
+            ${renderCarouselArrowButtonHtml('left', 'data-pack-nav="prev"')}
+          </div>
+
+          <!-- Booster Esquerdo em Proporção Alongada Real -->
+          ${this.renderFoilBoosterPouch(
+            leftPack,
+            sideW,
+            sideH,
+            'position:absolute; left:50%; transform:translateX(-118%) rotate(-9deg); opacity:0.86; z-index:4; cursor:pointer; transition:transform 0.25s ease;',
+            'data-pack-nav="prev"'
+          )}
+
+          <!-- Booster Central Principal em Proporção Alongada Real (5:8) -->
+          ${this.renderFoilBoosterPouch(
+            currentPack,
+            centerW,
+            centerH,
+            'position:relative; z-index:12; cursor:pointer; box-shadow:0 16px 34px rgba(0,0,0,0.8), 0 0 18px rgba(245,217,139,0.45), 0 0 0 2.5px #fff3c2;',
+            `data-open-booster="${this.boosterActiveIdx}" data-open-qty="${this.boosterQty}"`
+          )}
+
+          <!-- Booster Direito em Proporção Alongada Real -->
+          ${this.renderFoilBoosterPouch(
+            rightPack,
+            sideW,
+            sideH,
+            'position:absolute; left:50%; transform:translateX(18%) rotate(9deg); opacity:0.86; z-index:4; cursor:pointer; transition:transform 0.25s ease;',
+            'data-pack-nav="next"'
+          )}
+
+          <div style="position:absolute; right:2px; top:50%; transform:translateY(-50%); z-index:25;">
+            ${renderCarouselArrowButtonHtml('right', 'data-pack-nav="next"')}
+          </div>
+        </div>
+      `;
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'packs',
+              'PACOTES & BOOSTERS'
+            )}</span>
+            <span class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9.5px; color:#8c6518;">${
+              this.boosterActiveIdx + 1
+            } / ${packs.length} · ${currentPack.cardsCount || 9} CARTAS</span>
+          </div>
+          ${
+            isLandscape
+              ? `
+            <div style="padding:14px 16px; border-radius:18px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.48); backdrop-filter:blur(6px); display:grid; grid-template-columns:48% 14px 1fr; gap:14px; align-items:center;">
+              ${boosterFanStageHtml}
+              <div style="height:100%; display:flex; justify-content:center;">
+                ${renderGoldDividerVHtml('margin:0;')}
+              </div>
+              <div style="display:flex; flex-direction:column; justify-content:space-between; gap:12px; min-width:0;">
+                <div>
+                  <span style="font-family:var(--font-display); font-weight:900; font-size:15px; color:#fff3c2; text-shadow:0 2px 4px rgba(0,0,0,0.85); letter-spacing:0.05em; text-transform:uppercase; display:block;">${
+                    currentPack.name
+                  }</span>
+                  <p style="font-size:11px; line-height:1.45; color:#e5dec9; margin:6px 0 0 0;">${
+                    currentPack.desc || 'Pacote oficial de 9 cartas da Forja.'
+                  }</p>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:6px;">
+                  ${rarityBoxesHtml}
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <div class="pearl-pill" style="padding:6px 12px; border-radius:9999px; display:flex; align-items:center; gap:10px;">
+                    <button type="button" data-pack-qty="-1" style="background:none; border:none; font-family:var(--font-display); font-weight:900; font-size:14px; color:#5c4b3b; padding:0 4px; cursor:pointer;">-</button>
+                    <span style="font-family:var(--font-display); font-weight:900; font-size:12px; color:#2b1f14;">x${this.boosterQty}</span>
+                    <button type="button" data-pack-qty="1" style="background:none; border:none; font-family:var(--font-display); font-weight:900; font-size:14px; color:#5c4b3b; padding:0 4px; cursor:pointer;">+</button>
+                  </div>
+                  <button type="button" data-open-booster="${this.boosterActiveIdx}" data-open-qty="${
+                  this.boosterQty
+                }" class="btn-royal-gold" style="flex:1; cursor:pointer;">
+                    <div class="btn-royal-inner" style="padding:9px 14px; font-family:var(--font-display); font-weight:900; font-size:12px; letter-spacing:0.08em; text-transform:uppercase;">
+                      ABRIR PACOTE · ${priceLabel}
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `
+              : `
+            <div style="padding:12px; border-radius:18px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.48); backdrop-filter:blur(6px); display:flex; flex-direction:column; gap:10px;">
+              ${boosterFanStageHtml}
+              <div style="text-align:center; padding:0 4px;">
+                <span style="font-family:var(--font-display); font-weight:900; font-size:13.5px; color:#fff3c2; text-shadow:0 2px 4px rgba(0,0,0,0.9); letter-spacing:0.05em; text-transform:uppercase; display:block;">${
+                  currentPack.name
+                }</span>
+                <p style="font-size:10px; line-height:1.4; color:#e5dec9; margin:4px 0 0 0;">${
+                  currentPack.desc || 'Pacote oficial de 9 cartas da Forja.'
+                }</p>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:5px;">
+                ${rarityBoxesHtml}
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div class="pearl-pill" style="padding:6px 10px; border-radius:9999px; display:flex; align-items:center; gap:8px;">
+                  <button type="button" data-pack-qty="-1" style="background:none; border:none; font-family:var(--font-display); font-weight:900; font-size:14px; color:#5c4b3b; padding:0 4px; cursor:pointer;">-</button>
+                  <span style="font-family:var(--font-display); font-weight:900; font-size:11.5px; color:#2b1f14;">x${this.boosterQty}</span>
+                  <button type="button" data-pack-qty="1" style="background:none; border:none; font-family:var(--font-display); font-weight:900; font-size:14px; color:#5c4b3b; padding:0 4px; cursor:pointer;">+</button>
+                </div>
+                <button type="button" data-open-booster="${this.boosterActiveIdx}" data-open-qty="${
+                  this.boosterQty
+                }" class="btn-royal-gold" style="flex:1; cursor:pointer;">
+                  <div class="btn-royal-inner" style="padding:9px 14px; font-family:var(--font-display); font-weight:900; font-size:11.5px; letter-spacing:0.08em; text-transform:uppercase;">
+                    ABRIR PACOTE · ${priceLabel}
+                  </div>
+                </button>
+              </div>
+            </div>
+          `
+          }
+        </div>
+      `;
+    }
+
+    if (secKey === 'packs_split') {
+      const packs = (this.data.packs || []).filter((p: any) => p.published !== false);
+      if (packs.length === 0) return '';
+      if (this.boosterSplitIdx >= packs.length) this.boosterSplitIdx = 0;
+      const selPack = packs[this.boosterSplitIdx] || packs[0];
+      const unitPrice = Number(selPack.price) || 0;
+      const totalPrice = unitPrice * this.boosterSplitQty;
+      const isGems = selPack.currency === 'gems';
+      const priceLabel = totalPrice <= 0 ? 'GRÁTIS' : `${totalPrice} ${isGems ? '💎' : '🪙'}`;
+
+      const splitPackW = isLandscape ? 136 : 118;
+      const splitPackH = isLandscape ? 216 : 188;
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'packs_split',
+              'COLEÇÕES DE BOOSTERS'
+            )}</span>
+            <span class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9.5px; color:#5c4b3b;">${
+              packs.length
+            } COLEÇÕES</span>
+          </div>
+          <div style="padding:12px; border-radius:18px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.48); backdrop-filter:blur(6px); display:grid; grid-template-columns:${
+            isLandscape ? '200px 1fr' : '136px 1fr'
+          }; gap:12px; align-items:center;">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+              ${this.renderFoilBoosterPouch(
+                selPack,
+                splitPackW,
+                splitPackH,
+                'cursor:pointer;',
+                `data-open-booster="${this.boosterSplitIdx}" data-open-qty="${this.boosterSplitQty}"`
+              )}
+              <div style="display:flex; align-items:center; gap:6px; width:100%;">
+                <button type="button" data-split-qty-cycle="1" class="pearl-pill" style="padding:6px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:900; font-size:10px; color:#3a2b1c; cursor:pointer;">x${
+                  this.boosterSplitQty
+                }</button>
+                <button type="button" data-open-booster="${this.boosterSplitIdx}" data-open-qty="${
+        this.boosterSplitQty
+      }" class="btn-royal-gold" style="flex:1; cursor:pointer;">
+                  <div class="btn-royal-inner" style="padding:6px 8px; font-family:var(--font-display); font-weight:900; font-size:10px; text-transform:uppercase;">${priceLabel}</div>
+                </button>
+              </div>
+            </div>
+            <div class="nova-scroll" style="display:flex; flex-direction:column; gap:7px; max-height:${
+              isLandscape ? '250px' : '225px'
+            }; overflow-y:auto; padding-right:4px;">
+              ${packs
+                .map((p: any, idx: number) => {
+                  const isSel = idx === this.boosterSplitIdx;
+                  const pImg = this.resolveBoosterArtUrl(p);
+                  const fallbackUrl =
+                    (p?.id && VALID_BOOSTER_FALLBACK_BY_ID[p.id]) ||
+                    '/cards/Batalha_dos_slimes_fant_sticos.png';
+                  return `
+                    <div data-select-split="${idx}" style="padding:7px 9px; border-radius:12px; display:flex; align-items:center; gap:10px; cursor:pointer; border:${
+                    isSel ? '2px solid #f5d98b' : '1px solid rgba(212,168,75,0.35)'
+                  }; background:${
+                    isSel ? 'rgba(11, 55, 120, 0.78)' : 'rgba(15, 28, 52, 0.65)'
+                  }; box-shadow:${isSel ? '0 4px 12px rgba(0,0,0,0.4)' : 'none'};">
+                      <img src="${thumbFor(pImg)}" alt="${
+                    p.name
+                  }" onerror="this.onerror=null;this.src='${fallbackUrl}';" style="width:36px; height:56px; border-radius:6px; object-fit:cover; flex-shrink:0; display:block; border:1px solid #d4a84b;" />
+                      <div style="min-width:0; flex:1; text-align:left;">
+                        <span style="font-family:var(--font-display); font-weight:800; font-size:10.5px; color:#fff3c2; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${
+                          p.name
+                        }</span>
+                        <span style="font-family:var(--font-display); font-weight:700; font-size:9px; color:#f5d98b; display:block; margin-top:2px;">${
+                          Number(p.price) <= 0 ? 'GRÁTIS' : `${p.price} ${p.currency === 'gems' ? '💎' : '🪙'}`
+                        } · ${p.cardsCount || 9} Cartas</span>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'daily') {
+      const pool = this.data.dailyPool || [];
+      if (pool.length === 0) return '';
+      const pageSize = isLandscape ? 6 : 4;
+      const totalPages = Math.max(1, Math.ceil(pool.length / pageSize));
+      if (this.dailyPage >= totalPages) this.dailyPage = 0;
+      const pageItems = pool.slice(this.dailyPage * pageSize, (this.dailyPage + 1) * pageSize);
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'daily',
+              'OFERTAS DO DIA'
+            )}</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <div class="pearl-pill" id="store-daily-timer" style="padding:3px 9px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9px; color:#5c4b3b;">
+                RENOVAÇÃO 04:12:59
+              </div>
+              ${
+                totalPages > 1
+                  ? `
+                <button type="button" data-daily-page="-1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">◀</button>
+                <span style="font-family:var(--font-display); font-weight:800; font-size:10px; color:#fff3c2;">${this.dailyPage + 1}/${totalPages}</span>
+                <button type="button" data-daily-page="1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">▶</button>
+              `
+                  : ''
+              }
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(${isLandscape ? 3 : 2}, minmax(0, 1fr)); gap:12px; width:100%;">
+            ${pageItems
+              .map((offer: any, idx: number) => {
+                const realIdx = this.dailyPage * pageSize + idx;
+                const cardObj = this.resolveCard(offer.card);
+                const price = Number(offer.price) || 100;
+                return `
+                  <div style="display:flex; flex-direction:column; gap:7px; min-width:0;">
+                    <div class="store-view-card" data-card-name="${
+                      cardObj?.name || offer.card
+                    }" style="width:100%; aspect-ratio:680/990; overflow:hidden; border-radius:12px; cursor:pointer; position:relative; box-shadow:0 10px 22px rgba(0,0,0,0.65); border:1.5px solid rgba(212,168,75,0.65);">
+                      ${this.renderCardSvgThumb(cardObj)}
+                    </div>
+                    <div style="padding:6px 8px; border-radius:12px; background:rgba(7, 18, 38, 0.72); border:1px solid rgba(212,168,75,0.45); display:flex; flex-direction:column; gap:5px;">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+                        <span style="font-family:var(--font-display); font-weight:800; font-size:10.5px; color:#fff3c2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${
+                          cardObj?.name || offer.card
+                        }</span>
+                        <span style="font-family:var(--font-display); font-weight:700; font-size:8px; color:#f5d98b; text-transform:uppercase; flex-shrink:0;">${
+                          cardObj?.preferredRarity || cardObj?.rarity || 'Diária'
+                        }</span>
+                      </div>
+                      <button type="button" data-buy-daily="${realIdx}" class="btn-royal-gold" style="width:100%; cursor:pointer;">
+                        <div class="btn-royal-inner" style="padding:6px 10px; font-family:var(--font-display); font-weight:900; font-size:10.5px; text-transform:uppercase;">
+                          COMPRAR · ${price} 🪙
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'rare') {
+      const rares = this.data.rare || [];
+      if (rares.length === 0) return '';
+      const pageSize = isLandscape ? 6 : 4;
+      const totalPages = Math.max(1, Math.ceil(rares.length / pageSize));
+      if (this.rarePage >= totalPages) this.rarePage = 0;
+      const pageItems = rares.slice(this.rarePage * pageSize, (this.rarePage + 1) * pageSize);
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'rare',
+              'CARTAS RARAS'
+            )}</span>
+            ${
+              totalPages > 1
+                ? `
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button type="button" data-rare-page="-1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">◀</button>
+                <span style="font-family:var(--font-display); font-weight:800; font-size:10px; color:#fff3c2;">${this.rarePage + 1}/${totalPages}</span>
+                <button type="button" data-rare-page="1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">▶</button>
+              </div>
+            `
+                : ''
+            }
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(${isLandscape ? 3 : 2}, minmax(0, 1fr)); gap:12px; width:100%;">
+            ${pageItems
+              .map((offer: any, idx: number) => {
+                const realIdx = this.rarePage * pageSize + idx;
+                const cardObj = this.resolveCard(offer.card);
+                const price = Number(offer.price) || 5;
+                return `
+                  <div style="display:flex; flex-direction:column; gap:7px; min-width:0;">
+                    <div class="store-view-card" data-card-name="${
+                      cardObj?.name || offer.card
+                    }" style="width:100%; aspect-ratio:680/990; overflow:hidden; border-radius:12px; cursor:pointer; position:relative; box-shadow:0 10px 22px rgba(0,0,0,0.65); border:1.5px solid #f5d98b;">
+                      ${this.renderCardSvgThumb(cardObj)}
+                    </div>
+                    <div style="padding:6px 8px; border-radius:12px; background:rgba(7, 18, 38, 0.72); border:1px solid rgba(212,168,75,0.45); display:flex; flex-direction:column; gap:5px;">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+                        <span style="font-family:var(--font-display); font-weight:800; font-size:10.5px; color:#fff3c2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${
+                          cardObj?.name || offer.card
+                        }</span>
+                        <span style="font-family:var(--font-display); font-weight:700; font-size:8px; color:#7dd3fc; text-transform:uppercase; flex-shrink:0;">Rara Especial</span>
+                      </div>
+                      <button type="button" data-buy-rare="${realIdx}" class="btn-royal-gold" style="width:100%; cursor:pointer;">
+                        <div class="btn-royal-inner" style="padding:6px 10px; font-family:var(--font-display); font-weight:900; font-size:10.5px; text-transform:uppercase;">
+                          COMPRAR · ${price} 💎
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'decks') {
+      const decks = this.data.decks || [];
+      if (decks.length === 0) return '';
+      if (this.deckActiveIdx >= decks.length) this.deckActiveIdx = 0;
+      const curDeck = decks[this.deckActiveIdx] || decks[0];
+      const previewCards = (curDeck.cards || []).slice(0, 4);
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'decks',
+              'DECKS COMPLETOS'
+            )}</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              ${renderCarouselArrowButtonHtml('left', 'data-deck-nav="-1"', 'sm')}
+              <span class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9.5px; color:#8c6518;">${
+                this.deckActiveIdx + 1
+              } / ${decks.length}</span>
+              ${renderCarouselArrowButtonHtml('right', 'data-deck-nav="1"', 'sm')}
+            </div>
+          </div>
+          <div style="padding:12px; border-radius:18px; background:rgba(7, 18, 38, 0.56); border:1.5px solid rgba(212, 168, 75, 0.48); backdrop-filter:blur(6px); display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+              <div>
+                <span style="font-family:var(--font-display); font-weight:900; font-size:13.5px; color:#fff3c2; text-transform:uppercase; display:block;">${
+                  curDeck.name
+                }</span>
+                <span style="font-family:var(--font-display); font-size:10px; color:#e5dec9; display:block; margin-top:2px;">${
+                  curDeck.desc || `${(curDeck.cards || []).length} cartas prontas para combate.`
+                }</span>
+              </div>
+              <span class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:8.5px; color:#082b66; flex-shrink:0; text-transform:uppercase;">${
+                curDeck.theme || 'Deck Completo'
+              }</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(${isLandscape ? 4 : 2}, minmax(0, 1fr)); gap:10px; width:100%;">
+              ${previewCards
+                .map((cName: string) => {
+                  const cObj = this.resolveCard(cName);
+                  return `
+                    <div class="store-view-card" data-card-name="${
+                      cObj?.name || cName
+                    }" style="width:100%; aspect-ratio:680/990; overflow:hidden; border-radius:10px; cursor:pointer; position:relative; box-shadow:0 8px 18px rgba(0,0,0,0.6); border:1.5px solid rgba(212,168,75,0.6);">
+                      ${this.renderCardSvgThumb(cObj)}
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; padding-top:4px;">
+              <button type="button" data-inspect-deck="${
+                this.deckActiveIdx
+              }" class="btn-pearl-gold store-view-deck" style="flex:1; cursor:pointer;">
+                <div class="btn-pearl-inner" style="padding:8px 12px; font-family:var(--font-display); font-weight:900; font-size:10px; text-transform:uppercase;">
+                  🃏 VER TODAS (${(curDeck.cards || []).length} CARTAS)
+                </div>
+              </button>
+              <button type="button" data-buy-deck="${
+                this.deckActiveIdx
+              }" class="btn-royal-gold" style="flex:1; cursor:pointer;">
+                <div class="btn-royal-inner" style="padding:8px 12px; font-family:var(--font-display); font-weight:900; font-size:10px; text-transform:uppercase;">
+                  COMPRAR · ${curDeck.price || 800} ${curDeck.currency === 'gems' ? '💎' : '🪙'}
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'coins') {
+      const coinPacks = this.data.coinPacks || [];
+      if (coinPacks.length === 0) return '';
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'coins',
+              'MOEDAS'
+            )}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; width:100%;">
+            ${coinPacks
+              .map(
+                (cp: any, idx: number) => `
+              <div style="padding:10px; border-radius:14px; background:rgba(7, 18, 38, 0.65); border:1.5px solid rgba(212,168,75,0.45); display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;">
+                <div style="width:68px; height:68px; border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                  ${
+                    cp.image
+                      ? `<img src="${thumbFor(cp.image)}" alt="${cp.gold} Ouro" style="width:100%; height:100%; object-fit:contain; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6));" />`
+                      : `<span style="font-size:28px;">🪙</span>`
+                  }
+                </div>
+                <span style="font-family:var(--font-display); font-weight:900; font-size:11.5px; color:#f5d98b;">+${Number(
+                  cp.gold || 1000
+                ).toLocaleString()} 🪙</span>
+                <button type="button" data-buy-coins="${idx}" class="btn-royal-gold" style="width:100%; cursor:pointer;">
+                  <div class="btn-royal-inner" style="padding:5px 8px; font-family:var(--font-display); font-weight:800; font-size:10px; text-transform:uppercase;">${
+                    cp.price || 10
+                  } 💎</div>
+                </button>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'gems') {
+      const gemPacks = this.data.gemPacks || [];
+      if (gemPacks.length === 0) return '';
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'gems',
+              'DIAMANTES'
+            )}</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; width:100%;">
+            ${gemPacks
+              .map(
+                (gp: any, idx: number) => `
+              <div style="padding:10px; border-radius:14px; background:rgba(7, 18, 38, 0.65); border:1.5px solid rgba(212,168,75,0.45); display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;">
+                <div style="width:68px; height:68px; border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                  ${
+                    gp.image
+                      ? `<img src="${thumbFor(gp.image)}" alt="${gp.gems} Gemas" style="width:100%; height:100%; object-fit:contain; display:block; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6));" />`
+                      : `<span style="font-size:28px;">💎</span>`
+                  }
+                </div>
+                <span style="font-family:var(--font-display); font-weight:900; font-size:11.5px; color:#7dd3fc;">+${Number(
+                  gp.gems || 100
+                ).toLocaleString()} 💎</span>
+                <button type="button" data-buy-gems="${idx}" class="btn-royal-gold" style="width:100%; cursor:pointer;">
+                  <div class="btn-royal-inner" style="padding:5px 8px; font-family:var(--font-display); font-weight:800; font-size:10px; text-transform:uppercase;">${
+                    gp.price || 'R$ 4,90'
+                  }</div>
+                </button>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (secKey === 'artifacts') {
+      const arts = this.data.artifacts || [];
+      if (arts.length === 0) return '';
+      const pageSize = isLandscape ? 6 : 4;
+      const totalPages = Math.max(1, Math.ceil(arts.length / pageSize));
+      if (this.artPage >= totalPages) this.artPage = 0;
+      const pageItems = arts.slice(this.artPage * pageSize, (this.artPage + 1) * pageSize);
+
+      return `
+        <div style="width:100%;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <span style="font-family:var(--font-display); font-weight:900; font-size:12.5px; color:#fff3c2; text-shadow:0 2px 6px rgba(0,0,0,0.92); letter-spacing:0.08em; text-transform:uppercase;">${this.title(
+              'artifacts',
+              'ARTEFATOS'
+            )}</span>
+            ${
+              totalPages > 1
+                ? `
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button type="button" data-art-page="-1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">◀</button>
+                <span style="font-family:var(--font-display); font-weight:800; font-size:10px; color:#fff3c2;">${this.artPage + 1}/${totalPages}</span>
+                <button type="button" data-art-page="1" class="pearl-pill" style="padding:3px 8px; border-radius:9999px; font-size:9.5px; cursor:pointer;">▶</button>
+              </div>
+            `
+                : ''
+            }
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(${isLandscape ? 3 : 2}, minmax(0, 1fr)); gap:10px; width:100%;">
+            ${pageItems
+              .map((artEntry: any, idx: number) => {
+                const realIdx = this.artPage * pageSize + idx;
+                const skillDef =
+                  SKILL_POOL.find((s: any) => s.id === artEntry.id || s.name === artEntry.id) ||
+                  SKILL_POOL[idx % SKILL_POOL.length];
+                return `
+                  <div style="padding:10px; border-radius:14px; background:rgba(7, 18, 38, 0.65); border:1.5px solid rgba(212,168,75,0.45); display:flex; align-items:center; gap:10px; min-width:0;">
+                    <div style="width:54px; height:54px; min-width:54px; border-radius:9999px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:20px; overflow:hidden; border:1.5px solid #d4a84b; background:#091834;">
+                      ${
+                        (skillDef as any)?.image
+                          ? `<img src="${thumbFor((skillDef as any).image)}" alt="${
+                              skillDef?.name || artEntry.id
+                            }" style="width:100%; height:100%; object-fit:cover; display:block;" />`
+                          : `<span>${(skillDef as any)?.icon || '✨'}</span>`
+                      }
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                      <span style="font-family:var(--font-display); font-weight:800; font-size:10.5px; color:#fff3c2; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${
+                        skillDef?.name || artEntry.id
+                      }</span>
+                      <span style="font-family:var(--font-display); font-size:8.5px; color:#cbd5e1; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;">${
+                        (skillDef as any)?.description || 'Artefato estratégico'
+                      }</span>
+                      <button type="button" data-buy-artifact="${realIdx}" class="btn-royal-gold" style="width:100%; margin-top:6px; cursor:pointer;">
+                        <div class="btn-royal-inner" style="padding:5px 8px; font-family:var(--font-display); font-weight:800; font-size:9.5px; text-transform:uppercase;">
+                          ${artEntry.price || 10} ${artEntry.currency === 'gold' ? '🪙' : '💎'}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
+  }
+
+  protected startDailyCountdown(container: HTMLElement) {
+    const updateTimer = () => {
+      const el = container.querySelector('#store-daily-timer');
+      if (!el) return;
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setHours(24, 0, 0, 0);
+      const diffSec = Math.max(0, Math.floor((tomorrow.getTime() - now.getTime()) / 1000));
+      const h = String(Math.floor(diffSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((diffSec % 3600) / 60)).padStart(2, '0');
+      const s = String(diffSec % 60).padStart(2, '0');
+      el.textContent = `RENOVAÇÃO ${h}:${m}:${s}`;
+    };
+    updateTimer();
+    const timerId = window.setInterval(updateTimer, 1000);
+    StoreScreen.activeTimers.push(timerId);
+  }
+
+  protected bindEvents(container: HTMLElement) {
+    const scroller = container.querySelector('.store-screen') as HTMLElement | null;
+    if (scroller) {
+      let prevY = scroller.scrollTop;
+      scroller.addEventListener(
+        'scroll',
+        () => {
+          const curY = scroller.scrollTop;
+          const dy = curY - prevY;
+          this.lastScrollTop = curY;
+          if (curY > 36 && dy > 4) {
+            document.body.classList.add('hub-scroll-hide-bars');
+          } else if (dy < -4 || curY <= 24) {
+            document.body.classList.remove('hub-scroll-hide-bars');
+          }
+          prevY = curY;
         },
-      });
-    } catch (err) {
-      this.toast(container, 'Falha ao abrir booster 3D: ' + String((err as Error)?.message || err).slice(0, 90), false);
+        { passive: true }
+      );
     }
-  }
 
-  private purchaseCard(container: HTMLElement, cardName: string, currency: string): boolean {
-    const offer = [...this.data.dailyPool, ...this.data.rare].find((o: any) => o.card === cardName);
-    if (!offer) return false;
-    const owned = this.getOwned();
-    if (!this.spend(container, currency, offer.price)) return false;
-    owned.cards.push(cardName);
-    this.saveOwned(owned);
-    return true;
-  }
+    const packs = (this.data.packs || []).filter((p: any) => p.published !== false);
+    const banners =
+      this.data.banners?.length > 0
+        ? this.data.banners
+        : ['/cards/03_toxico.png', '/cards/04_obsidiana.png', '/cards/05_gelo.png'];
 
-  private markCardOwned(container: HTMLElement, cardName: string) {
-    container.querySelectorAll('.store-buy[data-kind^="card:"]').forEach(b => {
-      const id = (b as HTMLElement).dataset.id || '';
-      if (id.split(':').slice(1).join(':') === cardName) {
-        (b as HTMLButtonElement).disabled = true;
-        (b as HTMLButtonElement).style.opacity = '0.55';
-        b.textContent = t('store2.owned');
-      }
-    });
-  }
-
-  private markDeckOwned(container: HTMLElement, deckId: string) {
-    container.querySelectorAll('.store-buy[data-kind="deck"]').forEach(b => {
-      if ((b as HTMLElement).dataset.id === deckId) {
-        (b as HTMLButtonElement).disabled = true;
-        (b as HTMLButtonElement).style.opacity = '0.55';
-        b.textContent = t('store2.owned');
-      }
-    });
-  }
-
-  private openCardViewerFor(container: HTMLElement, cardName: string, currency: string) {
-    const pool = currency === 'gems' ? this.data.rare : this.data.dailyPool;
-    const offer = pool.find((o: any) => o.card === cardName);
-    if (!offer) return;
-    const owned = this.getOwned().cards.includes(cardName);
-
-    // Lista de todas as cartas da seção permitindo navegar/passar para o lado
-    const cardsList = pool.map((o: any) => this.resolveCard(o.card) || { name: o.card, image: '' });
-    const cardIdx = pool.findIndex((o: any) => o.card === cardName);
-
-    openCardViewer({
-      card: this.resolveCard(cardName) || { name: cardName, image: '' },
-      list: cardsList.length > 0 ? cardsList : undefined,
-      index: Math.max(0, cardIdx),
-      priceHtml: `<span style="color:${currency === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${currency === 'gems' ? '💎' : '🪙'} ${offer.price}</span>`,
-      actionLabel: owned ? t('store2.owned') : t('store2.buy'),
-      actionDisabled: owned,
-      onAction: () => {
-        if (this.purchaseCard(container, cardName, currency)) {
-          this.markCardOwned(container, cardName);
-          this.toast(container, `${cardName} ✓`);
-          return { close: false, label: t('store2.owned'), disabled: true };
-        }
-        return { close: false };
-      }
-    });
-  }
-
-  private openDeckViewerFor(container: HTMLElement, deckId: string, initialIdx: number = 0) {
-    let deck = this.data.decks.find((x: any) => x && x.id === deckId);
-    if (!deck && !isNaN(parseInt(deckId))) {
-      deck = this.data.decks[parseInt(deckId)];
-    }
-    if (!deck && this.data.decks.length > 0) {
-      deck = this.data.decks[0];
-    }
-    if (!deck) return;
-
-    const cards = (deck.cards || []).map((n: string) => this.resolveCard(n) || { name: n, image: '' });
-    const owned = this.getOwned().decks.includes(deck.id);
-    const cur = deck.currency === 'gems' ? 'gems' : 'gold';
-    const startIdx = Math.max(0, Math.min(Math.max(0, cards.length - 1), initialIdx));
-
-    openCardViewer({
-      card: cards[startIdx] || { name: deck.name, image: deck.image || '' },
-      list: cards.length > 0 ? cards : [{ name: deck.name, image: deck.image || '' }],
-      index: startIdx,
-      priceHtml: `<div style="text-align:center;"><div style="font-size:0.7rem; font-weight:950; color:#ffd76a; letter-spacing:1px;">${this.esc(deck.name).toUpperCase()}</div><div style="color:${cur === 'gems' ? '#7ee7ff' : '#ffd76a'}; font-weight:950; font-size:1.1rem; text-shadow:0 2px 0 #000;">${cur === 'gems' ? '💎' : '🪙'} ${deck.price}</div></div>`,
-      actionLabel: owned ? t('store2.owned') : t('store2.buy'),
-      actionDisabled: owned,
-      onAction: () => {
-        const dd = this.data.decks.find((x: any) => x && x.id === deck.id) || deck;
-        if (!dd) return { close: false };
-        const ow = this.getOwned();
-        if (ow.decks.includes(dd.id)) return { close: false };
-        if (!this.spend(container, cur, dd.price)) return { close: false };
-        ow.decks.push(dd.id);
-        (dd.cards || []).forEach((n: string) => { if (!ow.cards.includes(n)) ow.cards.push(n); });
-        this.saveOwned(ow);
-        this.markDeckOwned(container, dd.id);
-        (dd.cards || []).forEach((n: string) => this.markCardOwned(container, n));
-        this.toast(container, `${dd.name} ✓`);
-        return { close: false, label: t('store2.owned'), disabled: true };
-      }
-    });
-  }
-
-  private bindViewTaps(container: HTMLElement) {
-    container.querySelectorAll('.store-view-card').forEach(el => {
-      const h = el as HTMLElement;
-      if (h.dataset.viewBound) return;
-      h.dataset.viewBound = '1';
-      h.addEventListener('click', () => {
-        this.openCardViewerFor(container, h.dataset.viewName || '', h.dataset.viewCur || 'gold');
-      });
-    });
-
-    container.querySelectorAll('.store-view-deck').forEach(el => {
-      const h = el as HTMLElement;
-      if (h.dataset.viewBound) return;
-      h.dataset.viewBound = '1';
-      h.addEventListener('click', () => {
-        this.openDeckViewerFor(container, h.dataset.deck || '', 0);
-      });
-    });
-
-    container.querySelectorAll('.store-view-deck-card').forEach(el => {
-      const h = el as HTMLElement;
-      if (h.dataset.viewBound) return;
-      h.dataset.viewBound = '1';
-      h.addEventListener('click', () => {
-        const deckId = h.dataset.deckId || h.dataset.deck || '';
-        const idx = parseInt(h.dataset.cardIdx || '0');
-        this.openDeckViewerFor(container, deckId, idx);
-      });
-    });
-
-    container.querySelectorAll('.store-strip-scroll-left').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const deckId = (btn as HTMLElement).dataset.deck;
-        const strip = container.querySelector(`#deck-strip-${deckId}`);
-        if (strip) strip.scrollBy({ left: -140, behavior: 'smooth' });
-      });
-    });
-
-    container.querySelectorAll('.store-strip-scroll-right').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const deckId = (btn as HTMLElement).dataset.deck;
-        const strip = container.querySelector(`#deck-strip-${deckId}`);
-        if (strip) strip.scrollBy({ left: 140, behavior: 'smooth' });
-      });
-    });
-  }
-
-  private bindBuyButtons(container: HTMLElement) {
-    container.querySelectorAll('.store-buy[data-kind]').forEach(btn => {
+    container.querySelectorAll<HTMLElement>('[data-sec-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const kind = (btn as HTMLElement).dataset.kind!;
-        const id = (btn as HTMLElement).dataset.id!;
-        if (kind === 'gems') {
-          this.toast(container, t('store2.soon'));
-          return;
+        const filterId = btn.dataset.secFilter || 'all';
+        SoundManager.play('ui_click');
+        this.activeSectionFilter = filterId;
+        this.lastScrollTop = 0;
+        document.body.classList.remove('hub-scroll-hide-bars');
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-banner-nav]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const dir = btn.dataset.bannerNav === 'prev' ? -1 : 1;
+        this.bannerIdx = (this.bannerIdx + dir + banners.length) % banners.length;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-banner-dot]').forEach((dot) => {
+      dot.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        this.bannerIdx = Number(dot.dataset.bannerDot || 0);
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-pack-nav]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!packs.length) return;
+        SoundManager.play('ui_click');
+        const dir = btn.dataset.packNav === 'prev' ? -1 : 1;
+        this.boosterActiveIdx = (this.boosterActiveIdx + dir + packs.length) % packs.length;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-pack-qty]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const delta = Number(btn.dataset.packQty || 0);
+        this.boosterQty = Math.max(1, Math.min(10, this.boosterQty + delta));
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-select-split]').forEach((el) => {
+      el.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        this.boosterSplitIdx = Number(el.dataset.selectSplit || 0);
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-split-qty-cycle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const cycle = [1, 3, 5, 10];
+        this.boosterSplitQty = cycle[(cycle.indexOf(this.boosterSplitQty) + 1) % cycle.length];
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-open-booster]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.openBooster || 0);
+        const qty = Number(btn.dataset.openQty || 1);
+        const pack = packs[idx] || packs[0];
+        if (!pack) return;
+        const totalCost = (Number(pack.price) || 0) * qty;
+        if (totalCost > 0) {
+          const ok =
+            pack.currency === 'gems'
+              ? ProgressionManager.spendDiamonds(totalCost)
+              : ProgressionManager.spendGold(totalCost);
+          if (!ok) {
+            SoundManager.play('ui_cancel');
+            return;
+          }
         }
-        if (kind === 'artifact') {
-          const artId = id.split(':').slice(1).join(':');
-          const offer = this.data.artifacts.find((o: any) => o.id === artId);
-          if (!offer) return;
-          const ow = this.getOwned();
-          if (ow.artifacts.includes(artId)) return;
-          if (!this.spend(container, offer.currency === 'gems' ? 'gems' : 'gold', offer.price)) return;
-          ow.artifacts.push(artId);
-          this.saveOwned(ow);
-          this.markArtifactOwned(container, artId);
-          this.toast(container, `${artId} ✓`);
-          return;
-        }
-        if (kind === 'coins') {
-          const pack = this.data.coinPacks[parseInt(id.split(':')[1])];
-          if (!pack) return;
-          if (!this.spend(container, 'gems', pack.price)) return;
-          const bal = ProgressionManager.getPlayerData();
-          bal.gold += pack.gold;
-          ProgressionManager.savePlayerData(bal);
-          this.refreshBalances(container);
-          this.toast(container, `+${pack.gold} 🪙`);
-          return;
-        }
-        if (kind === 'deck') {
-          const deck = this.data.decks.find((x: any) => x.id === id);
-          if (!deck) return;
-          const owned = this.getOwned();
-          if (owned.decks.includes(id)) return;
-          if (!this.spend(container, deck.currency === 'gems' ? 'gems' : 'gold', deck.price)) return;
-          owned.decks.push(id);
-          (deck.cards || []).forEach((n: string) => { if (!owned.cards.includes(n)) owned.cards.push(n); });
-          this.saveOwned(owned);
-          this.markDeckOwned(container, id);
-          (deck.cards || []).forEach((n: string) => this.markCardOwned(container, n));
-          this.toast(container, `${deck.name} ✓`);
-          return;
-        }
-        // card:gold | card:gems  (kind traz a moeda, id traz "sec:Nome")
-        const cur = (kind.split(':')[1] === 'gems') ? 'gems' : 'gold';
-        const cardName = id.split(':').slice(1).join(':');
-        if (this.purchaseCard(container, cardName, cur)) {
-          this.markCardOwned(container, cardName);
-          this.toast(container, `${cardName} ✓`);
+        SoundManager.play('ui_confirm');
+        this.openBoosterModal(pack, qty, container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-daily-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const delta = Number(btn.dataset.dailyPage || 1);
+        const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
+        const pageSize = isLandscape ? 6 : 4;
+        const totalPages = Math.max(1, Math.ceil((this.data.dailyPool || []).length / pageSize));
+        this.dailyPage = (this.dailyPage + delta + totalPages) % totalPages;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-rare-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const delta = Number(btn.dataset.rarePage || 1);
+        const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
+        const pageSize = isLandscape ? 6 : 4;
+        const totalPages = Math.max(1, Math.ceil((this.data.rare || []).length / pageSize));
+        this.rarePage = (this.rarePage + delta + totalPages) % totalPages;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-art-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        SoundManager.play('ui_click');
+        const delta = Number(btn.dataset.artPage || 1);
+        const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
+        const pageSize = isLandscape ? 6 : 4;
+        const totalPages = Math.max(1, Math.ceil((this.data.artifacts || []).length / pageSize));
+        this.artPage = (this.artPage + delta + totalPages) % totalPages;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-deck-nav]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const decks = this.data.decks || [];
+        if (!decks.length) return;
+        SoundManager.play('ui_click');
+        const delta = Number(btn.dataset.deckNav || 1);
+        this.deckActiveIdx = (this.deckActiveIdx + delta + decks.length) % decks.length;
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-inspect-deck]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.inspectDeck || 0);
+        const deck = (this.data.decks || [])[idx];
+        if (!deck) return;
+        SoundManager.play('ui_click');
+        this.inspectingDeck = deck;
+        this.paint(container);
+      });
+    });
+
+    container.querySelector('#store-deck-modal-close')?.addEventListener('click', () => {
+      this.inspectingDeck = null;
+      this.paint(container);
+    });
+
+    container.querySelectorAll<HTMLElement>('.store-view-card').forEach((el) => {
+      el.addEventListener('click', () => {
+        const cardName = el.dataset.cardName;
+        if (!cardName) return;
+        const cardObj = this.resolveCard(cardName);
+        if (!cardObj) return;
+        const sectionEl = el.closest('.store-dynamic-sec') || container;
+        const sectionCardNames = Array.from(
+          sectionEl.querySelectorAll<HTMLElement>('.store-view-card')
+        )
+          .map((node) => node.dataset.cardName)
+          .filter((n): n is string => !!n);
+        const list = sectionCardNames.length
+          ? sectionCardNames.map((n) => this.resolveCard(n)).filter(Boolean)
+          : [cardObj];
+        const idx = Math.max(
+          0,
+          list.findIndex((c) => (c?.name || c?.id) === (cardObj?.name || cardObj?.id))
+        );
+        openCardViewer({
+          card: cardObj,
+          list,
+          index: idx,
+          actionLabel: 'FECHAR VISUALIZAÇÃO',
+          onAction: () => ({ close: true }),
+        });
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-daily]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyDaily || 0);
+        const offer = (this.data.dailyPool || [])[idx];
+        if (!offer) return;
+        const price = Number(offer.price) || 100;
+        if (ProgressionManager.spendGold(price)) {
+          SoundManager.play('ui_confirm');
+          ProgressionManager.unlockCard(offer.card);
+          this.paint(container);
+        } else {
+          SoundManager.play('ui_cancel');
         }
       });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-rare]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyRare || 0);
+        const offer = (this.data.rare || [])[idx];
+        if (!offer) return;
+        const price = Number(offer.price) || 5;
+        if (ProgressionManager.spendDiamonds(price)) {
+          SoundManager.play('ui_confirm');
+          ProgressionManager.unlockCard(offer.card);
+          this.paint(container);
+        } else {
+          SoundManager.play('ui_cancel');
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-deck]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyDeck || 0);
+        const deck = (this.data.decks || [])[idx];
+        if (!deck) return;
+        const price = Number(deck.price) || 400;
+        const ok =
+          deck.currency === 'gems'
+            ? ProgressionManager.spendDiamonds(price)
+            : ProgressionManager.spendGold(price);
+        if (ok) {
+          SoundManager.play('ui_confirm');
+          (deck.cards || []).forEach((c: string) => ProgressionManager.unlockCard(c));
+          syncActiveDeckWithArsenal({
+            id: deck.id || 'deck-store',
+            name: deck.name || 'Deck',
+            archetype: deck.theme || 'Oficial',
+            accentColor: '#d4a84b',
+            cards: (deck.cards || []).slice(0, 12),
+            artifacts: ['ocultacao', 'escudo', 'golpe'],
+            board: '',
+            isActive: true,
+            isAvailable: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          this.paint(container);
+        } else {
+          SoundManager.play('ui_cancel');
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-coins]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyCoins || 0);
+        const cp = (this.data.coinPacks || [])[idx];
+        if (!cp) return;
+        const gemCost = Number(cp.price) || 10;
+        if (ProgressionManager.spendDiamonds(gemCost)) {
+          SoundManager.play('ui_confirm');
+          ProgressionManager.addGold(Number(cp.gold) || 1000);
+          this.paint(container);
+        } else {
+          SoundManager.play('ui_cancel');
+        }
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-gems]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyGems || 0);
+        const gp = (this.data.gemPacks || [])[idx];
+        if (!gp) return;
+        SoundManager.play('ui_confirm');
+        ProgressionManager.addDiamonds(Number(gp.gems) || 100);
+        this.paint(container);
+      });
+    });
+
+    container.querySelectorAll<HTMLElement>('[data-buy-artifact]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.buyArtifact || 0);
+        const art = (this.data.artifacts || [])[idx];
+        if (!art) return;
+        const price = Number(art.price) || 10;
+        const ok =
+          art.currency === 'gold'
+            ? ProgressionManager.spendGold(price)
+            : ProgressionManager.spendDiamonds(price);
+        if (ok) {
+          SoundManager.play('ui_confirm');
+          this.paint(container);
+        } else {
+          SoundManager.play('ui_cancel');
+        }
+      });
+    });
+  }
+
+  private async openBoosterModal(pack: any, qty: number, container: HTMLElement) {
+    const allTemplates = [...this.customTemplates, ...CARD_TEMPLATES];
+    const resolvedCards = await resolveBoosterCards(pack, allTemplates, 12);
+    new BoosterPackViewer({
+      theme: pack.theme || 'charizard',
+      customFrontUrl: this.resolveBoosterArtUrl(pack),
+      customBackUrl: pack.customBack || pack.backUrl || undefined,
+      customTitle: `${pack.name || 'PACOTE IMPERIAL'}${qty > 1 ? ` (${qty}x)` : ''}`,
+      quantity: qty || 1,
+      cards: resolvedCards,
+      onComplete: (cards) => {
+        (cards || resolvedCards || []).forEach((c: any) => {
+          if (c?.name) ProgressionManager.unlockCard(c.name);
+        });
+        this.paint(container);
+      },
+      onClose: () => {
+        this.paint(container);
+      },
     });
   }
 }

@@ -128,4 +128,58 @@ export class ProgressionManager {
 
         return { data, rewards };
     }
+
+    /**
+     * Alias for getPlayerData() that also provides gems alias for diamonds.
+     */
+    public static getState(): PlayerData & { gems: number } {
+        const data = this.getPlayerData();
+        return {
+            ...data,
+            gems: data.diamonds ?? 0,
+        };
+    }
+
+    public static spendGold(amount: number): boolean {
+        const data = this.getPlayerData();
+        if (data.gold < amount) return false;
+        data.gold -= amount;
+        this.savePlayerData(data);
+        return true;
+    }
+
+    public static addGold(amount: number): PlayerData {
+        const data = this.getPlayerData();
+        data.gold = Math.max(0, (data.gold || 0) + amount);
+        this.savePlayerData(data);
+        return data;
+    }
+
+    public static spendDiamonds(amount: number): boolean {
+        const data = this.getPlayerData();
+        if (data.diamonds < amount) return false;
+        data.diamonds -= amount;
+        this.savePlayerData(data);
+        return true;
+    }
+
+    public static addDiamonds(amount: number): PlayerData {
+        const data = this.getPlayerData();
+        data.diamonds = Math.max(0, (data.diamonds || 0) + amount);
+        this.savePlayerData(data);
+        return data;
+    }
+
+    public static unlockCard(cardNameOrId: string): void {
+        if (!cardNameOrId) return;
+        try {
+            const raw = localStorage.getItem('legends_unlocked_cards');
+            const list: string[] = raw ? JSON.parse(raw) : [];
+            if (!list.includes(cardNameOrId)) {
+                list.push(cardNameOrId);
+                localStorage.setItem('legends_unlocked_cards', JSON.stringify(list));
+            }
+        } catch (_) {}
+    }
 }
+

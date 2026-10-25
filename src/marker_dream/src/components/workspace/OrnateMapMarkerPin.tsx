@@ -157,19 +157,30 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
   const uid = useId().replace(/:/g, '');
   const isLocked = status === 'locked';
 
-  // Marcadores mais compactos e refinados no mapa
-  const baseWidth = sizeVariant === 'sm' ? 110 : sizeVariant === 'lg' ? 160 : 134;
-  const baseHeight = Math.round((baseWidth * 160) / 380);
+  // Clean display name: if it has "Star • Title", show concise full name or expand banner dynamically
+  const displayLabel = name.includes('•')
+    ? name.split('•')[0].trim() + ' • ' + name.split('•').slice(1).join('•').trim()
+    : name;
+
+  // Dynamic SVG viewBox width so longer names never get cut off with "..."
+  const charCount = displayLabel.length;
+  const extraChars = Math.max(0, charCount - 11);
+  const svgViewWidth = 380 + extraChars * 14;
+  const bannerEndX = svgViewWidth - 32;
+
+  const baseStarWidth = sizeVariant === 'sm' ? 112 : sizeVariant === 'lg' ? 156 : 132;
+  const baseWidth = Math.round((baseStarWidth * svgViewWidth) / 380);
+  const baseHeight = Math.round((baseStarWidth * 160) / 380);
   const bannerTopFromBottomPx = Math.round(baseHeight * (80 / 160));
-  const pngLeftPx = Math.round(baseWidth * (118 / 380));
-  const pngWidthPx = Math.round(baseWidth * (252 / 380));
-  const pngHeightPx = Math.round(baseWidth * 0.54);
+  const pngLeftPx = Math.round(baseStarWidth * (118 / 380));
+  const pngWidthPx = Math.round(baseStarWidth * (252 / 380));
+  const pngHeightPx = Math.round(baseStarWidth * 0.54);
 
   // Posição exata do centro da estrela (cx = 76 de 380, cy = 80 de 160)
-  const starCenterXPx = Math.round(baseWidth * (76 / 380));
+  const starCenterXPx = Math.round(baseStarWidth * (76 / 380));
   const starCenterFromBottomPx = Math.round(baseHeight * (80 / 160));
 
-  const effectiveScale = scale * (isFocused ? 1.14 : isSelected ? 1.08 : 1.0);
+  const effectiveScale = scale * (isFocused ? 1.12 : isSelected ? 1.06 : 1.0);
 
   const isHidden = revealStage === 'hidden';
   const isSparkBorn = revealStage === 'spark_born';
@@ -186,7 +197,7 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
       style={{
         width: `${baseWidth}px`,
         transform: `scale(${effectiveScale})`,
-        transformOrigin: '20% 84%',
+        transformOrigin: `${Math.round((76 / svgViewWidth) * 100)}% 84%`,
         transition: 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
@@ -386,13 +397,13 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
           }}
         >
           <svg
-            viewBox="0 0 380 160"
+            viewBox={`0 0 ${svgViewWidth} 160`}
             className="w-full h-full overflow-visible block"
             xmlns="http://www.w3.org/2000/svg"
           >
             <defs>
               {/* Gradiente da Borda Dourada da Cápsula Horizontal */}
-              <linearGradient id={`bannerGoldGrad-${uid}`} x1="76" y1="106" x2="376" y2="106" gradientUnits="userSpaceOnUse">
+              <linearGradient id={`bannerGoldGrad-${uid}`} x1="76" y1="106" x2={String(svgViewWidth - 4)} y2="106" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="#f9ebbe" />
                 <stop offset="22%" stopColor="#f6dc7a" />
                 <stop offset="65%" stopColor="#f6c430" />
@@ -435,19 +446,19 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
             >
               {/* 1. Corpo Externo Dourado da Barra Horizontal (com encaixe curvo no arco inferior direito do círculo) */}
               <path
-                d="M 126 80 L 348 80 A 26 26 0 0 1 348 132 L 76 132 A 52 52 0 0 0 126 80 Z"
+                d={`M 126 80 L ${bannerEndX} 80 A 26 26 0 0 1 ${bannerEndX} 132 L 76 132 A 52 52 0 0 0 126 80 Z`}
                 fill={`url(#bannerGoldGrad-${uid})`}
               />
 
               {/* 2. Faixa Intermediária Creme-Dourada na Curva Esquerda da Barra (idêntica à Imagem 1) */}
               <path
-                d="M 131.5 85 L 346 85 A 21 21 0 0 1 346 127 L 106 127 A 56 56 0 0 0 131.5 85 Z"
+                d={`M 131.5 85 L ${bannerEndX - 2} 85 A 21 21 0 0 1 ${bannerEndX - 2} 127 L 106 127 A 56 56 0 0 0 131.5 85 Z`}
                 fill={`url(#bannerInnerBevel-${uid})`}
               />
 
               {/* 3. Interior Branco Puro da Cápsula Horizontal (curvado à esquerda seguindo o círculo) */}
               <path
-                d="M 137.5 88 L 346 88 A 18 18 0 0 1 346 124 L 119.5 124 A 62 62 0 0 0 137.5 88 Z"
+                d={`M 137.5 88 L ${bannerEndX - 2} 88 A 18 18 0 0 1 ${bannerEndX - 2} 124 L 119.5 124 A 62 62 0 0 0 137.5 88 Z`}
                 fill="#ffffff"
               />
 
@@ -487,10 +498,10 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
 
           {/* Texto do Nome do Local centralizado dentro da área branca da cápsula */}
           <div
-            className="absolute flex items-center justify-center overflow-hidden px-1"
+            className="absolute flex items-center justify-center overflow-hidden px-1.5"
             style={{
-              left: `${Math.round(baseWidth * (138 / 380))}px`,
-              right: `${Math.round(baseWidth * (20 / 380))}px`,
+              left: `${Math.round(baseStarWidth * (138 / 380))}px`,
+              right: `${Math.round(baseStarWidth * (18 / 380))}px`,
               top: `${Math.round(baseHeight * (88 / 160))}px`,
               height: `${Math.round(baseHeight * (36 / 160))}px`,
               opacity: isFullMarkerVisible ? 1 : 0,
@@ -498,20 +509,20 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
             }}
           >
             <span
-              className="font-cinzel font-black uppercase tracking-wider text-[#1e1608] truncate w-full text-center leading-none"
+              className="font-cinzel font-black uppercase tracking-wider text-[#1e1608] whitespace-nowrap w-full text-center leading-none"
               style={{
                 fontSize:
                   sizeVariant === 'sm'
-                    ? '7px'
-                    : name.length > 18
                     ? '7.5px'
-                    : name.length > 13
-                    ? '8px'
+                    : displayLabel.length > 22
+                    ? '7.5px'
+                    : displayLabel.length > 15
+                    ? '8.2px'
                     : '8.8px',
                 textShadow: '0 1px 0 rgba(255, 255, 255, 0.8)',
               }}
             >
-              {name}
+              {displayLabel}
             </span>
           </div>
         </div>

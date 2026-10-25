@@ -33,8 +33,10 @@ import {
   ConstellationLayerView,
   SolarSystemLayerView,
   PlanetGlobeEmulatorView,
+  AstralDestinationCapsule,
   getOrCreatePlanetGlobeConfig,
   buildDefaultMarkersForPlanet,
+  detectMapViewportProfile,
 } from './PlanetGlobeView';
 import type { SolarSystemPlanet, ConstellationSystemNode } from '../../types/map';
 
@@ -138,7 +140,21 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
       ),
     [worldMap.pointsOfInterest]
   );
-  const [isLugaresExpanded, setIsLugaresExpanded] = useState<boolean>(true);
+  const vp = useMemo(
+    () => detectMapViewportProfile(screenWidth, screenHeight),
+    [screenWidth, screenHeight]
+  );
+
+  // Em Mobile (Retrato ou Paisagem), inicia a gaveta LUGARES recolhida para deixar o céu/planeta 100% limpo
+  const [isLugaresExpanded, setIsLugaresExpanded] = useState<boolean>(
+    () => !(screenWidth < 600 || screenHeight < 540)
+  );
+  useEffect(() => {
+    if (vp.isMobilePortrait || vp.isMobileLandscape) {
+      setIsLugaresExpanded(false);
+    }
+  }, [vp.profile, vp.isMobilePortrait, vp.isMobileLandscape]);
+
   const [expandedPlaceId, setExpandedPlaceId] = useState<string | null>(
     () => visiblePois[0]?.id || null
   );
@@ -163,78 +179,21 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
   }, [visiblePois]);
 
   useEffect(() => {
-    if (mapLayerMode !== 'region') {
-      setIntroPhase('complete');
-      return;
-    }
-    const totalStars = orderedIntroPois.length;
-    if (totalStars === 0) {
-      setIntroPhase('complete');
-      return;
-    }
-
-    setIntroPhase('stars_igniting');
-    setLitStarCount(0);
+    setIntroPhase('complete');
+    setLitStarCount(orderedIntroPois.length);
     setFlaringStarIdx(null);
     setIsCameraZoomed(false);
-    setFocusedPoiId(null);
-    setCameraTargetPoi(null);
-    setUserZoom(1.0);
     setPanOffset({ x: 0, y: 0 });
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft = 0;
-      scrollContainerRef.current.scrollTop = 0;
+    if (mapLayerMode === 'region') {
+      const firstLocation = visiblePois[0] || orderedIntroPois[0] || null;
+      if (firstLocation) {
+        setCameraTargetPoi(firstLocation);
+        setFocusedPoiId(firstLocation.id);
+        setExpandedPlaceId(firstLocation.id);
+      }
+      setUserZoom(1.18);
     }
-
-    const timers: number[] = [];
-    const starStepMs = 1050;
-    const initialDelayMs = 650;
-
-    orderedIntroPois.forEach((_poi, idx) => {
-      const t = window.setTimeout(() => {
-        const isLast = idx === totalStars - 1;
-        setLitStarCount(idx + 1);
-        setFlaringStarIdx(idx);
-        playConstellationStarNote(idx, isLast);
-
-        if (isLast) {
-          const tDissolve = window.setTimeout(() => {
-            setFlaringStarIdx(null);
-            setIntroPhase('dissolving_darkness');
-          }, 950);
-          timers.push(tDissolve);
-
-          const tUnfurl = window.setTimeout(() => {
-            setIntroPhase('markers_unfurling');
-            playMarkersUnfurlChime();
-          }, 3150);
-          timers.push(tUnfurl);
-
-          const tZoomFirst = window.setTimeout(() => {
-            const firstLocation = visiblePois[0] || orderedIntroPois[0] || null;
-            setIntroPhase('zooming_to_first');
-            if (firstLocation) {
-              setCameraTargetPoi(firstLocation);
-              setExpandedPlaceId(firstLocation.id);
-              setUserZoom(1.32);
-              setPanOffset({ x: 0, y: 0 });
-            }
-          }, 4250);
-          timers.push(tZoomFirst);
-
-          const tComplete = window.setTimeout(() => {
-            setIntroPhase('complete');
-          }, 5750);
-          timers.push(tComplete);
-        }
-      }, initialDelayMs + idx * starStepMs);
-      timers.push(t);
-    });
-
-    return () => {
-      timers.forEach((id) => window.clearTimeout(id));
-    };
-  }, [worldMap.id, introRunKey, orderedIntroPois.length, mapLayerMode]);
+  }, [worldMap.id, introRunKey, orderedIntroPois.length, mapLayerMode, visiblePois]);
 
   // Oculta SEMPRE o Header e a Barra de Navegação Inferior do Hub enquanto o Mapa estiver aberto!
   // O Mapa utiliza exclusivamente a sua própria UI de Sobreposição nas 3 camadas.
@@ -252,7 +211,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     };
   }, [isPlayMode]);
 
-  // Event Listener para a Roda do Mouse (Wheel) Simular Zoom de Pinça nas 3 Camadas
+  // Event Listener para a Roda do Mouse (Wheel) Simular Zoom Real Contínuo nas 4 Camadas
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -260,8 +219,13 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     const handleWheel = (e: WheelEvent) => {
       if (mapLayerMode === 'region' && introPhase !== 'complete') return;
       e.preventDefault();
-      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
       setUserZoom((prev) => {
+        if (mapLayerMode === 'region' && e.deltaY > 0 && prev <= 0.82 && isPlanetEnabled) {
+          setSelectedPoi(null);
+          setMapLayerMode('planet');
+          return 1.0;
+        }
         const next = Math.min(2.4, Math.max(0.78, parseFloat((prev + delta).toFixed(2))));
         if (next <= 1.02) setPanOffset({ x: 0, y: 0 });
         return next;
@@ -272,7 +236,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [introPhase, mapLayerMode]);
+  }, [introPhase, mapLayerMode, isPlanetEnabled]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (mapLayerMode === 'region' && introPhase !== 'complete') return;
@@ -446,9 +410,21 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
   };
 
   const isLandscapeLayout = screenWidth > screenHeight * 1.15;
-  // Como ocultamos o Header e a Barra de Navegação do Hub no Mapa, a UI de Sobreposição usa toda a tela limpa!
-  const topOverlayOffset = 12;
-  const bottomOverlayOffset = 14;
+  const topOverlayOffset = vp.isMobileLandscape ? 8 : vp.isMobilePortrait ? 10 : 12;
+  const bottomOverlayOffset = vp.isMobileLandscape ? 10 : vp.isMobilePortrait ? 12 : 14;
+
+  // Detecta se a cápsula inferior de destino está ativa para evitar qualquer colisão com o botão LEGENDA
+  const hasActiveBottomCapsule =
+    mapLayerMode === 'constellation'
+      ? Boolean(pausedConstellationId)
+      : mapLayerMode === 'solar' || mapLayerMode === 'planet'
+      ? true
+      : Boolean(targetPoiForCamera && !selectedPoi);
+
+  const legendBottomPx =
+    hasActiveBottomCapsule && (vp.isMobilePortrait || screenWidth < 680)
+      ? bottomOverlayOffset + 42
+      : bottomOverlayOffset;
 
   const allMaps =
     availableMaps.length > 0
@@ -529,6 +505,11 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
             setUserZoom(1.0);
             setMapLayerMode('planet');
           }}
+          onBackToConstellation={() => {
+            setPausedSolarPlanetId(null);
+            setUserZoom(1.0);
+            setMapLayerMode('constellation');
+          }}
         />
       ) : mapLayerMode === 'planet' ? (
         <PlanetGlobeEmulatorView
@@ -545,9 +526,13 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
               setRegionalMapOverride(targetMap);
               onSelectWorldMap?.(targetMap);
             }
-            setUserZoom(1.0);
+            setUserZoom(1.15);
             setIntroRunKey((k) => k + 1);
             setMapLayerMode('region');
+          }}
+          onBackToSolarSystem={() => {
+            setUserZoom(1.0);
+            setMapLayerMode('solar');
           }}
         />
       ) : (
@@ -780,6 +765,26 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Bottom Destination Capsule on Regional Map when a Location is Focused */}
+          {targetPoiForCamera && !selectedPoi && (
+            <AstralDestinationCapsule
+              visible={Boolean(targetPoiForCamera)}
+              categoryLabel={worldMap.title || 'REGIÃO EXPLORADA'}
+              destinationName={targetPoiForCamera.name || 'Local Selecionado'}
+              subtitle={
+                targetPoiForCamera.badgeText ||
+                `Nível Recomendado ${targetPoiForCamera.recommendedLevel || 1}`
+              }
+              accentColor="#fbbf24"
+              screenWidth={screenWidth}
+              screenHeight={screenHeight}
+              actionLabel={`IR ATÉ ${targetPoiForCamera.name || 'LOCAL'}`}
+              onConfirm={() => {
+                setSelectedPoi(targetPoiForCamera);
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -794,8 +799,18 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
             className="absolute left-2.5 z-35 pointer-events-auto select-none flex flex-col transition-all duration-300 animate-in fade-in"
             style={{
               top: `${topOverlayOffset}px`,
-              width: isLandscapeLayout ? '196px' : '168px',
-              maxHeight: `${Math.max(200, screenHeight - topOverlayOffset - bottomOverlayOffset - 48)}px`,
+              width: vp.isMobilePortrait
+                ? isLugaresExpanded
+                  ? '158px'
+                  : '124px'
+                : vp.isMobileLandscape
+                ? isLugaresExpanded
+                  ? '172px'
+                  : '132px'
+                : isLandscapeLayout
+                ? '196px'
+                : '172px',
+              maxHeight: `${Math.max(160, screenHeight - topOverlayOffset - bottomOverlayOffset - 56)}px`,
             }}
           >
             <div
@@ -908,7 +923,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                                   }}
                                 >
                                   <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
-                                    🚀 HYPER-SALTO ({cPlanets.length} PLANETAS)
+                                    ☀️ VER SISTEMA ({cPlanets.length} PLANETAS)
                                   </span>
                                   <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
                                 </button>
@@ -1554,21 +1569,23 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
             )}
 
             {/* Haste Vertical Dourada Ornamental com Estrelas ✦ + Botões +, − e RECENTRALIZAR */}
-            <div className="relative flex flex-col items-center mr-3 mt-1">
+            <div className="relative flex flex-col items-center mr-2 mt-1">
               {/* Linha Vertical Dourada */}
               <div
-                className="w-[2px] h-4"
+                className="w-[2px]"
                 style={{
+                  height: vp.isMobileLandscape ? '8px' : '14px',
                   background: 'linear-gradient(180deg, #fff3c2 0%, #c59638 100%)',
                   boxShadow: '0 0 6px rgba(229, 193, 104, 0.7)',
                 }}
               />
-              <span className="text-[#fff3c2] text-[10px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
+              <span className="text-[#fff3c2] text-[9px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
                 ✦
               </span>
               <div
-                className="w-[2px] h-3"
+                className="w-[2px]"
                 style={{
+                  height: vp.isMobileLandscape ? '6px' : '10px',
                   background: 'linear-gradient(180deg, #c59638 0%, #fff3c2 100%)',
                 }}
               />
@@ -1579,8 +1596,10 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 onClick={() =>
                   setUserZoom((z) => Math.min(2.5, parseFloat((z + 0.18).toFixed(2))))
                 }
-                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                className="rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
                 style={{
+                  width: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
+                  height: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
                   background:
                     'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
                   border: '2px solid #c59638',
@@ -1590,15 +1609,18 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 }}
                 title="Aumentar Zoom (+)"
               >
-                <span className="font-cinzel font-black text-lg text-[#3a2b1c] leading-none">
+                <span className="font-cinzel font-black text-base text-[#3a2b1c] leading-none">
                   +
                 </span>
               </button>
 
               {/* Conector Dourado entre + e − */}
               <div
-                className="w-[2px] h-2.5"
-                style={{ background: '#c59638' }}
+                className="w-[2px]"
+                style={{
+                  height: vp.isMobileLandscape ? '6px' : '10px',
+                  background: '#c59638',
+                }}
               />
 
               {/* Botão Circular − (Diminuir Zoom ou Subir Camada: Região -> Planeta -> Sistema Solar -> Constelação) */}
@@ -1622,8 +1644,10 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                     setUserZoom((z) => Math.max(0.85, parseFloat((z - 0.18).toFixed(2))));
                   }
                 }}
-                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                className="rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
                 style={{
+                  width: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
+                  height: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
                   background:
                     'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
                   border: '2px solid #c59638',
@@ -1633,30 +1657,38 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 }}
                 title="Diminuir Zoom / Voltar Camada Anterior (−)"
               >
-                <span className="font-cinzel font-black text-lg text-[#3a2b1c] leading-none">
+                <span className="font-cinzel font-black text-base text-[#3a2b1c] leading-none">
                   −
                 </span>
               </button>
 
               {/* Conector Dourado com Estrela ✦ para RECENTRALIZAR */}
               <div
-                className="w-[2px] h-3"
-                style={{ background: '#c59638' }}
+                className="w-[2px]"
+                style={{
+                  height: vp.isMobileLandscape ? '6px' : '10px',
+                  background: '#c59638',
+                }}
               />
-              <span className="text-[#fff3c2] text-[9px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
+              <span className="text-[#fff3c2] text-[8px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
                 ✦
               </span>
               <div
-                className="w-[2px] h-3"
-                style={{ background: '#c59638' }}
+                className="w-[2px]"
+                style={{
+                  height: vp.isMobileLandscape ? '6px' : '10px',
+                  background: '#c59638',
+                }}
               />
 
               {/* Botão Circular 🎯 RECENTRALIZAR */}
               <button
                 type="button"
                 onClick={handleRecenterMap}
-                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                className="rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
                 style={{
+                  width: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
+                  height: vp.isMobilePortrait || vp.isMobileLandscape ? '34px' : '40px',
                   background:
                     'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
                   border: '2px solid #c59638',
@@ -1666,22 +1698,24 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 }}
                 title="Recentralizar Câmera e Resetar Zoom (100%)"
               >
-                <span className="text-sm leading-none text-[#5c3d08] font-black">🎯</span>
+                <span className="text-xs leading-none text-[#5c3d08] font-black">🎯</span>
               </button>
-              <span className="mt-1 px-1.5 py-0.5 rounded bg-black/65 border border-[#c59638]/50 font-cinzel font-black text-[7px] text-[#fff3c2] tracking-wider uppercase shadow">
-                RECENTRALIZAR
-              </span>
+              {!vp.isMobileLandscape && (
+                <span className="mt-1 px-1.5 py-0.5 rounded bg-black/65 border border-[#c59638]/50 font-cinzel font-black text-[6.5px] text-[#fff3c2] tracking-wider uppercase shadow">
+                  RECENTRALIZAR
+                </span>
+              )}
             </div>
           </div>
 
-          {/* 3. BARRA INFERIOR DO MAPA: LEGENDA ^ (ESQUERDA) & 🧭 EXPLORAR (DIREITA) */}
+          {/* 3. BARRA INFERIOR DO MAPA: LEGENDA ^ (Posicionada sem colisão com a cápsula de destino!) */}
           <div
-            className="absolute left-3 z-35 pointer-events-auto select-none flex flex-col items-start"
-            style={{ bottom: `${bottomOverlayOffset}px` }}
+            className="absolute left-2.5 z-35 pointer-events-auto select-none flex flex-col items-start transition-all duration-200"
+            style={{ bottom: `${legendBottomPx}px` }}
           >
             {isLegendOpen && (
               <div
-                className="mb-2 w-56 pearl-surface p-3 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-150"
+                className="mb-2 w-52 pearl-surface p-2.5 space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150"
                 style={{
                   borderRadius: '16px',
                   border: '2px solid #c59638',
@@ -1689,7 +1723,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                 }}
               >
                 <div className="flex items-center justify-between border-b border-[#c59638]/50 pb-1">
-                  <span className="font-cinzel font-black text-[10px] text-[#2b1f14] uppercase tracking-wider">
+                  <span className="font-cinzel font-black text-[9.5px] text-[#2b1f14] uppercase tracking-wider">
                     🗺️ Legenda do Mapa
                   </span>
                   <button
@@ -1700,27 +1734,27 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                     ✕
                   </button>
                 </div>
-                <div className="space-y-1.5 text-[9.5px] font-cinzel font-bold text-[#3a2b1c]">
+                <div className="space-y-1 text-[9px] font-cinzel font-bold text-[#3a2b1c]">
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-[#0b3778] border border-[#e5c168] text-[#fff3c2] flex items-center justify-center text-[8px]">
+                    <span className="w-3.5 h-3.5 rounded-full bg-[#0b3778] border border-[#e5c168] text-[#fff3c2] flex items-center justify-center text-[7px]">
                       ✦
                     </span>
                     <span>Local Desbloqueado ({unlockedCount})</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-emerald-700 border border-emerald-300 text-white flex items-center justify-center text-[8px]">
+                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-700 border border-emerald-300 text-white flex items-center justify-center text-[7px]">
                       ✓
                     </span>
                     <span>Fase Concluída</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-rose-900 border border-rose-400 text-rose-200 flex items-center justify-center text-[8px]">
+                    <span className="w-3.5 h-3.5 rounded-full bg-rose-900 border border-rose-400 text-rose-200 flex items-center justify-center text-[7px]">
                       🔒
                     </span>
                     <span>Região Bloqueada</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 h-1 rounded-full bg-[#e5c168] border border-[#523707]" />
+                    <span className="w-3.5 h-1 rounded-full bg-[#e5c168] border border-[#523707]" />
                     <span>Trilha / Rota Imperial</span>
                   </div>
                 </div>
@@ -1733,10 +1767,16 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
               className="btn-pearl-gold cursor-pointer active:scale-95 transition-transform"
               title="Mostrar / Ocultar Legenda do Mapa"
             >
-              <div className="btn-pearl-inner px-3.5 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] text-[#2b1f14] uppercase tracking-wider">
+              <div
+                className="btn-pearl-inner flex items-center gap-1 font-cinzel font-black text-[#2b1f14] uppercase tracking-wider"
+                style={{
+                  padding: vp.isMobilePortrait ? '4px 9px' : '5px 12px',
+                  fontSize: vp.isMobilePortrait ? '8.5px' : '10px',
+                }}
+              >
                 <span>🗺️ LEGENDA</span>
                 <span
-                  className={`text-[#8c6518] text-[10px] transition-transform ${
+                  className={`text-[#8c6518] text-[9px] transition-transform ${
                     isLegendOpen ? 'rotate-180' : ''
                   }`}
                 >
@@ -1749,242 +1789,403 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
       )}
 
       {/* =========================================================================
-          POP-UP DE MARCADOR DO MAPA / LOCAL — NOVA UI v1.2 (PEARL & GOLD + ROYAL SAPPHIRE)
-          Ao abrir, oculta automaticamente o Header e a Barra de Navegação do Hub
+          POP-UP DE MARCADOR DO MAPA / LOCAL — COM LAYOUT DEDICADO POR DISPOSITIVO:
+          - Mobile Landscape / Compact Height: Card Horizontal em 2 Colunas (Zero corte vertical!)
+          - Mobile Portrait: Card Vertical Compacto que cabe 100% na tela vertical
+          - Tablet & Web Desktop: Card Real Equilibrado sem colisão no botão ✕
          ========================================================================= */}
-      {selectedPoi && (
-        <div
-          data-poi-interactive="true"
-          className="absolute inset-0 z-50 bg-[#020816]/82 backdrop-blur-md flex items-center justify-center p-3 animate-in fade-in zoom-in-95 duration-200 pointer-events-auto select-none overflow-y-auto"
-          onClick={handleCloseModal}
-        >
-          <div
-            className="w-full max-w-[420px] sm:max-w-[445px] flex flex-col items-center relative my-auto px-2 py-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* ELEMENTO EXTERNO ACIMA DO POP-UP: Asset PNG/Emoji em Destaque + Faixa Royal Sapphire & Gold */}
-            <div className="relative -mb-5 z-20 flex flex-col items-center">
-              <div className="relative group flex flex-col items-center">
-                <div className="absolute inset-0 rounded-full bg-[#e5c168]/35 blur-3xl animate-pulse scale-115" />
+      {selectedPoi &&
+        (() => {
+          const effectiveCount =
+            selectedPoi.rewardSlotCount || selectedPoi.rewardSlots?.length || 10;
+          const slots = Array.from({ length: effectiveCount }).map((_, idx) => {
+            const slotValue = selectedPoi.rewardSlots?.[idx] ?? '';
+            const slotConfig = selectedPoi.rewardSlotConfigs?.find(
+              (s) => s.slotIndex === idx
+            );
+            const isRevealed = slotConfig?.isRevealed ?? false;
+            return { idx, slotValue, slotConfig, isRevealed };
+          });
+          const revealedCount = slots.filter((s) => s.slotValue && s.isRevealed).length;
+          const filledCount = slots.filter((s) => !!s.slotValue).length;
 
-                {selectedPoi.iconPng ? (
-                  <img
-                    src={selectedPoi.iconPng}
-                    alt={selectedPoi.name}
-                    className="w-44 h-44 sm:w-52 sm:h-52 object-contain filter drop-shadow-[0_16px_32px_rgba(0,0,0,0.92)] relative z-10 select-none pointer-events-none transform group-hover:scale-105 transition-all duration-300"
-                  />
-                ) : (
-                  <div className="text-8xl sm:text-9xl filter drop-shadow-[0_16px_32px_rgba(0,0,0,0.9)] relative z-10 select-none my-2">
-                    {selectedPoi.iconEmoji || '🏰'}
-                  </div>
-                )}
+          const handleTravelNow = () => {
+            const targetLevel =
+              savedLevels.find((l) => l.id === selectedPoi.targetLevelId) ||
+              savedLevels.find(
+                (l) =>
+                  l.name &&
+                  selectedPoi.name &&
+                  l.name.toLowerCase().trim() === selectedPoi.name.toLowerCase().trim()
+              ) ||
+              savedLevels[0] ||
+              (onLoadLevel
+                ? ({
+                    id: selectedPoi.targetLevelId || selectedPoi.id || 'level-active',
+                    name: selectedPoi.name || project.title || 'Fase Explorável',
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    projectData: {
+                      ...project,
+                      title: selectedPoi.name || project.title || 'Fase Explorável',
+                    },
+                  } as SavedLevel)
+                : undefined);
+            if (targetLevel && onLoadLevel) {
+              onLoadLevel(targetLevel);
+              handleCloseModal();
+            } else if (onOpenEditorTab) {
+              onOpenEditorTab();
+              handleCloseModal();
+            }
+          };
 
-                {/* Faixa Royal Sapphire & Gold com o Nome do Local */}
+          const useHorizontalSplitLayout =
+            vp.isMobileLandscape || (screenHeight < 580 && screenWidth >= 520);
+
+          return (
+            <div
+              data-poi-interactive="true"
+              className="absolute inset-0 z-50 bg-[#020816]/84 backdrop-blur-md flex items-center justify-center p-2.5 animate-in fade-in zoom-in-95 duration-200 pointer-events-auto select-none overflow-y-auto"
+              onClick={handleCloseModal}
+            >
+              {useHorizontalSplitLayout ? (
+                /* ===============================================================
+                   MODO PAISAGEM / COMPACTO: LAYOUT HORIZONTAL DEDICADO EM 2 COLUNAS
+                   =============================================================== */
                 <div
-                  className="px-6 py-1.5 rounded-full font-cinzel font-black text-xs sm:text-sm text-[#fff3c2] uppercase tracking-[0.14em] whitespace-nowrap z-20 -mt-5"
+                  className="w-full pearl-surface relative p-3.5 flex items-stretch gap-3.5 my-auto"
                   style={{
-                    background:
-                      'linear-gradient(180deg, #0b3778 0%, #062356 58%, #031536 100%)',
-                    border: '2px solid #e5c168',
+                    maxWidth: `${Math.min(640, screenWidth - 20)}px`,
+                    borderRadius: '22px',
+                    border: '2.5px solid #c59638',
                     outline: '1.5px solid #4a3006',
                     boxShadow:
-                      '0 8px 22px rgba(0, 8, 22, 0.9), inset 0 1px 1px rgba(255, 243, 194, 0.5)',
+                      '0 20px 48px rgba(0, 8, 22, 0.92), 0 0 28px rgba(212, 175, 83, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.95)',
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  ✦ {selectedPoi.name} ✦
-                </div>
-              </div>
-            </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="close-btn-outer absolute -top-2.5 -right-2.5 z-40 cursor-pointer"
+                    title="Fechar Local"
+                  >
+                    <div className="close-btn-inner">✕</div>
+                  </button>
 
-            {/* MOLDURA PRINCIPAL PEARL & GOLD (Nova UI v1.2) */}
-            <div
-              className="w-full pearl-surface flex flex-col relative pt-8 pb-4 px-4 sm:px-5"
-              style={{
-                borderRadius: '26px',
-                border: '3px solid #c59638',
-                outline: '2px solid #4a3006',
-                boxShadow:
-                  '0 24px 60px rgba(0, 8, 22, 0.92), 0 0 32px rgba(212, 175, 83, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.95)',
-              }}
-            >
-              {/* Botão Fechar Nova UI v1.2 */}
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="close-btn-outer absolute -top-3 -right-3 z-40 cursor-pointer"
-                title="Fechar Local"
-              >
-                <div className="close-btn-inner">✕</div>
-              </button>
+                  {/* Coluna Esquerda: Ícone do Local + Nome + Nível + Botão Viajar */}
+                  <div className="w-[42%] flex flex-col items-center justify-between text-center pr-2 border-r border-[#c59638]/45">
+                    <div className="flex flex-col items-center w-full">
+                      {selectedPoi.iconPng ? (
+                        <img
+                          src={selectedPoi.iconPng}
+                          alt={selectedPoi.name}
+                          className="w-16 h-16 object-contain filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)]"
+                        />
+                      ) : (
+                        <div className="text-5xl leading-none filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)] my-1">
+                          {selectedPoi.iconEmoji || '🏰'}
+                        </div>
+                      )}
 
-              {/* Badges de Nível Recomendado e Estado */}
-              <div className="flex items-center justify-center gap-2 text-[10px] font-cinzel font-black mb-2.5 z-10">
-                <span
-                  className="px-3 py-1 rounded-full text-[#fff3c2] shadow-sm flex items-center gap-1"
-                  style={{
-                    background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
-                    border: '1.5px solid #d4a84b',
-                  }}
-                >
-                  ⭐ NV. RECOMENDADO: {selectedPoi.recommendedLevel || 1}
-                </span>
-
-                {selectedPoi.badgeText && (
-                  <span className="pearl-pill px-3 py-1 text-[#5c3d08] font-cinzel font-black uppercase tracking-wider">
-                    {selectedPoi.badgeText}
-                  </span>
-                )}
-              </div>
-
-              {/* Conteúdo Interno: Descrição Concisa + Grade Visual de Slimes/Assets + Botão Viajar */}
-              <div className="space-y-3 z-10">
-                <div className="p-2.5 pearl-subcard text-[11px] font-semibold text-[#3a2b1c] leading-snug text-center">
-                  {selectedPoi.description ||
-                    'Território místico repleto de relíquias ancestrais, criaturas elementais e desafios do reino.'}
-                </div>
-
-                {/* SLIMES E CRIATURAS DESSA ÁREA (Foco nos Assets e Silhuetas) */}
-                {(() => {
-                  const effectiveCount =
-                    selectedPoi.rewardSlotCount || selectedPoi.rewardSlots?.length || 10;
-                  const slots = Array.from({ length: effectiveCount }).map((_, idx) => {
-                    const slotValue = selectedPoi.rewardSlots?.[idx] ?? '';
-                    const slotConfig = selectedPoi.rewardSlotConfigs?.find(
-                      (s) => s.slotIndex === idx
-                    );
-                    const isRevealed = slotConfig?.isRevealed ?? false;
-                    return { idx, slotValue, slotConfig, isRevealed };
-                  });
-                  const revealedCount = slots.filter((s) => s.slotValue && s.isRevealed).length;
-                  const filledCount = slots.filter((s) => !!s.slotValue).length;
-
-                  return (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] font-cinzel font-black text-[#2b1f14] uppercase tracking-wider px-1">
-                        <span className="flex items-center gap-1.5">
-                          <span>👾 Criaturas &amp; Drops da Região</span>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#062356] text-[#f5d98b] border border-[#d4a84b]">
-                            {revealedCount}/{filledCount || effectiveCount}
-                          </span>
-                        </span>
-                        <span className="text-[9px] text-[#8c6518] font-bold">
-                          {effectiveCount} Slots
-                        </span>
+                      <div
+                        className="mt-1.5 px-3 py-1 rounded-full font-cinzel font-black text-[10px] text-[#fff3c2] uppercase tracking-wider text-center leading-tight w-full"
+                        style={{
+                          background:
+                            'linear-gradient(180deg, #0b3778 0%, #062356 58%, #031536 100%)',
+                          border: '1.5px solid #e5c168',
+                        }}
+                      >
+                        ✦ {selectedPoi.name} ✦
                       </div>
 
-                      <div className="grid grid-cols-5 gap-2 p-2.5 pearl-subcard max-h-[168px] overflow-y-auto nova-scroll">
-                        {slots.map(({ idx, slotValue, slotConfig, isRevealed }) => {
-                          const eventLink =
-                            slotConfig?.encounterEventLink ||
-                            `https://meujogo.com/evento-encontro-local-${selectedPoi.id}-slot-${idx + 1}`;
-                          const isImage =
-                            slotValue.startsWith('data:image') || slotValue.startsWith('http');
+                      <div className="flex flex-wrap items-center justify-center gap-1 mt-1.5 text-[8.5px] font-cinzel font-black">
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[#fff3c2]"
+                          style={{
+                            background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+                            border: '1px solid #d4a84b',
+                          }}
+                        >
+                          ⭐ NV. {selectedPoi.recommendedLevel || 1}
+                        </span>
+                        {selectedPoi.badgeText && (
+                          <span className="pearl-pill px-2 py-0.5 text-[#5c3d08] uppercase">
+                            {selectedPoi.badgeText}
+                          </span>
+                        )}
+                      </div>
 
-                          return (
-                            <div
-                              key={`clash-slot-${idx}`}
-                              onClick={() => {
-                                setActiveEncounterSlot({
-                                  idx,
-                                  val: slotValue || '👾',
-                                  link: eventLink,
-                                  isRevealed,
-                                });
-                              }}
-                              className={`w-11 h-11 mx-auto rounded-full border-2 flex items-center justify-center text-[10px] font-black transition-all cursor-pointer relative group overflow-hidden ${
-                                slotValue
-                                  ? isRevealed
-                                    ? 'bg-gradient-to-b from-[#0b3778] to-[#041f4a] border-[#e5c168] shadow-[0_3px_8px_rgba(0,8,22,0.5)] hover:scale-108'
-                                    : 'bg-[#1a1410] border-[#c59638] hover:scale-108'
-                                  : 'bg-[#e6dac6]/80 border-dashed border-[#b88928]/70 hover:border-[#8c6518] hover:scale-105'
-                              }`}
-                              title={
-                                slotValue
-                                  ? isRevealed
-                                    ? `Slot #${idx + 1}: Criatura Revelada!`
-                                    : `Slot #${idx + 1}: Criatura Oculta (Toque para Escanear)`
-                                  : `Slot #${idx + 1}: Slot de Descoberta`
-                              }
-                            >
-                              {slotValue ? (
-                                isImage ? (
-                                  <div className="relative w-full h-full flex items-center justify-center">
-                                    <img
-                                      src={slotValue}
-                                      alt={`Slot ${idx + 1}`}
-                                      className={`w-full h-full object-contain p-1 transition-all ${
-                                        !isRevealed
-                                          ? 'filter brightness-0 contrast-200 opacity-85'
-                                          : 'filter drop-shadow-[0_2px_6px_rgba(255,243,194,0.45)]'
-                                      }`}
-                                    />
-                                    {!isRevealed && (
-                                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
-                                        <Lock className="w-3.5 h-3.5 text-[#f5d98b] drop-shadow" />
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="truncate max-w-[34px] text-center text-[#fff3c2] text-sm">
-                                    {slotValue}
-                                  </span>
-                                )
+                      <p className="mt-1.5 text-[9.5px] font-semibold text-[#3a2b1c] line-clamp-2 leading-tight">
+                        {selectedPoi.description || 'Ponto de partida dos aventureiros.'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTravelNow}
+                      className="w-full mt-2 btn-royal-gold cursor-pointer active:scale-98 transition-transform"
+                    >
+                      <div className="btn-royal-inner py-2 px-3 flex items-center justify-center gap-1.5 font-cinzel font-black text-[11px] text-[#fff3c2] uppercase tracking-wider">
+                        <Zap className="w-3.5 h-3.5 text-[#f5d98b] fill-[#f5d98b]" />
+                        <span>{selectedPoi.travelButtonText || 'VIAJAR AGORA'}</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Coluna Direita: Grade de Criaturas & Drops */}
+                  <div className="flex-1 flex flex-col justify-between min-w-0">
+                    <div className="flex items-center justify-between text-[9px] font-cinzel font-black text-[#2b1f14] uppercase tracking-wider px-0.5 mb-1">
+                      <span className="flex items-center gap-1">
+                        <span>👾 Criaturas &amp; Drops</span>
+                        <span className="text-[8px] px-1.5 py-0.2 rounded-full bg-[#062356] text-[#f5d98b] border border-[#d4a84b]">
+                          {revealedCount}/{filledCount || effectiveCount}
+                        </span>
+                      </span>
+                      <span className="text-[8px] text-[#8c6518] font-bold">
+                        {effectiveCount} Slots
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-1.5 p-2 pearl-subcard max-h-[165px] overflow-y-auto nova-scroll">
+                      {slots.map(({ idx, slotValue, slotConfig, isRevealed }) => {
+                        const eventLink =
+                          slotConfig?.encounterEventLink ||
+                          `https://meujogo.com/evento-encontro-local-${selectedPoi.id}-slot-${idx + 1}`;
+                        const isImage =
+                          slotValue.startsWith('data:image') || slotValue.startsWith('http');
+                        return (
+                          <div
+                            key={`clash-slot-land-${idx}`}
+                            onClick={() => {
+                              setActiveEncounterSlot({
+                                idx,
+                                val: slotValue || '👾',
+                                link: eventLink,
+                                isRevealed,
+                              });
+                            }}
+                            className={`w-9 h-9 mx-auto rounded-full border-2 flex items-center justify-center text-[9px] font-black transition-all cursor-pointer relative overflow-hidden ${
+                              slotValue
+                                ? isRevealed
+                                  ? 'bg-gradient-to-b from-[#0b3778] to-[#041f4a] border-[#e5c168]'
+                                  : 'bg-[#1a1410] border-[#c59638]'
+                                : 'bg-[#e6dac6]/80 border-dashed border-[#b88928]/70'
+                            }`}
+                          >
+                            {slotValue ? (
+                              isImage ? (
+                                <img
+                                  src={slotValue}
+                                  alt={`Slot ${idx + 1}`}
+                                  className={`w-full h-full object-contain p-1 ${
+                                    !isRevealed ? 'filter brightness-0 contrast-200 opacity-85' : ''
+                                  }`}
+                                />
                               ) : (
-                                <span className="text-xs text-[#8c6518]/65">👾</span>
-                              )}
-                            </div>
-                          );
-                        })}
+                                <span className="text-[#fff3c2] text-xs">{slotValue}</span>
+                              )
+                            ) : (
+                              <span className="text-[10px] text-[#8c6518]/65">👾</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ===============================================================
+                   MODO RETRATO (MOBILE / TABLET) & WEB DESKTOP: CARD VERTICAL PROPORCIONAL
+                   =============================================================== */
+                <div
+                  className="w-full flex flex-col items-center relative my-auto px-1.5 py-2"
+                  style={{
+                    maxWidth: vp.isMobilePortrait
+                      ? `${Math.min(350, screenWidth - 16)}px`
+                      : '435px',
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Topo com Ícone proporcional à altura da tela */}
+                  <div className="relative -mb-4 z-20 flex flex-col items-center w-full">
+                    <div className="relative flex flex-col items-center max-w-[88%]">
+                      <div className="absolute inset-0 rounded-full bg-[#e5c168]/30 blur-2xl pointer-events-none" />
+
+                      {selectedPoi.iconPng ? (
+                        <img
+                          src={selectedPoi.iconPng}
+                          alt={selectedPoi.name}
+                          className={`object-contain filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.9)] relative z-10 select-none pointer-events-none ${
+                            vp.isMobilePortrait ? 'w-20 h-20' : 'w-28 h-28'
+                          }`}
+                        />
+                      ) : (
+                        <div
+                          className={`filter drop-shadow-[0_12px_24px_rgba(0,0,0,0.9)] relative z-10 select-none leading-none my-1 ${
+                            vp.isMobilePortrait ? 'text-5xl' : 'text-6xl'
+                          }`}
+                        >
+                          {selectedPoi.iconEmoji || '🏰'}
+                        </div>
+                      )}
+
+                      {/* Faixa Royal Sapphire & Gold com largura segura (nunca colide com o botão ✕) */}
+                      <div
+                        className="px-4 py-1.5 rounded-full font-cinzel font-black text-[#fff3c2] uppercase tracking-[0.1em] text-center leading-tight z-20 -mt-2"
+                        style={{
+                          fontSize: vp.isMobilePortrait ? '10px' : '12px',
+                          background:
+                            'linear-gradient(180deg, #0b3778 0%, #062356 58%, #031536 100%)',
+                          border: '2px solid #e5c168',
+                          outline: '1.5px solid #4a3006',
+                          boxShadow:
+                            '0 8px 22px rgba(0, 8, 22, 0.9), inset 0 1px 1px rgba(255, 243, 194, 0.5)',
+                        }}
+                      >
+                        ✦ {selectedPoi.name} ✦
                       </div>
                     </div>
-                  );
-                })()}
-
-                {/* BOTÃO PRINCIPAL ROYAL SAPPHIRE & GOLD: VIAJAR AGORA */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const targetLevel =
-                      savedLevels.find((l) => l.id === selectedPoi.targetLevelId) ||
-                      savedLevels.find(
-                        (l) =>
-                          l.name &&
-                          selectedPoi.name &&
-                          l.name.toLowerCase().trim() === selectedPoi.name.toLowerCase().trim()
-                      ) ||
-                      savedLevels[0] ||
-                      (onLoadLevel
-                        ? ({
-                            id: selectedPoi.targetLevelId || selectedPoi.id || 'level-active',
-                            name: selectedPoi.name || project.title || 'Fase Explorável',
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                            projectData: {
-                              ...project,
-                              title: selectedPoi.name || project.title || 'Fase Explorável',
-                            },
-                          } as SavedLevel)
-                        : undefined);
-                    if (targetLevel && onLoadLevel) {
-                      onLoadLevel(targetLevel);
-                      handleCloseModal();
-                    } else if (onOpenEditorTab) {
-                      onOpenEditorTab();
-                      handleCloseModal();
-                    }
-                  }}
-                  className="w-full btn-royal-gold cursor-pointer active:scale-98 transition-transform"
-                >
-                  <div className="btn-royal-inner py-3 px-4 flex items-center justify-center gap-2 font-cinzel font-black text-sm sm:text-base text-[#fff3c2] uppercase tracking-[0.14em]">
-                    <Zap className="w-4 h-4 text-[#f5d98b] fill-[#f5d98b]" />
-                    <span>{selectedPoi.travelButtonText || 'VIAJAR AGORA'}</span>
                   </div>
-                </button>
-              </div>
+
+                  {/* Moldura Pearl & Gold */}
+                  <div
+                    className="w-full pearl-surface flex flex-col relative pt-6 pb-3.5 px-3.5 sm:px-4"
+                    style={{
+                      borderRadius: '24px',
+                      border: '2.5px solid #c59638',
+                      outline: '1.5px solid #4a3006',
+                      boxShadow:
+                        '0 24px 60px rgba(0, 8, 22, 0.92), 0 0 32px rgba(212, 175, 83, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.95)',
+                    }}
+                  >
+                    {/* Botão Fechar posicionado no canto superior direito da moldura, longe da faixa de título */}
+                    <button
+                      type="button"
+                      onClick={handleCloseModal}
+                      className="close-btn-outer absolute -top-3 right-1.5 z-40 cursor-pointer"
+                      title="Fechar Local"
+                    >
+                      <div className="close-btn-inner">✕</div>
+                    </button>
+
+                    {/* Badges de Nível Recomendado e Estado */}
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 text-[9.5px] font-cinzel font-black mb-2 z-10">
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-[#fff3c2] shadow-sm flex items-center gap-1"
+                        style={{
+                          background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+                          border: '1.5px solid #d4a84b',
+                        }}
+                      >
+                        ⭐ NV. RECOMENDADO: {selectedPoi.recommendedLevel || 1}
+                      </span>
+
+                      {selectedPoi.badgeText && (
+                        <span className="pearl-pill px-2.5 py-0.5 text-[#5c3d08] font-cinzel font-black uppercase tracking-wider">
+                          {selectedPoi.badgeText}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-2.5 z-10">
+                      <div className="p-2 pearl-subcard text-[10.5px] font-semibold text-[#3a2b1c] leading-snug text-center">
+                        {selectedPoi.description ||
+                          'Território místico repleto de relíquias ancestrais, criaturas elementais e desafios do reino.'}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[9.5px] font-cinzel font-black text-[#2b1f14] uppercase tracking-wider px-1">
+                          <span className="flex items-center gap-1.5">
+                            <span>👾 Criaturas &amp; Drops da Região</span>
+                            <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[#062356] text-[#f5d98b] border border-[#d4a84b]">
+                              {revealedCount}/{filledCount || effectiveCount}
+                            </span>
+                          </span>
+                          <span className="text-[8.5px] text-[#8c6518] font-bold">
+                            {effectiveCount} Slots
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-5 gap-1.5 p-2 pearl-subcard max-h-[128px] overflow-y-auto nova-scroll">
+                          {slots.map(({ idx, slotValue, slotConfig, isRevealed }) => {
+                            const eventLink =
+                              slotConfig?.encounterEventLink ||
+                              `https://meujogo.com/evento-encontro-local-${selectedPoi.id}-slot-${idx + 1}`;
+                            const isImage =
+                              slotValue.startsWith('data:image') || slotValue.startsWith('http');
+
+                            return (
+                              <div
+                                key={`clash-slot-${idx}`}
+                                onClick={() => {
+                                  setActiveEncounterSlot({
+                                    idx,
+                                    val: slotValue || '👾',
+                                    link: eventLink,
+                                    isRevealed,
+                                  });
+                                }}
+                                className={`${
+                                  vp.isMobilePortrait ? 'w-9 h-9' : 'w-10 h-10'
+                                } mx-auto rounded-full border-2 flex items-center justify-center text-[10px] font-black transition-all cursor-pointer relative group overflow-hidden ${
+                                  slotValue
+                                    ? isRevealed
+                                      ? 'bg-gradient-to-b from-[#0b3778] to-[#041f4a] border-[#e5c168] shadow-[0_3px_8px_rgba(0,8,22,0.5)] hover:scale-108'
+                                      : 'bg-[#1a1410] border-[#c59638] hover:scale-108'
+                                    : 'bg-[#e6dac6]/80 border-dashed border-[#b88928]/70 hover:border-[#8c6518] hover:scale-105'
+                                }`}
+                              >
+                                {slotValue ? (
+                                  isImage ? (
+                                    <div className="relative w-full h-full flex items-center justify-center">
+                                      <img
+                                        src={slotValue}
+                                        alt={`Slot ${idx + 1}`}
+                                        className={`w-full h-full object-contain p-1 transition-all ${
+                                          !isRevealed
+                                            ? 'filter brightness-0 contrast-200 opacity-85'
+                                            : 'filter drop-shadow-[0_2px_6px_rgba(255,243,194,0.45)]'
+                                        }`}
+                                      />
+                                      {!isRevealed && (
+                                        <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                          <Lock className="w-3 h-3 text-[#f5d98b] drop-shadow" />
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="truncate max-w-[32px] text-center text-[#fff3c2] text-xs">
+                                      {slotValue}
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-xs text-[#8c6518]/65">👾</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleTravelNow}
+                        className="w-full btn-royal-gold cursor-pointer active:scale-98 transition-transform"
+                      >
+                        <div className="btn-royal-inner py-2.5 px-4 flex items-center justify-center gap-2 font-cinzel font-black text-xs sm:text-sm text-[#fff3c2] uppercase tracking-[0.14em]">
+                          <Zap className="w-4 h-4 text-[#f5d98b] fill-[#f5d98b]" />
+                          <span>{selectedPoi.travelButtonText || 'VIAJAR AGORA'}</span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
 
       {/* MODAL DE EVENTO DE ENCONTRO / SCANNER DE SLIMES (NOVA UI v1.2) */}
       {activeEncounterSlot && selectedPoi && (

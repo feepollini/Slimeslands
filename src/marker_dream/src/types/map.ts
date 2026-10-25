@@ -2140,10 +2140,19 @@ export interface PlanetMoonBody {
   markers: PlanetGlobeMarker[];
 }
 
+export interface PlanetUvTextureItem {
+  id: string;
+  name: string;
+  url: string;
+  accentColor?: string;
+  createdAt?: string;
+}
+
 export interface SolarSystemMoon {
   id: string;
   name: string;
   imagePng?: string; // PNG da própria Lua (usa o planeta padrão se não definido)
+  uvTexturePng?: string; // Textura Equiretangular UV 2:1 para a esfera 3D no Sistema Planetário
   markerIconPng?: string; // PNG exibido acima da cápsula do marcador quando a lua está em foco
   markerIconEmoji?: string;
   sizePx?: number; // Diâmetro da lua em px (padrão 26)
@@ -2159,7 +2168,8 @@ export interface SolarSystemPlanet {
   id: string;
   name: string;
   description?: string;
-  planetImagePng?: string; // PNG do Planeta (usa o planeta padrão se não definido)
+  planetImagePng?: string; // PNG Ilustrado do Planeta para o Mergulho / Close-up (Camada 3)
+  uvTexturePng?: string; // Textura Retangular UV 2:1 para a Esfera 3D no Sistema Planetário (Camada 2)
   markerIconPng?: string; // PNG exibido acima da cápsula do marcador quando o planeta está em foco
   markerIconEmoji?: string;
   glowColor?: string;
@@ -2223,6 +2233,7 @@ export interface PlanetGlobeConfig {
   title?: string;
   systemName?: string; // Nome do Sistema Solar / Planetário
   planetImagePng?: string; // PNG padrão/central
+  uvTexturePng?: string; // Textura UV 2:1 padrão opcional
   sunName?: string; // Nome do Astro Central / Sol
   sunImagePng?: string; // PNG opcional do Sol / Astro Central
   sunSizePx?: number; // Tamanho do Astro Central (padrão 52)
@@ -2235,6 +2246,8 @@ export interface PlanetGlobeConfig {
   showMoonsInSky?: boolean;
   markers: PlanetGlobeMarker[];
   moons?: PlanetMoonBody[];
+  /** Biblioteca de Texturas Retangulares UV 2:1 para as Esferas 3D do Sistema Planetário */
+  uvTextureLibrary?: PlanetUvTextureItem[];
   /** Lista de Planetas (com suas respectivas Luas) que compõem o Sistema Solar */
   planets?: SolarSystemPlanet[];
   /** Lista de Constelações da Camada 1 (antes do Sistema Planetário) */

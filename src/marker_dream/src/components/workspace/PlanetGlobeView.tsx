@@ -1,1078 +1,1711 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import * as THREE from 'three';
 import type {
   MapProject,
   PlanetGlobeConfig,
   PlanetGlobeMarker,
+  PlanetUvTextureItem,
+  ConstellationSystemNode,
   SolarSystemPlanet,
   SolarSystemMoon,
-  ConstellationSystemNode,
-  AstralStarKind,
   WorldMapConfig,
 } from '../../types/map';
 import {
-  OrnateMapMarkerPin,
-  playConstellationStarNote,
-  playMarkersUnfurlChime,
-} from './OrnateMapMarkerPin';
-import {
+  Globe,
+  Sparkles,
   Plus,
   Trash2,
+  MapPin,
   Upload,
-  Compass,
-  Play,
-  Pause,
+  ChevronRight,
+  Navigation,
   ExternalLink,
-  Sun,
-  Globe,
-  Orbit,
+  Layers,
+  Image as ImageIcon,
+  Check,
+  Wand2,
 } from 'lucide-react';
-import { readUploadedImage } from '../../utils/tileGenerator';
-import { uploadFileToDisk } from '../../../../core/DiskAssetEngine';
+import { OrnateMapMarkerPin } from './OrnateMapMarkerPin';
 
 export const DEFAULT_PLANET_IMAGE_URL =
   '/assets/aistudio/Planeta_ilustrado_com_fundo_transparente_d21f7d80.png';
+
+/**
+ * Generates seamless 2:1 Equirectangular UV planet textures in memory (512x256)
+ * so all 40 planets/moons across the 6 Solar Systems spin in 360° 3D right out of the box,
+ * and can be customized with the user's uploaded 2:1 rectangular UV textures!
+ */
+const generatedUvDataUrlCache = new Map<string, string>();
+
+export function getBuiltInUv2to1DataUrl(
+  presetKey: string,
+  primaryHex: string,
+  secondaryHex: string,
+  bandHex: string
+): string {
+  const cacheKey = `${presetKey}-${primaryHex}-${secondaryHex}-${bandHex}`;
+  const existing = generatedUvDataUrlCache.get(cacheKey);
+  if (existing) return existing;
+  if (typeof document === 'undefined') return '';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const baseGrad = ctx.createLinearGradient(0, 0, 0, 256);
+  baseGrad.addColorStop(0, secondaryHex);
+  baseGrad.addColorStop(0.22, primaryHex);
+  baseGrad.addColorStop(0.5, bandHex);
+  baseGrad.addColorStop(0.78, primaryHex);
+  baseGrad.addColorStop(1, secondaryHex);
+  ctx.fillStyle = baseGrad;
+  ctx.fillRect(0, 0, 512, 256);
+
+  let seed = 1337;
+  for (let i = 0; i < cacheKey.length; i++) {
+    seed = (seed * 33 + cacheKey.charCodeAt(i)) % 999983;
+  }
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  for (let b = 0; b < 14; b++) {
+    const yCenter = 20 + rand() * 216;
+    const bandH = 6 + rand() * 22;
+    const amp = 4 + rand() * 14;
+    const freq = 1 + Math.floor(rand() * 4);
+    const phase = rand() * Math.PI * 2;
+
+    ctx.save();
+    ctx.beginPath();
+    for (let x = 0; x <= 512; x += 8) {
+      const theta = (x / 512) * Math.PI * 2 * freq + phase;
+      const y = yCenter + Math.sin(theta) * amp;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    for (let x = 512; x >= 0; x -= 8) {
+      const theta = (x / 512) * Math.PI * 2 * freq + phase;
+      const y = yCenter + Math.sin(theta) * amp + bandH;
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = b % 2 === 0 ? secondaryHex : bandHex;
+    ctx.globalAlpha = 0.24 + rand() * 0.25;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  for (let c = 0; c < 22; c++) {
+    const cx = rand() * 512;
+    const cy = 36 + rand() * 184;
+    const rx = 18 + rand() * 48;
+    const ry = 10 + rand() * 28;
+    const color = c % 3 === 0 ? bandHex : c % 3 === 1 ? secondaryHex : '#fffbeb';
+    const alpha = 0.22 + rand() * 0.32;
+
+    [-512, 0, 512].forEach((offsetX) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx + offsetX, cy, rx, ry, (rand() - 0.5) * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  const northCap = ctx.createLinearGradient(0, 0, 0, 28);
+  northCap.addColorStop(0, 'rgba(255,255,255,0.65)');
+  northCap.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = northCap;
+  ctx.fillRect(0, 0, 512, 28);
+
+  const southCap = ctx.createLinearGradient(0, 228, 0, 256);
+  southCap.addColorStop(0, 'rgba(255,255,255,0)');
+  southCap.addColorStop(1, 'rgba(255,255,255,0.65)');
+  ctx.fillStyle = southCap;
+  ctx.fillRect(0, 228, 512, 28);
+
+  const url = canvas.toDataURL('image/png');
+  generatedUvDataUrlCache.set(cacheKey, url);
+  return url;
+}
+
+export function getDefaultUvTextureLibrary(): PlanetUvTextureItem[] {
+  return [
+    {
+      id: 'uv-preset-slimelands',
+      name: 'UV 2:1 • Gaia Esmeralda & Mares',
+      url: getBuiltInUv2to1DataUrl('slimelands', '#0284c7', '#10b981', '#34d399'),
+      accentColor: '#38bdf8',
+    },
+    {
+      id: 'uv-preset-pyros',
+      name: 'UV 2:1 • Magma & Obsidiana',
+      url: getBuiltInUv2to1DataUrl('pyros', '#7c2d12', '#f97316', '#facc15'),
+      accentColor: '#f97316',
+    },
+    {
+      id: 'uv-preset-kronos',
+      name: 'UV 2:1 • Gigante Gasoso Dourado',
+      url: getBuiltInUv2to1DataUrl('kronos', '#b45309', '#fbbf24', '#fef08a'),
+      accentColor: '#fbbf24',
+    },
+    {
+      id: 'uv-preset-glacies',
+      name: 'UV 2:1 • Safira Glacial',
+      url: getBuiltInUv2to1DataUrl('glacies', '#1e3a8a', '#38bdf8', '#e0f2fe'),
+      accentColor: '#60a5fa',
+    },
+    {
+      id: 'uv-preset-arcana',
+      name: 'UV 2:1 • Nebulosa Ametista',
+      url: getBuiltInUv2to1DataUrl('arcana', '#4c1d95', '#a855f7', '#f0abfc'),
+      accentColor: '#a855f7',
+    },
+    {
+      id: 'uv-preset-lunar',
+      name: 'UV 2:1 • Crateras de Platina Lunar',
+      url: getBuiltInUv2to1DataUrl('lunar', '#475569', '#94a3b8', '#f1f5f9'),
+      accentColor: '#e2e8f0',
+    },
+    {
+      id: 'uv-preset-coral',
+      name: 'UV 2:1 • Aurora Rubra & Quartzo',
+      url: getBuiltInUv2to1DataUrl('coral', '#881337', '#f43f5e', '#fda4af'),
+      accentColor: '#fb7185',
+    },
+    {
+      id: 'uv-preset-dune',
+      name: 'UV 2:1 • Dunas de Âmbar & Cobre',
+      url: getBuiltInUv2to1DataUrl('dune', '#78350f', '#d97706', '#fde68a'),
+      accentColor: '#f59e0b',
+    },
+  ];
+}
 
 export function buildDefaultMarkersForPlanet(
   planetId: string,
   planetName: string,
   project: MapProject
 ): PlanetGlobeMarker[] {
-  const savedMaps = project.savedWorldMaps || (project.worldMap ? [project.worldMap] : []);
-  const primaryMapId = project.worldMap?.id || savedMaps[0]?.id || 'map-main-default';
-  const primaryPoiPng =
-    project.worldMap?.pointsOfInterest?.find((p) => p.iconPng && !p.isInvisible)?.iconPng ||
-    undefined;
+  const savedMaps = project.savedWorldMaps || [];
+  const mainMapId =
+    project.worldMap?.id || savedMaps[0]?.id || 'world-map-main';
+  const secondMapId = savedMaps[1]?.id || mainMapId;
+  const thirdMapId = savedMaps[2]?.id || mainMapId;
+
+  if (planetId === 'planet-slimelands' || planetId === 'solar-planet-1') {
+    return [
+      {
+        id: 'p-marker-archipelago',
+        name: 'Arquipélago Esmeralda',
+        description:
+          'As ilhas centrais banhadas por correntes de mana cristalina, lar das vilas costeiras e santuários ancestrais.',
+        nx: -0.12,
+        ny: -0.14,
+        iconEmoji: '🏝️',
+        targetWorldMapId: mainMapId,
+        status: 'unlocked',
+        badgeText: 'REGIÃO NATAL',
+        scale: 1.0,
+      },
+      {
+        id: 'p-marker-aurora',
+        name: 'Platô da Aurora Boreal',
+        description:
+          'Cordilheiras flutuantes onde os ventos astrais condensam fragmentos de estrelas em torres de quartzo azul.',
+        nx: 0.22,
+        ny: -0.38,
+        iconEmoji: '❄️',
+        targetWorldMapId: secondMapId,
+        status: 'unlocked',
+        badgeText: 'SANTUÁRIO',
+        scale: 1.0,
+      },
+      {
+        id: 'p-marker-solaris',
+        name: 'Baía Dourada de Solaris',
+        description:
+          'O grande estuário comercial de águas mornas onde caravelas astrais ancoram sob faróis de ouro.',
+        nx: -0.32,
+        ny: 0.24,
+        iconEmoji: '⚓',
+        targetWorldMapId: thirdMapId,
+        status: 'unlocked',
+        badgeText: 'PORTO REAL',
+        scale: 1.0,
+      },
+      {
+        id: 'p-marker-veil',
+        name: 'Cratera do Véu Celeste',
+        description:
+          'Uma caldeira circular cercada por anéis de pedra rúnica que refletem diretamente a Constelação Real.',
+        nx: 0.34,
+        ny: 0.16,
+        iconEmoji: '🔮',
+        targetWorldMapId: mainMapId,
+        status: 'unlocked',
+        badgeText: 'ARCANA',
+        scale: 1.0,
+      },
+    ];
+  }
+
+  let hash = 0;
+  for (let i = 0; i < planetId.length; i++) {
+    hash = (hash * 31 + planetId.charCodeAt(i)) % 1000;
+  }
+  const offset = ((hash % 10) - 5) * 0.025;
 
   return [
     {
-      id: `${planetId}-reg-1`,
-      name: project.worldMap?.title || `Capital de ${planetName}`,
-      nx: 0.0,
-      ny: -0.34,
-      iconPng: primaryPoiPng,
+      id: `${planetId}-m1`,
+      name: `Cidadela de ${planetName}`,
+      description: `Assentamento principal erguido sobre as formações primordiais de ${planetName}.`,
+      nx: Math.max(-0.55, Math.min(0.55, -0.1 + offset)),
+      ny: Math.max(-0.55, Math.min(0.55, -0.18 - offset)),
       iconEmoji: '🏰',
-      targetWorldMapId: primaryMapId,
+      targetWorldMapId: mainMapId,
       status: 'unlocked',
+      badgeText: 'CAPITAL',
       scale: 1.0,
     },
     {
-      id: `${planetId}-reg-2`,
-      name: savedMaps[1]?.title || 'Cordilheira de Cristal',
-      nx: -0.44,
-      ny: -0.22,
-      iconPng: savedMaps[1]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
-      iconEmoji: '⛰️',
-      targetWorldMapId: savedMaps[1]?.id || primaryMapId,
+      id: `${planetId}-m2`,
+      name: `Vale Astral de ${planetName}`,
+      description: `Região inexplorada de alta ressonância elemental na superfície de ${planetName}.`,
+      nx: Math.max(-0.55, Math.min(0.55, 0.26 - offset)),
+      ny: Math.max(-0.55, Math.min(0.55, 0.2 + offset)),
+      iconEmoji: '✨',
+      targetWorldMapId: secondMapId,
       status: 'unlocked',
+      badgeText: 'EXPEDIÇÃO',
       scale: 1.0,
     },
     {
-      id: `${planetId}-reg-3`,
-      name: savedMaps[2]?.title || 'Santuário das Águas',
-      nx: 0.44,
-      ny: -0.24,
-      iconPng: savedMaps[2]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
+      id: `${planetId}-m3`,
+      name: `Santuário Norte de ${planetName}`,
+      description: `Monólitos silenciosos alinhados com as seis estrelas da Constelação de Slimelands.`,
+      nx: Math.max(-0.55, Math.min(0.55, -0.28 + offset)),
+      ny: Math.max(-0.55, Math.min(0.55, 0.24 + offset)),
       iconEmoji: '🏛️',
-      targetWorldMapId: savedMaps[2]?.id || primaryMapId,
+      targetWorldMapId: thirdMapId,
       status: 'unlocked',
-      scale: 1.0,
-    },
-    {
-      id: `${planetId}-reg-4`,
-      name: 'Observatório Astral',
-      nx: 0.16,
-      ny: -0.58,
-      iconEmoji: '🔮',
-      targetWorldMapId: primaryMapId,
-      status: 'unlocked',
+      badgeText: 'RELÍQUIA',
       scale: 1.0,
     },
   ];
+}
+
+function normalizeMarkerCoord(val: number): number {
+  if (!Number.isFinite(val)) return 0;
+  return Math.max(-0.85, Math.min(0.85, val));
+}
+
+/**
+ * Exact 6-Star Constellation Connectivity matching the user's Ursa Major reference photo:
+ * Handle (Star 1 -> Star 2 -> Star 3) connected to the quadrilateral bowl (Star 3 -> Star 6 -> Star 5 -> Star 4 -> Star 3).
+ */
+export const CONSTELLATION_6_CONNECTIONS: Array<[string, string]> = [
+  ['sys-solaris-prime', 'sys-velaris-boreal'],
+  ['sys-velaris-boreal', 'sys-ignis-draconis'],
+  ['sys-ignis-draconis', 'sys-sylvan-aether'],
+  ['sys-sylvan-aether', 'sys-chronos-alba'],
+  ['sys-chronos-alba', 'sys-zenith-coroa'],
+  ['sys-zenith-coroa', 'sys-ignis-draconis'],
+];
+
+/**
+ * Builds the 6-Star Constellation where 40 Planets & Moons are divided across
+ * the 6 Star Systems (6 to 7 celestial bodies per system = 40 total!).
+ */
+function buildSixStarConstellationSystems(
+  project: MapProject,
+  defaultPlanetImageUrl: string,
+  slimelandsMarkers: PlanetGlobeMarker[],
+  uvLibrary: PlanetUvTextureItem[]
+): ConstellationSystemNode[] {
+  const pickUv = (idx: number) =>
+    uvLibrary[idx % Math.max(1, uvLibrary.length)]?.url || '';
+
+  const starDefinitions: Array<{
+    id: string;
+    name: string;
+    subtitle: string;
+    description: string;
+    xRatio: number;
+    yRatio: number;
+    glowColor: string;
+    secondaryColor: string;
+    markerIconEmoji: string;
+    sunName: string;
+    planets: Array<{
+      id: string;
+      name: string;
+      description: string;
+      orbitRadiusRatio: number;
+      orbitSpeed: number;
+      initialAngleDeg: number;
+      sizePx: number;
+      glowColor: string;
+      hasRings?: boolean;
+      markerIconEmoji: string;
+      uvIdx: number;
+      moons?: SolarSystemMoon[];
+    }>;
+  }> = [
+    // ESTRELA 1: 5 Planetas + 2 Luas = 7 Corpos Celestes
+    {
+      id: 'sys-solaris-prime',
+      name: 'Alkaid • Solaris Prime',
+      subtitle: '1ª Estrela da Constelação • 5 Planetas & 2 Luas',
+      description:
+        'A estrela da ponta oeste da Constelação Real, lar do Mundo de Slimelands e quatro mundos irmãos.',
+      xRatio: 0.13,
+      yRatio: 0.69,
+      glowColor: '#93c5fd',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Alkaid Solaris',
+      planets: [
+        {
+          id: 'planet-pyros-forge',
+          name: 'Pyros Vulk',
+          description: 'Mundo vulcânico na órbita interna mais próxima do brilho estelar.',
+          orbitRadiusRatio: 0.16,
+          orbitSpeed: 18,
+          initialAngleDeg: 25,
+          sizePx: 46,
+          glowColor: '#f97316',
+          markerIconEmoji: '🔥',
+          uvIdx: 1,
+        },
+        {
+          id: 'planet-slimelands',
+          name: 'Mundo de Slimelands',
+          description:
+            'Nosso mundo vivo de arquipélagos flutuantes, florestas de mana e santuários ancestrais.',
+          orbitRadiusRatio: 0.30,
+          orbitSpeed: 12,
+          initialAngleDeg: 115,
+          sizePx: 68,
+          glowColor: '#38bdf8',
+          hasRings: false,
+          markerIconEmoji: '🌍',
+          uvIdx: 0,
+          moons: [
+            {
+              id: 'moon-lunaria',
+              name: 'Lunária',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(5),
+              markerIconEmoji: '🌙',
+              orbitRadiusPx: 54,
+              orbitSpeed: 24,
+              initialAngleDeg: 45,
+              sizePx: 20,
+              status: 'unlocked',
+            },
+            {
+              id: 'moon-vesper',
+              name: 'Vésper Dourada',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(2),
+              markerIconEmoji: '✨',
+              orbitRadiusPx: 76,
+              orbitSpeed: 16,
+              initialAngleDeg: 215,
+              sizePx: 16,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-aethel-rings',
+          name: 'Aethel-Kronos',
+          description: 'Gigante gasoso dourado cercado por anéis de gelo estelar.',
+          orbitRadiusRatio: 0.46,
+          orbitSpeed: 8.5,
+          initialAngleDeg: 220,
+          sizePx: 74,
+          glowColor: '#fbbf24',
+          hasRings: true,
+          markerIconEmoji: '🪐',
+          uvIdx: 2,
+        },
+        {
+          id: 'planet-cryo-nyx',
+          name: 'Glacies Azur',
+          description: 'Mundo de safira glacial com auroras perpétuas.',
+          orbitRadiusRatio: 0.62,
+          orbitSpeed: 6,
+          initialAngleDeg: 310,
+          sizePx: 56,
+          glowColor: '#60a5fa',
+          hasRings: true,
+          markerIconEmoji: '❄️',
+          uvIdx: 3,
+        },
+        {
+          id: 'planet-umbra-outer',
+          name: 'Véspera Violeta',
+          description: 'Planeta misterioso na fronteira externa de Solaris Prime.',
+          orbitRadiusRatio: 0.78,
+          orbitSpeed: 4.2,
+          initialAngleDeg: 75,
+          sizePx: 50,
+          glowColor: '#a855f7',
+          markerIconEmoji: '🔮',
+          uvIdx: 4,
+        },
+      ],
+    },
+
+    // ESTRELA 2: 5 Planetas + 2 Luas = 7 Corpos Celestes (Total acumulado: 14)
+    {
+      id: 'sys-velaris-boreal',
+      name: 'Mizar • Velaris Boreal',
+      subtitle: '2ª Estrela da Constelação • 5 Planetas & 2 Luas',
+      description:
+        'Estrela azul-branca radiante no arco da cauda, cercada por mundos oceânicos e gigantes de cristal.',
+      xRatio: 0.28,
+      yRatio: 0.50,
+      glowColor: '#bae6fd',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Mizar Boreal',
+      planets: [
+        {
+          id: 'planet-coral-inner',
+          name: ' ignis-Coral',
+          description: 'Planeta quente de mares de quartzo líquido.',
+          orbitRadiusRatio: 0.17,
+          orbitSpeed: 17,
+          initialAngleDeg: 60,
+          sizePx: 46,
+          glowColor: '#fb7185',
+          markerIconEmoji: '🌸',
+          uvIdx: 6,
+        },
+        {
+          id: 'planet-thalassa',
+          name: 'Thalassa Prime',
+          description: 'Planeta coberto por águas luminescentes e recifes flutuantes.',
+          orbitRadiusRatio: 0.31,
+          orbitSpeed: 12.5,
+          initialAngleDeg: 150,
+          sizePx: 64,
+          glowColor: '#0ea5e9',
+          markerIconEmoji: '🌊',
+          uvIdx: 0,
+          moons: [
+            {
+              id: 'moon-nereid',
+              name: 'Nereida',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(3),
+              markerIconEmoji: '🌙',
+              orbitRadiusPx: 54,
+              orbitSpeed: 22,
+              initialAngleDeg: 90,
+              sizePx: 19,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-boreas',
+          name: 'Bóreas Vetro',
+          description: 'Colosso azulado com anéis duplos de diamantes congelados.',
+          orbitRadiusRatio: 0.47,
+          orbitSpeed: 8.2,
+          initialAngleDeg: 255,
+          sizePx: 72,
+          glowColor: '#38bdf8',
+          hasRings: true,
+          markerIconEmoji: '🪐',
+          uvIdx: 3,
+          moons: [
+            {
+              id: 'moon-galatea',
+              name: 'Galateia de Gelo',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(5),
+              markerIconEmoji: '❄️',
+              orbitRadiusPx: 64,
+              orbitSpeed: 19,
+              initialAngleDeg: 180,
+              sizePx: 18,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-cygnus-minor',
+          name: 'Cygnus Mir',
+          description: 'Sua superfície espelhada reflete toda a Constelação.',
+          orbitRadiusRatio: 0.63,
+          orbitSpeed: 5.8,
+          initialAngleDeg: 15,
+          sizePx: 54,
+          glowColor: '#818cf8',
+          markerIconEmoji: '💎',
+          uvIdx: 4,
+        },
+        {
+          id: 'planet-neptune-deep',
+          name: 'Abismo Safira',
+          description: 'Gigante de ventos supersônicos azuis na borda do sistema.',
+          orbitRadiusRatio: 0.79,
+          orbitSpeed: 4.0,
+          initialAngleDeg: 195,
+          sizePx: 58,
+          glowColor: '#22d3ee',
+          hasRings: true,
+          markerIconEmoji: '🌀',
+          uvIdx: 3,
+        },
+      ],
+    },
+
+    // ESTRELA 3: 5 Planetas + 2 Luas = 7 Corpos Celestes (Total acumulado: 21)
+    {
+      id: 'sys-ignis-draconis',
+      name: 'Alioth • Ignis Draconis',
+      subtitle: '3ª Estrela da Constelação • 5 Planetas & 2 Luas',
+      description:
+        'A estrela central de ligação da Constelação, governando cinco mundos de forjas astrais e anéis dourados.',
+      xRatio: 0.42,
+      yRatio: 0.50,
+      glowColor: '#e0f2fe',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Alioth Draconis',
+      planets: [
+        {
+          id: 'planet-draco-cind',
+          name: 'Draco Cinza-Ouro',
+          description: 'Continentes de basalto negro cortados por veios de ouro líquido.',
+          orbitRadiusRatio: 0.16,
+          orbitSpeed: 17.5,
+          initialAngleDeg: 85,
+          sizePx: 52,
+          glowColor: '#fb7185',
+          markerIconEmoji: '🌋',
+          uvIdx: 1,
+        },
+        {
+          id: 'planet-forja-rubra',
+          name: 'Forja Rubra',
+          description: 'Planeta metalúrgico onde antigas cidadelas orbitam rios de lava.',
+          orbitRadiusRatio: 0.30,
+          orbitSpeed: 12,
+          initialAngleDeg: 190,
+          sizePx: 60,
+          glowColor: '#f97316',
+          markerIconEmoji: '⚒️',
+          uvIdx: 7,
+          moons: [
+            {
+              id: 'moon-ember',
+              name: 'Brasa Astral',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(1),
+              markerIconEmoji: '🔥',
+              orbitRadiusPx: 54,
+              orbitSpeed: 23,
+              initialAngleDeg: 110,
+              sizePx: 18,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-salamandra',
+          name: 'Sol-Salamandra',
+          description: 'Gigante cercado por anéis incandescentes de silicatos e rubis.',
+          orbitRadiusRatio: 0.46,
+          orbitSpeed: 8.5,
+          initialAngleDeg: 295,
+          sizePx: 74,
+          glowColor: '#f43f5e',
+          hasRings: true,
+          markerIconEmoji: '🪐',
+          uvIdx: 6,
+          moons: [
+            {
+              id: 'moon-ash-1',
+              name: 'Fênix Menor',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(2),
+              markerIconEmoji: '☄️',
+              orbitRadiusPx: 64,
+              orbitSpeed: 20,
+              initialAngleDeg: 30,
+              sizePx: 19,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-obsidian-reach',
+          name: 'Bastião de Obsidiana',
+          description: 'Fortaleza planetária guardiã do centro da constelação.',
+          orbitRadiusRatio: 0.63,
+          orbitSpeed: 5.5,
+          initialAngleDeg: 40,
+          sizePx: 56,
+          glowColor: '#f59e0b',
+          markerIconEmoji: '🛡️',
+          uvIdx: 5,
+        },
+        {
+          id: 'planet-kaelis-outer',
+          name: 'Kaelis de Âmbar',
+          description: 'Planeta desértico de tempestades douradas na órbita externa.',
+          orbitRadiusRatio: 0.78,
+          orbitSpeed: 4.1,
+          initialAngleDeg: 150,
+          sizePx: 52,
+          glowColor: '#fbbf24',
+          hasRings: true,
+          markerIconEmoji: '🏜️',
+          uvIdx: 7,
+        },
+      ],
+    },
+
+    // ESTRELA 4: 5 Planetas + 2 Luas = 7 Corpos Celestes (Total acumulado: 28)
+    {
+      id: 'sys-sylvan-aether',
+      name: 'Megrez • Sylvan Aether',
+      subtitle: '4ª Estrela da Constelação • 5 Planetas & 2 Luas',
+      description:
+        'A estrela de junção do quadrilátero celeste, abrigando cinco mundos-floresta e jardins eternos.',
+      xRatio: 0.58,
+      yRatio: 0.47,
+      glowColor: '#bae6fd',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Megrez Sylvan',
+      planets: [
+        {
+          id: 'planet-sylphide',
+          name: 'Sylphide Brisa',
+          description: 'Mundo interno de nuvens esmeraldas e gêiseres termais.',
+          orbitRadiusRatio: 0.16,
+          orbitSpeed: 16.5,
+          initialAngleDeg: 45,
+          sizePx: 48,
+          glowColor: '#2dd4bf',
+          markerIconEmoji: '🍃',
+          uvIdx: 0,
+        },
+        {
+          id: 'planet-yggdrasil-orb',
+          name: 'Arboria Prime',
+          description: 'Coberto por copas gigantescas que chegam até a estratosfera.',
+          orbitRadiusRatio: 0.31,
+          orbitSpeed: 11.5,
+          initialAngleDeg: 135,
+          sizePx: 66,
+          glowColor: '#34d399',
+          markerIconEmoji: '🌳',
+          uvIdx: 0,
+          moons: [
+            {
+              id: 'moon-spore',
+              name: 'Semente Astral',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(0),
+              markerIconEmoji: '🌱',
+              orbitRadiusPx: 56,
+              orbitSpeed: 21,
+              initialAngleDeg: 180,
+              sizePx: 18,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-jade-halo',
+          name: 'Halo de Jade',
+          description: 'Seus anéis contêm cristais verdes e pólen luminescente.',
+          orbitRadiusRatio: 0.47,
+          orbitSpeed: 8.0,
+          initialAngleDeg: 260,
+          sizePx: 72,
+          glowColor: '#10b981',
+          hasRings: true,
+          markerIconEmoji: '🪐',
+          uvIdx: 3,
+          moons: [
+            {
+              id: 'moon-lotus',
+              name: 'Lótus Orbital',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(4),
+              markerIconEmoji: '🪷',
+              orbitRadiusPx: 62,
+              orbitSpeed: 18,
+              initialAngleDeg: 60,
+              sizePx: 18,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-moss-haven',
+          name: 'Veridiana',
+          description: 'Lagos serenos e cavernas bioluminescentes.',
+          orbitRadiusRatio: 0.63,
+          orbitSpeed: 5.6,
+          initialAngleDeg: 10,
+          sizePx: 54,
+          glowColor: '#22d3ee',
+          markerIconEmoji: '🌺',
+          uvIdx: 3,
+        },
+        {
+          id: 'planet-mana-root',
+          name: 'Raiz de Éter',
+          description: 'Fronteira externa onde raízes cristalizadas flutuam no espaço.',
+          orbitRadiusRatio: 0.78,
+          orbitSpeed: 4.0,
+          initialAngleDeg: 205,
+          sizePx: 50,
+          glowColor: '#a855f7',
+          markerIconEmoji: '✨',
+          uvIdx: 4,
+        },
+      ],
+    },
+
+    // ESTRELA 5: 4 Planetas + 2 Luas = 6 Corpos Celestes (Total acumulado: 34)
+    {
+      id: 'sys-chronos-alba',
+      name: 'Phecda • Chronos Alba',
+      subtitle: '5ª Estrela da Constelação • 4 Planetas & 2 Luas',
+      description:
+        'Estrela austral do cálice da Constelação, onde quatro planetas e duas luas giram em sincronia temporal.',
+      xRatio: 0.68,
+      yRatio: 0.64,
+      glowColor: '#93c5fd',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Phecda Chronos',
+      planets: [
+        {
+          id: 'planet-meridian',
+          name: 'Meridiano Solar',
+          description: 'Planeta metálico polido que marca as horas cósmicas.',
+          orbitRadiusRatio: 0.19,
+          orbitSpeed: 15.5,
+          initialAngleDeg: 30,
+          sizePx: 50,
+          glowColor: '#fde047',
+          markerIconEmoji: '🧭',
+          uvIdx: 2,
+        },
+        {
+          id: 'planet-horologium',
+          name: 'Horologium',
+          description: 'Planeta atravessado por anéis dourados de precisão ancestral.',
+          orbitRadiusRatio: 0.36,
+          orbitSpeed: 11,
+          initialAngleDeg: 140,
+          sizePx: 66,
+          glowColor: '#f8fafc',
+          hasRings: true,
+          markerIconEmoji: '⌚',
+          uvIdx: 5,
+          moons: [
+            {
+              id: 'moon-pendulum',
+              name: 'Pêndulo de Prata',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(5),
+              markerIconEmoji: '🌕',
+              orbitRadiusPx: 58,
+              orbitSpeed: 22,
+              initialAngleDeg: 95,
+              sizePx: 19,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-alba-prime',
+          name: 'Alba Eterna',
+          description: 'Banhado por uma aurora perpétua de tons pérola e safira.',
+          orbitRadiusRatio: 0.55,
+          orbitSpeed: 7.4,
+          initialAngleDeg: 245,
+          sizePx: 64,
+          glowColor: '#cbd5e1',
+          markerIconEmoji: '🏳️',
+          uvIdx: 3,
+          moons: [
+            {
+              id: 'moon-dawn',
+              name: 'Lua da Alvorada',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(6),
+              markerIconEmoji: '🌙',
+              orbitRadiusPx: 56,
+              orbitSpeed: 19,
+              initialAngleDeg: 270,
+              sizePx: 17,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-time-crystal',
+          name: 'Cristal do Tempo',
+          description: 'Esfera facetada de quartzo azul na órbita mais distante.',
+          orbitRadiusRatio: 0.74,
+          orbitSpeed: 4.6,
+          initialAngleDeg: 335,
+          sizePx: 54,
+          glowColor: '#38bdf8',
+          hasRings: true,
+          markerIconEmoji: '💎',
+          uvIdx: 4,
+        },
+      ],
+    },
+
+    // ESTRELA 6: 4 Planetas + 2 Luas = 6 Corpos Celestes (Total acumulado: 40!)
+    {
+      id: 'sys-zenith-coroa',
+      name: 'Dubhe • Zênite da Coroa',
+      subtitle: '6ª Estrela da Constelação • 4 Planetas & 2 Luas',
+      description:
+        'A estrela alfa no topo direito da Constelação, coroando o firmamento com mundos imperiais.',
+      xRatio: 0.86,
+      yRatio: 0.25,
+      glowColor: '#e0f2fe',
+      secondaryColor: '#ffffff',
+      markerIconEmoji: '✦',
+      sunName: 'Dubhe Zênite',
+      planets: [
+        {
+          id: 'planet-empirion',
+          name: 'Empíreo Dourado',
+          description: 'O planeta mais próximo do Zênite, banhado em luz dourada eterna.',
+          orbitRadiusRatio: 0.20,
+          orbitSpeed: 15,
+          initialAngleDeg: 35,
+          sizePx: 64,
+          glowColor: '#fde047',
+          hasRings: true,
+          markerIconEmoji: '👑',
+          uvIdx: 2,
+          moons: [
+            {
+              id: 'moon-crown-jewel',
+              name: 'Joia da Coroa',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(5),
+              markerIconEmoji: '💎',
+              orbitRadiusPx: 58,
+              orbitSpeed: 22,
+              initialAngleDeg: 110,
+              sizePx: 19,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-solstice-prime',
+          name: 'Solstício Imperial',
+          description: 'Grande mundo cerimonial onde convergem os portais das 6 estrelas.',
+          orbitRadiusRatio: 0.38,
+          orbitSpeed: 10.5,
+          initialAngleDeg: 165,
+          sizePx: 72,
+          glowColor: '#fbbf24',
+          markerIconEmoji: '🌟',
+          uvIdx: 0,
+          moons: [
+            {
+              id: 'moon-royal-sentinel',
+              name: 'Sentinela Real',
+              imagePng: defaultPlanetImageUrl,
+              uvTexturePng: pickUv(2),
+              markerIconEmoji: '🛡️',
+              orbitRadiusPx: 62,
+              orbitSpeed: 18,
+              initialAngleDeg: 230,
+              sizePx: 18,
+              status: 'unlocked',
+            },
+          ],
+        },
+        {
+          id: 'planet-astral-sanctum',
+          name: 'Santuário do Zênite',
+          description: 'Gigante azul-safira cercado por anéis de luz estelar.',
+          orbitRadiusRatio: 0.57,
+          orbitSpeed: 7.0,
+          initialAngleDeg: 280,
+          sizePx: 60,
+          glowColor: '#38bdf8',
+          hasRings: true,
+          markerIconEmoji: '🪐',
+          uvIdx: 3,
+        },
+        {
+          id: 'planet-apex-orb',
+          name: 'Ápice Astral',
+          description: 'O quadragésimo corpo celeste da Constelação, guardião do horizonte.',
+          orbitRadiusRatio: 0.75,
+          orbitSpeed: 4.5,
+          initialAngleDeg: 95,
+          sizePx: 52,
+          glowColor: '#a855f7',
+          markerIconEmoji: '🔮',
+          uvIdx: 4,
+        },
+      ],
+    },
+  ];
+
+  return starDefinitions.map((star) => ({
+    id: star.id,
+    name: star.name,
+    subtitle: star.subtitle,
+    description: star.description,
+    xRatio: star.xRatio,
+    yRatio: star.yRatio,
+    glowColor: star.glowColor,
+    secondaryColor: star.secondaryColor,
+    markerIconEmoji: star.markerIconEmoji,
+    sunName: star.sunName,
+    status: 'unlocked',
+    planets: star.planets.map((p) => {
+      const isSlimelands = p.id === 'planet-slimelands' || p.id === 'solar-planet-1';
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        planetImagePng: defaultPlanetImageUrl,
+        uvTexturePng: pickUv(p.uvIdx),
+        markerIconEmoji: p.markerIconEmoji,
+        glowColor: p.glowColor,
+        hasRings: p.hasRings,
+        sizePx: p.sizePx,
+        orbitRadiusRatio: p.orbitRadiusRatio,
+        orbitSpeed: p.orbitSpeed,
+        selfRotateSpeed: 0.65,
+        initialAngleDeg: p.initialAngleDeg,
+        status: 'unlocked',
+        moons: (p.moons || []).map((m, mIdx) => ({
+          ...m,
+          imagePng: m.imagePng || defaultPlanetImageUrl,
+          uvTexturePng: m.uvTexturePng || pickUv((p.uvIdx + mIdx + 1) % uvLibrary.length),
+          markers:
+            m.markers && m.markers.length > 0
+              ? m.markers
+              : buildDefaultMarkersForPlanet(m.id, m.name, project),
+        })),
+        markers: isSlimelands
+          ? slimelandsMarkers
+          : buildDefaultMarkersForPlanet(p.id, p.name, project),
+      };
+    }),
+  }));
 }
 
 export function getOrCreatePlanetGlobeConfig(project: MapProject): PlanetGlobeConfig {
   const existing = project.planetGlobe;
-  const savedMaps = project.savedWorldMaps || (project.worldMap ? [project.worldMap] : []);
-  const primaryMapId = project.worldMap?.id || savedMaps[0]?.id || 'map-main-default';
-  const primaryPoiPng =
-    project.worldMap?.pointsOfInterest?.find((p) => p.iconPng && !p.isInvisible)?.iconPng ||
-    undefined;
+  const baseImagePng = existing?.planetImagePng || DEFAULT_PLANET_IMAGE_URL;
 
-  const basePlanetPng = existing?.planetImagePng || DEFAULT_PLANET_IMAGE_URL;
-  const fallbackGlobeMarkers =
+  const defaultUvLib = getDefaultUvTextureLibrary();
+  const uvTextureLibrary: PlanetUvTextureItem[] =
+    existing?.uvTextureLibrary && existing.uvTextureLibrary.length > 0
+      ? existing.uvTextureLibrary
+      : defaultUvLib;
+
+  const rawMarkers =
     existing?.markers && existing.markers.length > 0
       ? existing.markers
-      : buildDefaultMarkersForPlanet('solar-planet-1', 'Planeta Gaia', project);
+      : buildDefaultMarkersForPlanet('planet-slimelands', 'Mundo de Slimelands', project);
 
-  const defaultPlanets: SolarSystemPlanet[] = [
-    {
-      id: 'solar-planet-1',
-      name: project.worldMap?.title || 'Planeta Gaia',
-      description: 'Mundo primordial de florestas e cidadelas reais.',
-      planetImagePng: basePlanetPng,
-      markerIconPng: primaryPoiPng,
-      markerIconEmoji: '🏰',
-      glowColor: '#38bdf8',
-      hasRings: false,
-      sizePx: 44,
-      orbitRadiusRatio: 0.28,
-      orbitSpeed: 4.6,
-      selfRotateSpeed: 8,
-      initialAngleDeg: 78,
-      targetWorldMapId: primaryMapId,
-      status: 'unlocked',
-      scale: 1.0,
-      markers: fallbackGlobeMarkers,
-      moons: [
-        {
-          id: 'moon-gaia-1',
-          name: 'Lua de Prata',
-          imagePng: basePlanetPng,
-          markerIconEmoji: '🌙',
-          sizePx: 16,
-          orbitRadiusPx: 56,
-          orbitSpeed: 20,
-          initialAngleDeg: 35,
-          targetWorldMapId: savedMaps[1]?.id || primaryMapId,
-          status: 'unlocked',
-        },
-      ],
-    },
-    {
-      id: 'solar-planet-2',
-      name: savedMaps[1]?.title || 'Planeta Cristália',
-      description: 'Mundo gelado cercado por luas gêmeas.',
-      planetImagePng: basePlanetPng,
-      markerIconPng: savedMaps[1]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
-      markerIconEmoji: '⛰️',
-      glowColor: '#a855f7',
-      hasRings: false,
-      sizePx: 38,
-      orbitRadiusRatio: 0.47,
-      orbitSpeed: 3.1,
-      selfRotateSpeed: 6,
-      initialAngleDeg: 215,
-      targetWorldMapId: savedMaps[1]?.id || primaryMapId,
-      status: 'unlocked',
-      scale: 1.0,
-      markers: buildDefaultMarkersForPlanet('solar-planet-2', 'Planeta Cristália', project),
-      moons: [
-        {
-          id: 'moon-cristalia-1',
-          name: 'Lua Boreal',
-          imagePng: basePlanetPng,
-          markerIconEmoji: '❄️',
-          sizePx: 15,
-          orbitRadiusPx: 54,
-          orbitSpeed: 22,
-          initialAngleDeg: 0,
-          targetWorldMapId: savedMaps[1]?.id || primaryMapId,
-          status: 'unlocked',
-        },
-      ],
-    },
-    {
-      id: 'solar-planet-3',
-      name: savedMaps[2]?.title || 'Planeta Aurélia',
-      description: 'Gigante dourado cercado por anéis astrais.',
-      planetImagePng: basePlanetPng,
-      markerIconPng: savedMaps[2]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
-      markerIconEmoji: '🪐',
-      glowColor: '#f59e0b',
-      hasRings: true,
-      sizePx: 48,
-      orbitRadiusRatio: 0.66,
-      orbitSpeed: 2.1,
-      selfRotateSpeed: 5,
-      initialAngleDeg: 325,
-      targetWorldMapId: savedMaps[2]?.id || primaryMapId,
-      status: 'unlocked',
-      scale: 1.0,
-      markers: buildDefaultMarkersForPlanet('solar-planet-3', 'Planeta Aurélia', project),
-      moons: [
-        {
-          id: 'moon-aurelia-1',
-          name: 'Satélite Dourado',
-          imagePng: basePlanetPng,
-          markerIconEmoji: '✨',
-          sizePx: 16,
-          orbitRadiusPx: 62,
-          orbitSpeed: 17,
-          initialAngleDeg: 110,
-          targetWorldMapId: savedMaps[2]?.id || primaryMapId,
-          status: 'unlocked',
-        },
-      ],
-    },
-    {
-      id: 'solar-planet-4',
-      name: 'Planeta Ignis',
-      description: 'Órbita externa de vulcões e fortalezas ancestrais.',
-      planetImagePng: basePlanetPng,
-      markerIconEmoji: '🌋',
-      glowColor: '#f43f5e',
-      hasRings: false,
-      sizePx: 36,
-      orbitRadiusRatio: 0.84,
-      orbitSpeed: 1.4,
-      selfRotateSpeed: 4,
-      initialAngleDeg: 145,
-      targetWorldMapId: primaryMapId,
-      status: 'unlocked',
-      scale: 1.0,
-      markers: buildDefaultMarkersForPlanet('solar-planet-4', 'Planeta Ignis', project),
-      moons: [],
-    },
-  ];
+  const slimelandsMarkers: PlanetGlobeMarker[] = rawMarkers.map((m) => ({
+    ...m,
+    nx: normalizeMarkerCoord(m.nx),
+    ny: normalizeMarkerCoord(m.ny),
+  }));
 
-  const resolvedPlanets =
-    existing && Array.isArray(existing.planets) && existing.planets.length > 0
-      ? existing.planets.map((p, idx) => ({
-          ...p,
-          // Garante planetas mais compactos e arcos maiores mesmo em projetos antigos
-          sizePx: p.sizePx && p.sizePx > 58 ? Math.round(p.sizePx * 0.56) : p.sizePx || 42,
-          orbitRadiusRatio:
-            p.orbitRadiusRatio ?? Math.min(0.86, 0.28 + idx * 0.19),
-          moons: (p.moons || []).map((m) => ({
-            ...m,
-            // Garante luas um pouco mais afastadas do planeta para facilitar visualização e clique
-            orbitRadiusPx: m.orbitRadiusPx && m.orbitRadiusPx < 48 ? 54 : m.orbitRadiusPx || 56,
-          })),
-          markers:
-            p.markers && p.markers.length > 0
-              ? p.markers
-              : idx === 0
-              ? fallbackGlobeMarkers
-              : buildDefaultMarkersForPlanet(p.id, p.name, project),
-        }))
-      : defaultPlanets;
+  const canonicalSix = buildSixStarConstellationSystems(
+    project,
+    baseImagePng,
+    slimelandsMarkers,
+    uvTextureLibrary
+  );
 
-  const defaultConstellations: ConstellationSystemNode[] = [
-    {
-      id: 'constellation-1',
-      name: existing?.systemName || 'Constelação da Coroa Astral',
-      subtitle: 'Sistema Binário Safira & Ouro',
-      description: 'Berço estelar de Gaia, Cristália e Aurélia governado por uma estrela dupla.',
-      xRatio: 0.28,
-      yRatio: 0.34,
-      glowColor: '#38bdf8',
-      secondaryColor: '#fde047',
-      starType: 'binary',
-      markerIconPng: primaryPoiPng,
-      markerIconEmoji: '👑',
-      sunName: existing?.sunName || 'Sol Binário Astral',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.105, dy: -0.048, size: 6.0, color: '#60a5fa', starType: 'single', connectFromIndex: 1 },
-        { dx: -0.058, dy: -0.095, size: 7.5, color: '#38bdf8', secondaryColor: '#f472b6', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.0, size: 11.0, color: '#38bdf8', secondaryColor: '#fde047', starType: 'binary' },
-        { dx: 0.055, dy: -0.088, size: 7.0, color: '#fde047', starType: 'supergiant', connectFromIndex: 2 },
-        { dx: 0.108, dy: -0.028, size: 6.2, color: '#a78bfa', starType: 'single', connectFromIndex: 3 },
-        { dx: 0.072, dy: 0.058, size: 6.8, color: '#34d399', secondaryColor: '#ffffff', starType: 'binary', connectFromIndex: 4 },
-        { dx: -0.012, dy: 0.078, size: 5.8, color: '#fb923c', starType: 'single', connectFromIndex: 2 },
-        { dx: -0.078, dy: 0.042, size: 6.4, color: '#22d3ee', starType: 'pulsar', connectFromIndex: 6 },
-        { dx: -0.025, dy: -0.138, size: 5.2, color: '#fef08a', starType: 'single', connectFromIndex: 1 },
-      ],
-      planets: resolvedPlanets,
-    },
-    {
-      id: 'constellation-2',
-      name: 'Constelação do Dragão Boreal',
-      subtitle: 'Sistema Supergigante Violeta',
-      description: 'Antiga constelação guardiã das estrelas de cristal e pulsares boreais.',
-      xRatio: 0.71,
-      yRatio: 0.27,
-      glowColor: '#a855f7',
-      secondaryColor: '#22d3ee',
-      starType: 'supergiant',
-      markerIconPng: savedMaps[1]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
-      markerIconEmoji: '🐉',
-      sunName: 'Supergigante Sirius Violeta',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.115, dy: 0.065, size: 5.8, color: '#f472b6', starType: 'single', connectFromIndex: 1 },
-        { dx: -0.065, dy: 0.028, size: 7.2, color: '#c084fc', secondaryColor: '#38bdf8', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.0, size: 11.5, color: '#a855f7', secondaryColor: '#22d3ee', starType: 'supergiant' },
-        { dx: 0.048, dy: -0.068, size: 6.8, color: '#22d3ee', starType: 'pulsar', connectFromIndex: 2 },
-        { dx: 0.102, dy: -0.088, size: 7.5, color: '#f43f5e', secondaryColor: '#fde047', starType: 'binary', connectFromIndex: 3 },
-        { dx: 0.135, dy: -0.025, size: 5.6, color: '#fef08a', starType: 'single', connectFromIndex: 4 },
-        { dx: 0.062, dy: 0.055, size: 6.5, color: '#38bdf8', starType: 'nebula_star', connectFromIndex: 2 },
-        { dx: -0.042, dy: -0.078, size: 6.0, color: '#34d399', starType: 'single', connectFromIndex: 2 },
-        { dx: 0.015, dy: 0.095, size: 5.5, color: '#e879f9', starType: 'single', connectFromIndex: 6 },
-      ],
-      planets: resolvedPlanets,
-    },
-    {
-      id: 'constellation-3',
-      name: 'Constelação da Fênix Solar',
-      subtitle: 'Sistema Triplo de Áurea',
-      description: 'Aglomerado ardente onde três sóis dançam entre gigantes rubras e douradas.',
-      xRatio: 0.68,
-      yRatio: 0.71,
-      glowColor: '#f59e0b',
-      secondaryColor: '#f43f5e',
-      starType: 'trinary',
-      markerIconPng: savedMaps[2]?.pointsOfInterest?.find((p) => p.iconPng)?.iconPng,
-      markerIconEmoji: '🦅',
-      sunName: 'Tríade Hélio Dourado',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.118, dy: -0.062, size: 6.8, color: '#fb923c', starType: 'supergiant', connectFromIndex: 1 },
-        { dx: -0.058, dy: -0.018, size: 7.0, color: '#fde047', secondaryColor: '#f43f5e', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.0, size: 11.5, color: '#f59e0b', secondaryColor: '#f43f5e', starType: 'trinary' },
-        { dx: 0.058, dy: -0.022, size: 7.0, color: '#f43f5e', secondaryColor: '#38bdf8', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.118, dy: -0.068, size: 6.8, color: '#fde047', starType: 'supergiant', connectFromIndex: 3 },
-        { dx: 0.0, dy: -0.085, size: 6.5, color: '#ffffff', starType: 'pulsar', connectFromIndex: 2 },
-        { dx: -0.038, dy: 0.075, size: 5.8, color: '#f43f5e', starType: 'single', connectFromIndex: 2 },
-        { dx: 0.038, dy: 0.075, size: 5.8, color: '#fbbf24', starType: 'single', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.118, size: 6.4, color: '#38bdf8', secondaryColor: '#fde047', starType: 'binary', connectFromIndex: 6 },
-      ],
-      planets: resolvedPlanets,
-    },
-    {
-      id: 'constellation-4',
-      name: 'Constelação do Leviatã Celeste',
-      subtitle: 'Sistema Pulsar Esmeralda',
-      description: 'Fronteira profunda das águas cósmicas iluminada por estrelas binárias verdes e azuis.',
-      xRatio: 0.27,
-      yRatio: 0.73,
-      glowColor: '#10b981',
-      secondaryColor: '#38bdf8',
-      starType: 'pulsar',
-      markerIconEmoji: '🔱',
-      sunName: 'Pulsar de Esmeralda',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.102, dy: 0.068, size: 6.2, color: '#34d399', starType: 'single', connectFromIndex: 1 },
-        { dx: -0.048, dy: 0.025, size: 7.2, color: '#10b981', secondaryColor: '#fde047', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.0, size: 11.0, color: '#10b981', secondaryColor: '#38bdf8', starType: 'pulsar' },
-        { dx: 0.052, dy: -0.052, size: 6.8, color: '#22d3ee', starType: 'nebula_star', connectFromIndex: 2 },
-        { dx: 0.105, dy: -0.018, size: 7.4, color: '#38bdf8', secondaryColor: '#a855f7', starType: 'binary', connectFromIndex: 3 },
-        { dx: 0.082, dy: 0.058, size: 5.6, color: '#fde047', starType: 'single', connectFromIndex: 4 },
-        { dx: -0.035, dy: -0.072, size: 6.2, color: '#f472b6', starType: 'single', connectFromIndex: 2 },
-        { dx: 0.022, dy: 0.078, size: 6.0, color: '#6ee7b7', starType: 'single', connectFromIndex: 2 },
-      ],
-      planets: resolvedPlanets,
-    },
-    {
-      id: 'constellation-5',
-      name: 'Constelação de Gêmeos Rubros',
-      subtitle: 'Sistema Binário Carmezim',
-      description: 'Par de estrelas gigantes rubras e azuis entrelaçadas no centro do firmamento.',
-      xRatio: 0.50,
-      yRatio: 0.48,
-      glowColor: '#f43f5e',
-      secondaryColor: '#38bdf8',
-      starType: 'binary',
-      markerIconEmoji: '♊',
-      sunName: 'Sóis Gêmeos Rubro-Safira',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.078, dy: -0.055, size: 7.0, color: '#f43f5e', secondaryColor: '#ffffff', starType: 'binary', connectFromIndex: 2 },
-        { dx: -0.045, dy: 0.052, size: 6.2, color: '#fb7185', starType: 'single', connectFromIndex: 0 },
-        { dx: 0.0, dy: 0.0, size: 11.5, color: '#f43f5e', secondaryColor: '#38bdf8', starType: 'binary' },
-        { dx: 0.078, dy: -0.055, size: 7.0, color: '#38bdf8', secondaryColor: '#fde047', starType: 'binary', connectFromIndex: 2 },
-        { dx: 0.045, dy: 0.052, size: 6.2, color: '#60a5fa', starType: 'single', connectFromIndex: 3 },
-        { dx: 0.0, dy: -0.092, size: 6.6, color: '#fde047', starType: 'supergiant', connectFromIndex: 2 },
-        { dx: 0.0, dy: 0.088, size: 6.0, color: '#c084fc', starType: 'pulsar', connectFromIndex: 2 },
-      ],
-      planets: resolvedPlanets,
-    },
-    {
-      id: 'constellation-6',
-      name: 'Constelação da Lira Nebular',
-      subtitle: 'Berçário Estelar Furta-Cor',
-      description: 'Harpa celeste formada por estrelas jovens multicoloridas.',
-      xRatio: 0.49,
-      yRatio: 0.20,
-      glowColor: '#ec4899',
-      secondaryColor: '#fde047',
-      starType: 'nebula_star',
-      markerIconEmoji: '🎵',
-      sunName: 'Estrela Vega Rosada',
-      status: 'unlocked',
-      scale: 1.0,
-      patternStars: [
-        { dx: -0.068, dy: -0.032, size: 6.0, color: '#f472b6', starType: 'single', connectFromIndex: 2 },
-        { dx: -0.035, dy: 0.048, size: 6.5, color: '#38bdf8', secondaryColor: '#f472b6', starType: 'binary', connectFromIndex: 0 },
-        { dx: 0.0, dy: 0.0, size: 10.8, color: '#ec4899', secondaryColor: '#fde047', starType: 'nebula_star' },
-        { dx: 0.035, dy: 0.048, size: 6.5, color: '#fde047', starType: 'single', connectFromIndex: 2 },
-        { dx: 0.068, dy: -0.032, size: 6.2, color: '#34d399', secondaryColor: '#ffffff', starType: 'binary', connectFromIndex: 3 },
-        { dx: 0.0, dy: 0.078, size: 5.8, color: '#a855f7', starType: 'pulsar', connectFromIndex: 1 },
-      ],
-      planets: resolvedPlanets,
-    },
-  ];
+  // Merge user custom planet textures/markers onto the 6 canonical stars (with 40 planets/moons total)
+  let mergedConstellations: ConstellationSystemNode[] = canonicalSix;
+  if (existing?.constellations && existing.constellations.length > 0) {
+    const existingById = new Map<string, ConstellationSystemNode>();
+    existing.constellations.forEach((c) => existingById.set(c.id, c));
 
-  const paletteFallback = [
-    '#38bdf8',
-    '#fde047',
-    '#f43f5e',
-    '#a855f7',
-    '#34d399',
-    '#fb923c',
-    '#f472b6',
-    '#22d3ee',
-  ];
-  const kindFallback: AstralStarKind[] = [
-    'single',
-    'binary',
-    'supergiant',
-    'single',
-    'pulsar',
-    'binary',
-    'nebula_star',
-    'trinary',
-  ];
+    mergedConstellations = canonicalSix.map((canonStar, index) => {
+      const match = existingById.get(canonStar.id);
+      if (!match) return canonStar;
 
-  const resolvedConstellations =
-    existing && Array.isArray(existing.constellations) && existing.constellations.length > 0
-      ? existing.constellations.map((c, cIdx) => ({
-          ...c,
-          starType: c.starType || kindFallback[(cIdx + 1) % kindFallback.length],
-          secondaryColor:
-            c.secondaryColor || paletteFallback[(cIdx + 2) % paletteFallback.length],
-          patternStars: (c.patternStars || []).map((pt, pIdx) => ({
-            ...pt,
-            color: pt.color || paletteFallback[(cIdx + pIdx) % paletteFallback.length],
-            secondaryColor:
-              pt.secondaryColor ||
-              paletteFallback[(cIdx + pIdx + 3) % paletteFallback.length],
-            starType:
-              pt.starType || kindFallback[(cIdx * 3 + pIdx) % kindFallback.length],
-          })),
-        }))
-      : defaultConstellations;
+      const existingPlanetsById = new Map<string, SolarSystemPlanet>();
+      (match.planets || []).forEach((ep) => existingPlanetsById.set(ep.id, ep));
+
+      const mergedPlanets: SolarSystemPlanet[] = (canonStar.planets || []).map(
+        (canonP, pIdx) => {
+          const ep = existingPlanetsById.get(canonP.id);
+          if (!ep) return canonP;
+          return {
+            ...canonP,
+            planetImagePng: ep.planetImagePng || canonP.planetImagePng || baseImagePng,
+            uvTexturePng:
+              ep.uvTexturePng ||
+              canonP.uvTexturePng ||
+              uvTextureLibrary[(index + pIdx) % Math.max(1, uvTextureLibrary.length)]?.url,
+            markers:
+              canonP.id === 'planet-slimelands' || canonP.id === 'solar-planet-1'
+                ? slimelandsMarkers
+                : ep.markers && ep.markers.length > 0
+                ? ep.markers.map((m) => ({
+                    ...m,
+                    nx: normalizeMarkerCoord(m.nx),
+                    ny: normalizeMarkerCoord(m.ny),
+                  }))
+                : canonP.markers,
+          };
+        }
+      );
+
+      return {
+        ...canonStar,
+        planets: mergedPlanets,
+      };
+    });
+  }
 
   return {
-    enabled: existing?.enabled !== false,
-    enableConstellationLayer: existing?.enableConstellationLayer !== false,
-    title: existing?.title || 'Sistema Planetário',
-    systemName: existing?.systemName || 'Sistema Solar de Slimelands',
-    planetImagePng: basePlanetPng,
-    sunName: existing?.sunName || 'Sol Astral',
-    sunImagePng: existing?.sunImagePng,
-    sunSizePx:
-      existing?.sunSizePx && existing.sunSizePx > 64 ? 54 : existing?.sunSizePx ?? 52,
-    showCentralSun: existing?.showCentralSun !== false,
+    enabled: existing?.enabled ?? true,
+    enableConstellationLayer: existing?.enableConstellationLayer ?? true,
+    title: existing?.title || 'Mundo de Slimelands',
+    systemName: existing?.systemName || 'Constelação Real',
+    planetImagePng: baseImagePng,
+    uvTexturePng: existing?.uvTexturePng || uvTextureLibrary[0]?.url,
+    sunName: existing?.sunName || 'Solaris Prime',
+    sunSizePx: existing?.sunSizePx ?? 56,
+    showCentralSun: existing?.showCentralSun ?? true,
     orbitTiltRatio: existing?.orbitTiltRatio ?? 0.66,
     glowColor: existing?.glowColor || '#38bdf8',
     autoRotateSpeed: existing?.autoRotateSpeed ?? 1.0,
     planetScale: existing?.planetScale ?? 1.0,
-    verticalOffsetPct: existing?.verticalOffsetPct ?? 50,
-    showMoonsInSky: existing?.showMoonsInSky !== false,
-    markers: fallbackGlobeMarkers,
-    planets: resolvedPlanets,
-    constellations: resolvedConstellations,
+    verticalOffsetPct: existing?.verticalOffsetPct ?? 0,
+    showMoonsInSky: existing?.showMoonsInSky ?? true,
+    markers: slimelandsMarkers,
+    uvTextureLibrary,
+    planets: mergedConstellations[0]?.planets || [],
+    constellations: mergedConstellations,
   };
 }
 
-// ============================================================================
-// FUNDO DE ESPAÇO PROFUNDO REALISTA (VIA LÁCTEA, NEBULOSAS VOLUMÉTRICAS,
-// POEIRA CÓSMICA, GALÁXIA DISTANTE E CAMPO ESTELAR MULTIESPECTRAL)
-// ============================================================================
+const textureCache = new Map<string, THREE.Texture>();
+
+function getOrLoadPlanetTexture(url: string, wrapEquirect = false): THREE.Texture {
+  const safeUrl = url || DEFAULT_PLANET_IMAGE_URL;
+  const cacheKey = `${wrapEquirect ? 'uv21:' : 'png:'}${safeUrl}`;
+  const cached = textureCache.get(cacheKey);
+  if (cached) return cached;
+
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin('anonymous');
+  const tex = loader.load(safeUrl, (loaded) => {
+    loaded.colorSpace = THREE.SRGBColorSpace;
+    if (wrapEquirect) {
+      loaded.wrapS = THREE.RepeatWrapping;
+      loaded.wrapT = THREE.ClampToEdgeWrapping;
+    }
+    loaded.needsUpdate = true;
+  });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  if (wrapEquirect) {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+  }
+  textureCache.set(cacheKey, tex);
+  return tex;
+}
+
+/**
+ * REALISTIC OPTICAL STARBURST TEXTURE (Matches the user's Ursa Major reference photo!)
+ * Creates a 512x512 high-dynamic-range optical star flare with:
+ * - Soft blue-indigo outer atmospheric bloom
+ * - 64 fine, needle-sharp radial diffraction rays radiating from the center
+ * - 8 primary long optical flare spikes
+ * - Blinding pure white-hot pinpoint center (`#ffffff`)
+ * Zero solid spheres — pure realistic starlight flare!
+ */
+let cachedRealisticStarburstTex: THREE.CanvasTexture | null = null;
+function getRealisticStarburstTexture(): THREE.CanvasTexture {
+  if (cachedRealisticStarburstTex) return cachedRealisticStarburstTex;
+  const size = 512;
+  const half = size / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.clearRect(0, 0, size, size);
+
+  // 1. Deep outer blue-violet optical halo
+  const outerHalo = ctx.createRadialGradient(half, half, 1, half, half, half);
+  outerHalo.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+  outerHalo.addColorStop(0.06, 'rgba(225, 240, 255, 0.92)');
+  outerHalo.addColorStop(0.16, 'rgba(135, 180, 255, 0.52)');
+  outerHalo.addColorStop(0.35, 'rgba(85, 130, 245, 0.18)');
+  outerHalo.addColorStop(0.65, 'rgba(55, 90, 210, 0.04)');
+  outerHalo.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = outerHalo;
+  ctx.fillRect(0, 0, size, size);
+
+  // 2. 72 Fine Radial Light Rays (like camera lens starburst in the reference photo)
+  ctx.save();
+  ctx.translate(half, half);
+  const numFineRays = 72;
+  for (let i = 0; i < numFineRays; i++) {
+    const angle = (i / numFineRays) * Math.PI * 2 + (i % 3) * 0.008;
+    const isPrimary = i % 9 === 0;
+    const isSecondary = i % 3 === 0;
+    const rayLen = isPrimary
+      ? half * 0.96
+      : isSecondary
+      ? half * 0.72
+      : half * (0.38 + ((i * 17) % 10) * 0.025);
+    const rayWidth = isPrimary ? 2.4 : isSecondary ? 1.4 : 0.85;
+
+    ctx.save();
+    ctx.rotate(angle);
+    const rayGrad = ctx.createLinearGradient(0, 0, rayLen, 0);
+    rayGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    rayGrad.addColorStop(0.15, 'rgba(210, 232, 255, 0.65)');
+    rayGrad.addColorStop(0.45, 'rgba(130, 175, 255, 0.22)');
+    rayGrad.addColorStop(1, 'rgba(90, 140, 255, 0)');
+
+    ctx.fillStyle = rayGrad;
+    ctx.beginPath();
+    ctx.moveTo(0, -rayWidth);
+    ctx.lineTo(rayLen, 0);
+    ctx.lineTo(0, rayWidth);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // 3. Intense white-hot pinpoint core
+  const coreGlow = ctx.createRadialGradient(half, half, 0, half, half, half * 0.18);
+  coreGlow.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  coreGlow.addColorStop(0.35, 'rgba(255, 255, 255, 0.95)');
+  coreGlow.addColorStop(0.7, 'rgba(200, 228, 255, 0.45)');
+  coreGlow.addColorStop(1, 'rgba(150, 195, 255, 0)');
+  ctx.fillStyle = coreGlow;
+  ctx.fillRect(0, 0, size, size);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  cachedRealisticStarburstTex = tex;
+  return tex;
+}
+
+let cachedSoftHaloTex: THREE.CanvasTexture | null = null;
+function getSoftHaloTexture(): THREE.CanvasTexture {
+  if (cachedSoftHaloTex) return cachedSoftHaloTex;
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(128, 128, 2, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  grad.addColorStop(0.2, 'rgba(220, 238, 255, 0.75)');
+  grad.addColorStop(0.5, 'rgba(120, 175, 255, 0.22)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  cachedSoftHaloTex = tex;
+  return tex;
+}
+
+/**
+ * 1) EQUIRECTANGULAR 2:1 UV 3D SPHERE MATERIAL (Used in 3D Solar System Layer)
+ */
+function create3DEquirectangularUvMaterial(options: {
+  texture: THREE.Texture;
+  atmosphereColor: string;
+}): THREE.ShaderMaterial {
+  const atmo = new THREE.Color(options.atmosphereColor || '#38bdf8');
+  return new THREE.ShaderMaterial({
+    transparent: false,
+    depthWrite: true,
+    uniforms: {
+      uTexture: { value: options.texture },
+      uAtmosphereColor: { value: atmo },
+      uSunWorldPos: { value: new THREE.Vector3(0, 0, 0) },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+      varying vec3 vViewDir;
+
+      void main() {
+        vUv = uv;
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPos = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vec4 mvPosition = viewMatrix * worldPosition;
+        vViewDir = normalize(-mvPosition.xyz);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uTexture;
+      uniform vec3 uAtmosphereColor;
+      uniform vec3 uSunWorldPos;
+
+      varying vec2 vUv;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
+      varying vec3 vViewDir;
+
+      void main() {
+        vec4 texColor = texture2D(uTexture, vUv);
+
+        vec3 toSun = normalize(uSunWorldPos - vWorldPos);
+        float ndotl = dot(normalize(vWorldNormal), toSun);
+        float dayNight = smoothstep(-0.45, 0.65, ndotl);
+        float lighting = mix(0.28, 1.18, dayNight);
+
+        vec3 viewNormal = normalize(vec3(viewMatrix * vec4(vWorldNormal, 0.0)));
+        float fresnel = pow(1.0 - max(0.0, dot(viewNormal, normalize(vViewDir))), 2.5);
+
+        vec3 finalRgb = texColor.rgb * lighting + uAtmosphereColor * fresnel * (0.35 + 0.35 * dayNight);
+        gl_FragColor = vec4(finalRgb, 1.0);
+      }
+    `,
+  });
+}
+
+/**
+ * 2) ILLUSTRATED PLANET PNG 3D RELIEF MATERIAL (Used in Planet Close-Up Dive Layer)
+ */
+function create3DPlanetPngDiveMaterial(options: {
+  texture: THREE.Texture;
+  atmosphereColor: string;
+  tintColor?: string;
+  tintStrength?: number;
+  lightDirection?: THREE.Vector3;
+}): THREE.ShaderMaterial {
+  const atmo = new THREE.Color(options.atmosphereColor || '#38bdf8');
+  const tint = new THREE.Color(
+    options.tintColor || options.atmosphereColor || '#ffffff'
+  );
+  const lightDir = (
+    options.lightDirection || new THREE.Vector3(-0.38, 0.42, 0.88)
+  ).normalize();
+
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: true,
+    uniforms: {
+      uTexture: { value: options.texture },
+      uAtmosphereColor: { value: atmo },
+      uTintColor: { value: tint },
+      uTintStrength: { value: options.tintStrength ?? 0.0 },
+      uLightDir: { value: lightDir },
+      uOpacity: { value: 1.0 },
+    },
+    vertexShader: `
+      varying vec2 vDiskUv;
+      varying vec3 vNormalView;
+      varying vec3 vViewDir;
+
+      void main() {
+        vDiskUv = vec2(position.x * 0.5 + 0.5, position.y * 0.5 + 0.5);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vNormalView = normalize(normalMatrix * normal);
+        vViewDir = normalize(-mvPosition.xyz);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uTexture;
+      uniform vec3 uAtmosphereColor;
+      uniform vec3 uTintColor;
+      uniform float uTintStrength;
+      uniform vec3 uLightDir;
+      uniform float uOpacity;
+
+      varying vec2 vDiskUv;
+      varying vec3 vNormalView;
+      varying vec3 vViewDir;
+
+      void main() {
+        vec2 uv = clamp(vDiskUv, 0.002, 0.998);
+        vec4 texColor = texture2D(uTexture, uv);
+
+        if (texColor.a < 0.03) {
+          discard;
+        }
+
+        vec3 baseRgb = mix(texColor.rgb, texColor.rgb * (0.65 + 0.55 * uTintColor), uTintStrength);
+
+        float ndotl = dot(normalize(vNormalView), normalize(uLightDir));
+        float diffuse = smoothstep(-0.65, 0.85, ndotl);
+        float lighting = mix(0.68, 1.10, diffuse);
+
+        float fresnel = pow(1.0 - max(0.0, dot(normalize(vNormalView), normalize(vViewDir))), 2.6);
+        vec3 finalRgb = baseRgb * lighting + uAtmosphereColor * fresnel * 0.45;
+
+        vec3 halfVec = normalize(normalize(uLightDir) + normalize(vViewDir));
+        float spec = pow(max(0.0, dot(normalize(vNormalView), halfVec)), 28.0);
+        finalRgb += uAtmosphereColor * spec * 0.14;
+
+        gl_FragColor = vec4(finalRgb, texColor.a * uOpacity);
+      }
+    `,
+  });
+}
+
+export function markerNormalizedToSphereLocal3D(
+  nx: number,
+  ny: number,
+  radius: number
+): THREE.Vector3 {
+  const dx = normalizeMarkerCoord(nx);
+  const dy = -normalizeMarkerCoord(ny);
+  const r2 = Math.min(0.95, dx * dx + dy * dy);
+  const dz = Math.sqrt(Math.max(0.05, 1.0 - r2));
+  return new THREE.Vector3(dx * radius, dy * radius, dz * radius * 1.02);
+}
+
+export const DEEP_SPACE_GALACTIC_BG_URL =
+  '/assets/aistudio/Faixa_gal_ctica_sutil_no_espa_o_profundo_455f18e5.png';
+
+export type MapDeviceProfile =
+  | 'mobile-portrait'
+  | 'mobile-landscape'
+  | 'tablet-portrait'
+  | 'tablet-landscape'
+  | 'web-desktop';
+
+export function detectMapViewportProfile(
+  screenWidth: number,
+  screenHeight: number
+): {
+  profile: MapDeviceProfile;
+  isMobilePortrait: boolean;
+  isMobileLandscape: boolean;
+  isTabletPortrait: boolean;
+  isTabletLandscape: boolean;
+  isWebDesktop: boolean;
+  isCompactHeight: boolean;
+  isNarrowWidth: boolean;
+  aspect: number;
+} {
+  const w = Math.max(280, screenWidth || 1024);
+  const h = Math.max(240, screenHeight || 768);
+  const aspect = w / h;
+
+  let profile: MapDeviceProfile = 'web-desktop';
+  if (w < 600 && h >= w) {
+    profile = 'mobile-portrait';
+  } else if (h < 540 && w > h) {
+    profile = 'mobile-landscape';
+  } else if (w >= 600 && w < 1024 && h >= w) {
+    profile = 'tablet-portrait';
+  } else if (w >= 600 && w <= 1180 && h >= 540 && w > h) {
+    profile = 'tablet-landscape';
+  } else {
+    profile = 'web-desktop';
+  }
+
+  return {
+    profile,
+    isMobilePortrait: profile === 'mobile-portrait',
+    isMobileLandscape: profile === 'mobile-landscape',
+    isTabletPortrait: profile === 'tablet-portrait',
+    isTabletLandscape: profile === 'tablet-landscape',
+    isWebDesktop: profile === 'web-desktop',
+    isCompactHeight: h < 560,
+    isNarrowWidth: w < 520,
+    aspect,
+  };
+}
+
+/**
+ * Clean, Minimal, Adaptive Bottom Destination Capsule ("Ir até [Destino]")
+ * Uses `absolute` inside the simulated/real viewport and displays the full destination name
+ * without "..." truncation across Mobile Portrait, Mobile Landscape, Tablet, and Web.
+ */
+export const AstralDestinationCapsule: React.FC<{
+  visible: boolean;
+  categoryLabel?: string;
+  destinationName: string;
+  subtitle?: string;
+  accentColor?: string;
+  actionLabel?: string;
+  screenWidth?: number;
+  screenHeight?: number;
+  onConfirm: () => void;
+}> = ({
+  visible,
+  destinationName,
+  accentColor = '#fbbf24',
+  screenWidth = 1024,
+  screenHeight = 768,
+  onConfirm,
+}) => {
+  if (!visible) return null;
+
+  const cleanName = destinationName.includes('•')
+    ? destinationName.split('•').pop()?.trim() || destinationName
+    : destinationName;
+
+  const vp = detectMapViewportProfile(screenWidth, screenHeight);
+
+  return (
+    <div
+      className="absolute left-1/2 -translate-x-1/2 z-[140] pointer-events-auto transition-all duration-200"
+      style={{
+        bottom: vp.isMobileLandscape ? '10px' : vp.isMobilePortrait ? '12px' : '16px',
+        maxWidth: `${Math.max(240, screenWidth - 20)}px`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="group flex items-center gap-2 rounded-full bg-[#070b18]/92 hover:bg-[#0c1328]/98 backdrop-blur-md border border-[#d4af37]/65 hover:border-[#fde047] shadow-[0_8px_28px_rgba(0,0,0,0.82),0_0_16px_rgba(56,189,248,0.16)] transition-all duration-200 hover:scale-[1.02] active:scale-95 cursor-pointer"
+        style={{
+          padding: vp.isMobilePortrait
+            ? '5px 8px 5px 10px'
+            : vp.isMobileLandscape
+            ? '5px 9px 5px 11px'
+            : '7px 10px 7px 14px',
+        }}
+      >
+        <span
+          className="rounded-full flex items-center justify-center shrink-0 border border-white/20"
+          style={{
+            width: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+            height: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+            background:
+              'radial-gradient(circle at 35% 35%, rgba(59,130,246,0.45), rgba(15,23,42,0.92))',
+          }}
+        >
+          <Sparkles
+            style={{
+              width: vp.isMobilePortrait || vp.isMobileLandscape ? '10px' : '12px',
+              height: vp.isMobilePortrait || vp.isMobileLandscape ? '10px' : '12px',
+              color: accentColor,
+            }}
+          />
+        </span>
+
+        <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+          <span
+            className="font-bold uppercase tracking-[0.12em] text-[#93c5fd] shrink-0"
+            style={{
+              fontSize: vp.isMobilePortrait ? '8.5px' : vp.isMobileLandscape ? '9px' : '10px',
+            }}
+          >
+            Ir até
+          </span>
+          <span
+            className="font-extrabold uppercase tracking-[0.06em] text-[#f8fafc] whitespace-nowrap"
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: vp.isMobilePortrait
+                ? cleanName.length > 18
+                  ? '9.5px'
+                  : '10.5px'
+                : vp.isMobileLandscape
+                ? '10.5px'
+                : '12px',
+            }}
+          >
+            {cleanName}
+          </span>
+        </div>
+
+        <span
+          className="rounded-full bg-[#2563eb]/90 group-hover:bg-[#3b82f6] border border-[#93c5fd]/55 flex items-center justify-center shrink-0 transition-transform group-hover:translate-x-0.5"
+          style={{
+            width: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+            height: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+          }}
+        >
+          <ChevronRight className="w-3 h-3 text-white" />
+        </span>
+      </button>
+    </div>
+  );
+};
+
+/**
+ * Deep Space Galactic Backdrop with Twinkling Micro-Points Overlay & Parallax Support
+ */
 export const RealisticDeepSpaceBackdrop: React.FC<{
-  accentGlowColor?: string;
-}> = React.memo(({ accentGlowColor = '#38bdf8' }) => {
-  const starField = useMemo(() => {
-    const spectralPalette = [
-      { color: '#ffffff', glow: 'rgba(255, 255, 255, 0.85)' }, // Classe A/F Branca pura
-      { color: '#dbeafe', glow: 'rgba(147, 197, 253, 0.9)' },  // Classe O/B Azul-branca quente
-      { color: '#fef3c7', glow: 'rgba(252, 211, 77, 0.85)' },  // Classe G/K Dourada solar
-      { color: '#fed7aa', glow: 'rgba(251, 146, 60, 0.85)' },  // Classe M Gigante alaranjada
-      { color: '#e0e7ff', glow: 'rgba(165, 180, 252, 0.85)' }, // Anã branca azulada
-    ];
+  atmosphereColor?: string;
+  intensity?: number;
+  parallaxX?: number;
+  parallaxY?: number;
+}> = ({ intensity = 0.98, parallaxX = 0, parallaxY = 0 }) => {
+  const twinkleCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    return Array.from({ length: 105 }).map((_, i) => {
-      // Distribuição pseudo-aleatória determinística com maior concentração próxima à faixa da Via Láctea
-      const rawX = ((i * 73 + 19) % 98) + 1;
-      const rawY = ((i * 41 + 11) % 96) + 2;
-      const spec = spectralPalette[i % spectralPalette.length];
-      const isBrightBeacon = i % 13 === 0;
-      const isMediumStar = i % 4 === 0;
-      const sizePx = isBrightBeacon
-        ? 2.8 + (i % 3) * 0.45
-        : isMediumStar
-        ? 1.7 + (i % 2) * 0.4
-        : 0.9 + (i % 3) * 0.25;
-      const baseOpacity = isBrightBeacon
-        ? 0.88
-        : isMediumStar
-        ? 0.52 + (i % 4) * 0.1
-        : 0.22 + (i % 5) * 0.08;
+  useEffect(() => {
+    const canvas = twinkleCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-      return {
-        id: `real-star-${i}`,
-        leftPct: rawX,
-        topPct: rawY,
-        sizePx,
-        baseOpacity,
-        color: spec.color,
-        glow: spec.glow,
-        isBrightBeacon,
-        twinkleDuration: `${3.2 + (i % 6) * 0.85}s`,
-        twinkleDelay: `${(i % 9) * 0.45}s`,
-      };
+    let rafId = 0;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const resize = () => {
+      const w = canvas.parentElement?.clientWidth || window.innerWidth || 1024;
+      const h = canvas.parentElement?.clientHeight || window.innerHeight || 768;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+
+    const count = 165;
+    const stars = Array.from({ length: count }, (_, i) => {
+      const seed = (i + 1) * 9301 + 49297;
+      const rx = ((seed * 233) % 1000) / 1000;
+      const ry = ((seed * 617) % 1000) / 1000;
+      const depth = i % 3 === 0 ? 1.0 : i % 2 === 0 ? 0.6 : 0.32;
+      const radius =
+        i % 14 === 0 ? 1.35 : i % 5 === 0 ? 0.95 : 0.55 + (i % 3) * 0.15;
+      const speed = 1.1 + ((i * 37) % 28) * 0.12;
+      const phase = ((i * 73) % 100) * 0.0628;
+      const tint =
+        i % 6 === 0
+          ? '215, 235, 255'
+          : i % 9 === 0
+          ? '255, 242, 214'
+          : '255, 255, 255';
+      return { rx, ry, depth, radius, speed, phase, tint };
     });
+
+    const render = (now: number) => {
+      rafId = requestAnimationFrame(render);
+      const t = now * 0.001;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+      ctx.clearRect(0, 0, w, h);
+
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+        const wave = 0.5 + 0.5 * Math.sin(t * s.speed + s.phase);
+        const twinkle = Math.pow(wave, 1.8);
+        const alpha = 0.12 + twinkle * 0.85;
+
+        const x = s.rx * w;
+        const y = s.ry * h;
+
+        ctx.fillStyle = `rgba(${s.tint}, ${alpha.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, s.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (s.radius > 1.1 && twinkle > 0.78) {
+          const glintLen = s.radius * (2.6 + twinkle * 1.8);
+          ctx.strokeStyle = `rgba(${s.tint}, ${((twinkle - 0.7) * 1.4).toFixed(3)})`;
+          ctx.lineWidth = 0.55;
+          ctx.beginPath();
+          ctx.moveTo(x - glintLen, y);
+          ctx.lineTo(x + glintLen, y);
+          ctx.moveTo(x, y - glintLen);
+          ctx.lineTo(x, y + glintLen);
+          ctx.stroke();
+        }
+      }
+    };
+
+    rafId = requestAnimationFrame(render);
+    window.addEventListener('resize', resize);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', resize);
+    };
   }, []);
 
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden bg-[#010206]">
-      {/* 1. Abismo Cósmico Base com vinheta profunda */}
+    <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0 bg-[#020308]">
+      <div
+        className="absolute inset-0 bg-center bg-cover bg-no-repeat will-change-transform"
+        style={{
+          backgroundImage: `url('${DEEP_SPACE_GALACTIC_BG_URL}')`,
+          opacity: Math.max(0.65, Math.min(1, intensity)),
+          transform: `translate3d(${(parallaxX * -24).toFixed(2)}px, ${(
+            parallaxY * -18
+          ).toFixed(2)}px, 0) scale(1.12)`,
+        }}
+      />
+
+      <div
+        className="absolute inset-0 will-change-transform"
+        style={{
+          transform: `translate3d(${(parallaxX * -42).toFixed(2)}px, ${(
+            parallaxY * -30
+          ).toFixed(2)}px, 0) scale(1.08)`,
+        }}
+      >
+        <canvas
+          ref={twinkleCanvasRef}
+          className="w-full h-full block opacity-95"
+        />
+      </div>
+
       <div
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 115% 95% at 50% 48%, #060b19 0%, #030611 45%, #010206 80%, #000000 100%)',
+            'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(2, 4, 12, 0.55) 100%)',
         }}
       />
-
-      {/* 2. Faixa Diagonal da Via Láctea (Milky Way Band) + Nuvens de Gás Ionizado */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: '170%',
-          height: '62%',
-          left: '-35%',
-          top: '18%',
-          transform: 'rotate(-24deg)',
-          background:
-            'radial-gradient(ellipse 55% 42% at 50% 50%, rgba(56, 189, 248, 0.13) 0%, rgba(99, 102, 241, 0.09) 38%, rgba(168, 85, 247, 0.05) 62%, rgba(0, 0, 0, 0) 85%)',
-          filter: 'blur(26px)',
-        }}
-      />
-
-      {/* 3. Nebulosa de Emissão Carmezim/Magenta & Poeira Dourada */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: '95%',
-          height: '58%',
-          left: '12%',
-          top: '8%',
-          transform: 'rotate(-18deg)',
-          background: `radial-gradient(ellipse 48% 44% at 38% 45%, ${accentGlowColor}1f 0%, rgba(190, 24, 93, 0.11) 45%, rgba(217, 119, 6, 0.06) 70%, rgba(0,0,0,0) 90%)`,
-          filter: 'blur(34px)',
-        }}
-      />
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: '85%',
-          height: '55%',
-          right: '-8%',
-          bottom: '4%',
-          transform: 'rotate(14deg)',
-          background:
-            'radial-gradient(ellipse 50% 45% at 55% 55%, rgba(14, 165, 233, 0.12) 0%, rgba(139, 92, 246, 0.10) 46%, rgba(245, 158, 11, 0.05) 74%, rgba(0,0,0,0) 92%)',
-          filter: 'blur(32px)',
-        }}
-      />
-
-      {/* 4. Fendas de Poeira Escura da Via Láctea (Dark Dust Lanes p/ profundidade realista) */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          width: '140%',
-          height: '22%',
-          left: '-20%',
-          top: '39%',
-          transform: 'rotate(-23deg)',
-          background:
-            'radial-gradient(ellipse 45% 38% at 48% 50%, rgba(1, 2, 6, 0.72) 0%, rgba(1, 2, 6, 0.35) 55%, rgba(0, 0, 0, 0) 85%)',
-          filter: 'blur(18px)',
-        }}
-      />
-
-      {/* 5. Galáxia Espiral Distante (Andrômeda / Micro-Núcleo Galáctico) */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: '18%',
-          top: '22%',
-          width: '84px',
-          height: '28px',
-          transform: 'rotate(-32deg)',
-          background:
-            'radial-gradient(ellipse at 50% 50%, rgba(255, 251, 235, 0.55) 0%, rgba(199, 210, 254, 0.24) 32%, rgba(56, 189, 248, 0.08) 64%, rgba(0,0,0,0) 100%)',
-          filter: 'blur(2.5px)',
-        }}
-      />
-
-      {/* 6. Campo Estelar Multiespectral de 3 Camadas com Espigões de Difração nas Estrelas Principais */}
-      {starField.map((st) => (
-        <div
-          key={st.id}
-          className="absolute rounded-full animate-pulse"
-          style={{
-            left: `${st.leftPct}%`,
-            top: `${st.topPct}%`,
-            width: `${st.sizePx}px`,
-            height: `${st.sizePx}px`,
-            backgroundColor: st.color,
-            opacity: st.baseOpacity,
-            boxShadow: st.isBrightBeacon
-              ? `0 0 8px ${st.glow}, 0 0 16px ${st.glow}`
-              : `0 0 4px ${st.glow}`,
-            animationDuration: st.twinkleDuration,
-            animationDelay: st.twinkleDelay,
-          }}
-        >
-          {st.isBrightBeacon && (
-            <>
-              <span
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                style={{
-                  width: `${st.sizePx * 4.5}px`,
-                  height: '1px',
-                  background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${st.color} 50%, rgba(255,255,255,0) 100%)`,
-                  opacity: 0.75,
-                }}
-              />
-              <span
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                style={{
-                  width: '1px',
-                  height: `${st.sizePx * 4.5}px`,
-                  background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${st.color} 50%, rgba(255,255,255,0) 100%)`,
-                  opacity: 0.75,
-                }}
-              />
-            </>
-          )}
-        </div>
-      ))}
     </div>
   );
-});
+};
 
-// ============================================================================
-// RENDERIZADOR DE ESTRELAS VARIADAS (SIMPLES COLORIDAS, ESTRELAS DUPLAS/BINÁRIAS,
-// TRIPLAS, SUPERGIGANTES, PULSARES E BERÇÁRIOS NEBULARES)
-// ============================================================================
-export const AstralStarVisual: React.FC<{
-  size: number;
-  color?: string;
-  secondaryColor?: string;
-  starType?: AstralStarKind;
-  isSelected?: boolean;
-  isMain?: boolean;
-  animSeed?: number;
-}> = React.memo(
-  ({
-    size,
-    color = '#fde047',
-    secondaryColor = '#38bdf8',
-    starType = 'single',
-    isSelected = false,
-    isMain = false,
-    animSeed = 0,
-  }) => {
-    const effectiveSize = isSelected ? size * 1.32 : size;
-    const spinDuration = `${6 + (animSeed % 5) * 1.8}s`;
-
-    if (starType === 'binary') {
-      // ESTRELA DUPLA / BINÁRIA: Duas estrelas de cores distintas orbitando o baricentro comum com ponte de plasma
-      const primaryR = effectiveSize * 0.92;
-      const companionR = effectiveSize * 0.68;
-      const sep = Math.max(9, effectiveSize * 1.15);
-      return (
-        <div
-          className="relative flex items-center justify-center pointer-events-none"
-          style={{ width: `${sep * 2.4}px`, height: `${sep * 2.4}px` }}
-        >
-          {/* Halo Binário Compartilhado */}
-          <div
-            className="absolute rounded-full animate-pulse"
-            style={{
-              width: `${sep * 2.2}px`,
-              height: `${sep * 2.2}px`,
-              background: `radial-gradient(circle, ${color}44 0%, ${secondaryColor}33 52%, rgba(0,0,0,0) 76%)`,
-              filter: 'blur(4px)',
-            }}
-          />
-          {/* Par em rotação orbital */}
-          <div
-            className="relative w-full h-full flex items-center justify-center"
-            style={{
-              animation: `astralBinarySpin ${spinDuration} linear infinite`,
-            }}
-          >
-            {/* Ponte de Plasma entre as duas estrelas */}
-            <div
-              style={{
-                width: `${sep}px`,
-                height: '2px',
-                background: `linear-gradient(90deg, ${color}, #ffffff, ${secondaryColor})`,
-                boxShadow: `0 0 8px ${color}`,
-                opacity: 0.85,
-              }}
-              className="rounded-full"
-            />
-            {/* Estrela A (Principal) */}
-            <div
-              style={{
-                width: `${primaryR}px`,
-                height: `${primaryR}px`,
-                left: `calc(50% - ${sep * 0.55}px)`,
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: '#ffffff',
-                boxShadow: `0 0 6px #ffffff, 0 0 14px ${color}, 0 0 24px ${color}`,
-                border: `1.5px solid ${color}`,
-              }}
-              className="absolute rounded-full"
-            />
-            {/* Estrela B (Companheira) */}
-            <div
-              style={{
-                width: `${companionR}px`,
-                height: `${companionR}px`,
-                left: `calc(50% + ${sep * 0.55}px)`,
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: '#ffffff',
-                boxShadow: `0 0 5px #ffffff, 0 0 12px ${secondaryColor}, 0 0 20px ${secondaryColor}`,
-                border: `1.5px solid ${secondaryColor}`,
-              }}
-              className="absolute rounded-full"
-            />
-          </div>
-        </div>
-      );
-    }
-
-    if (starType === 'trinary') {
-      // ESTRELA TRIPLA: Três sóis coloridos em formação triangular orbital
-      const r1 = effectiveSize * 0.95;
-      const r2 = effectiveSize * 0.65;
-      const r3 = effectiveSize * 0.55;
-      const rad = Math.max(9, effectiveSize * 0.95);
-      return (
-        <div
-          className="relative flex items-center justify-center pointer-events-none"
-          style={{ width: `${rad * 2.8}px`, height: `${rad * 2.8}px` }}
-        >
-          <div
-            className="absolute rounded-full animate-pulse"
-            style={{
-              width: `${rad * 2.6}px`,
-              height: `${rad * 2.6}px`,
-              background: `radial-gradient(circle, ${color}48 0%, ${secondaryColor}35 52%, rgba(0,0,0,0) 78%)`,
-              filter: 'blur(5px)',
-            }}
-          />
-          <div
-            className="relative w-full h-full"
-            style={{
-              animation: `astralBinarySpin ${spinDuration} linear infinite`,
-            }}
-          >
-            <div
-              style={{
-                width: `${r1}px`,
-                height: `${r1}px`,
-                left: '50%',
-                top: `calc(50% - ${rad * 0.65}px)`,
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: '#ffffff',
-                boxShadow: `0 0 8px #ffffff, 0 0 16px ${color}`,
-                border: `1.5px solid ${color}`,
-              }}
-              className="absolute rounded-full"
-            />
-            <div
-              style={{
-                width: `${r2}px`,
-                height: `${r2}px`,
-                left: `calc(50% - ${rad * 0.65}px)`,
-                top: `calc(50% + ${rad * 0.45}px)`,
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: '#ffffff',
-                boxShadow: `0 0 6px #ffffff, 0 0 14px ${secondaryColor}`,
-                border: `1.5px solid ${secondaryColor}`,
-              }}
-              className="absolute rounded-full"
-            />
-            <div
-              style={{
-                width: `${r3}px`,
-                height: `${r3}px`,
-                left: `calc(50% + ${rad * 0.65}px)`,
-                top: `calc(50% + ${rad * 0.45}px)`,
-                transform: 'translate(-50%, -50%)',
-                backgroundColor: '#ffffff',
-                boxShadow: `0 0 6px #ffffff, 0 0 14px #38bdf8`,
-                border: `1.5px solid #38bdf8`,
-              }}
-              className="absolute rounded-full"
-            />
-          </div>
-        </div>
-      );
-    }
-
-    if (starType === 'pulsar') {
-      // PULSAR / ESTRELA DE NÊUTRONS: Feixes relativísticos duplos + anel de choque
-      const jetLen = Math.max(26, effectiveSize * 4.2);
-      return (
-        <div
-          className="relative flex items-center justify-center pointer-events-none"
-          style={{ width: `${jetLen}px`, height: `${jetLen}px` }}
-        >
-          {/* Feixe Relativístico Diagonal */}
-          <div
-            style={{
-              width: `${jetLen}px`,
-              height: '2.2px',
-              transform: 'rotate(-36deg)',
-              background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${secondaryColor} 25%, #ffffff 50%, ${color} 75%, rgba(255,255,255,0) 100%)`,
-              boxShadow: `0 0 10px ${color}`,
-            }}
-            className="absolute animate-pulse"
-          />
-          {/* Anel Equatorial do Pulsar */}
-          <div
-            style={{
-              width: `${effectiveSize * 2.3}px`,
-              height: `${effectiveSize * 0.9}px`,
-              transform: 'rotate(54deg)',
-              border: `1.2px solid ${color}`,
-              boxShadow: `0 0 8px ${color}`,
-            }}
-            className="absolute rounded-full opacity-80"
-          />
-          {/* Núcleo Hiper-Brilhante */}
-          <div
-            style={{
-              width: `${effectiveSize * 0.95}px`,
-              height: `${effectiveSize * 0.95}px`,
-              backgroundColor: '#ffffff',
-              boxShadow: `0 0 8px #ffffff, 0 0 16px ${color}, 0 0 28px ${secondaryColor}`,
-            }}
-            className="relative rounded-full"
-          />
-        </div>
-      );
-    }
-
-    if (starType === 'supergiant' || starType === 'nebula_star') {
-      // SUPERGIGANTE / BERÇÁRIO NEBULAR: Corona solar intensa + 8 pontas de difração
-      const spikeLen = Math.max(24, effectiveSize * (isMain ? 4.4 : 3.4));
-      return (
-        <div
-          className="relative flex items-center justify-center pointer-events-none"
-          style={{ width: `${spikeLen}px`, height: `${spikeLen}px` }}
-        >
-          <div
-            className="absolute rounded-full animate-pulse"
-            style={{
-              width: `${effectiveSize * 3.1}px`,
-              height: `${effectiveSize * 3.1}px`,
-              background: `radial-gradient(circle, ${color}66 0%, ${secondaryColor}33 48%, rgba(0,0,0,0) 76%)`,
-              filter: starType === 'nebula_star' ? 'blur(5px)' : 'blur(3px)',
-            }}
-          />
-          {/* Espigões de Difração 8 Pontas (+ e x) */}
-          <span
-            className="absolute"
-            style={{
-              width: `${spikeLen}px`,
-              height: '1.6px',
-              background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${color} 50%, rgba(255,255,255,0) 100%)`,
-            }}
-          />
-          <span
-            className="absolute"
-            style={{
-              width: '1.6px',
-              height: `${spikeLen}px`,
-              background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${color} 50%, rgba(255,255,255,0) 100%)`,
-            }}
-          />
-          <span
-            className="absolute"
-            style={{
-              width: `${spikeLen * 0.68}px`,
-              height: '1.2px',
-              transform: 'rotate(45deg)',
-              background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${secondaryColor} 50%, rgba(255,255,255,0) 100%)`,
-            }}
-          />
-          <span
-            className="absolute"
-            style={{
-              width: `${spikeLen * 0.68}px`,
-              height: '1.2px',
-              transform: 'rotate(-45deg)',
-              background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${secondaryColor} 50%, rgba(255,255,255,0) 100%)`,
-            }}
-          />
-          <div
-            style={{
-              width: `${effectiveSize * 1.15}px`,
-              height: `${effectiveSize * 1.15}px`,
-              background: `radial-gradient(circle at 38% 38%, #ffffff 0%, ${color} 68%, ${secondaryColor} 100%)`,
-              boxShadow: `0 0 8px #ffffff, 0 0 18px ${color}, 0 0 32px ${color}`,
-            }}
-            className="relative rounded-full"
-          />
-        </div>
-      );
-    }
-
-    // ESTRELA COLORIDA CLÁSSICA COM 4 ESPIGÕES DE DIFRAÇÃO
-    const spikeLen = Math.max(16, effectiveSize * 2.8);
-    return (
-      <div
-        className="relative flex items-center justify-center pointer-events-none"
-        style={{ width: `${spikeLen}px`, height: `${spikeLen}px` }}
-      >
-        <span
-          className="absolute"
-          style={{
-            width: `${spikeLen}px`,
-            height: '1.2px',
-            background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${color} 50%, rgba(255,255,255,0) 100%)`,
-            opacity: 0.85,
-          }}
-        />
-        <span
-          className="absolute"
-          style={{
-            width: '1.2px',
-            height: `${spikeLen}px`,
-            background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${color} 50%, rgba(255,255,255,0) 100%)`,
-            opacity: 0.85,
-          }}
-        />
-        <div
-          style={{
-            width: `${effectiveSize}px`,
-            height: `${effectiveSize}px`,
-            backgroundColor: '#ffffff',
-            border: `1.2px solid ${color}`,
-            boxShadow: `0 0 6px #ffffff, 0 0 14px ${color}, 0 0 22px ${color}`,
-          }}
-          className="relative rounded-full animate-pulse"
-        />
-      </div>
-    );
-  }
-);
-
-// ============================================================================
-// OVERLAY DE HYPER-SALTO (HYPERSPACE WARP JUMP) ENTRE CONSTELAÇÃO E SISTEMA SOLAR
-// ============================================================================
-export const HyperspaceWarpTunnelOverlay: React.FC<{
-  active: boolean;
-  originX: number;
-  originY: number;
-  accentColor?: string;
-  secondaryColor?: string;
-  direction?: 'jump_in' | 'arrival';
-}> = React.memo(
-  ({
-    active,
-    originX,
-    originY,
-    accentColor = '#38bdf8',
-    secondaryColor = '#fde047',
-    direction = 'jump_in',
-  }) => {
-    const streaks = useMemo(() => {
-      const colors = ['#ffffff', accentColor, secondaryColor, '#a855f7', '#38bdf8', '#fde047'];
-      return Array.from({ length: 76 }).map((_, i) => {
-        const angleDeg = (i * 360) / 76 + (i % 3) * 1.7;
-        const distStart = 12 + (i % 7) * 18;
-        const lengthPx = 140 + (i % 5) * 95;
-        const thickness = i % 6 === 0 ? 2.8 : i % 2 === 0 ? 1.8 : 1.1;
-        const color = colors[i % colors.length];
-        const delayMs = (i % 6) * 28;
-        return { id: i, angleDeg, distStart, lengthPx, thickness, color, delayMs };
-      });
-    }, [accentColor, secondaryColor]);
-
-    if (!active) return null;
-
-    return (
-      <div
-        className="absolute inset-0 pointer-events-none z-[2200] overflow-hidden"
-        style={{
-          animation:
-            direction === 'jump_in'
-              ? 'hyperspaceFlashEnvelope 1.05s cubic-bezier(0.16, 1, 0.3, 1) forwards'
-              : 'hyperspaceArrivalFadeOut 0.85s ease-out forwards',
-        }}
-      >
-        {/* Clarão Doppler de Dobra Espacial no Ponto Alvo */}
-        <div
-          style={{
-            left: `${originX}px`,
-            top: `${originY}px`,
-            width: '420px',
-            height: '420px',
-            transform: 'translate(-50%, -50%)',
-            background: `radial-gradient(circle, #ffffff 0%, ${accentColor}cc 28%, ${secondaryColor}55 54%, rgba(0,0,0,0) 76%)`,
-            animation:
-              direction === 'jump_in'
-                ? 'hyperspaceCoreBurst 1.05s cubic-bezier(0.22, 1, 0.36, 1) forwards'
-                : 'hyperspaceCoreArrival 0.85s ease-out forwards',
-          }}
-          className="absolute rounded-full"
-        />
-
-        {/* 76 Feixes Relativísticos de Estrelas Esticadas no Hyper-Salto */}
-        {streaks.map((st) => (
-          <div
-            key={st.id}
-            style={{
-              left: `${originX}px`,
-              top: `${originY}px`,
-              width: '0px',
-              height: '0px',
-              transform: `rotate(${st.angleDeg}deg)`,
-            }}
-            className="absolute"
-          >
-            <div
-              style={{
-                width: `${st.lengthPx}px`,
-                height: `${st.thickness}px`,
-                marginLeft: `${st.distStart}px`,
-                marginTop: `${-st.thickness * 0.5}px`,
-                background: `linear-gradient(90deg, rgba(255,255,255,0) 0%, ${st.color} 35%, #ffffff 92%, rgba(255,255,255,0) 100%)`,
-                boxShadow: `0 0 12px ${st.color}`,
-                animation:
-                  direction === 'jump_in'
-                    ? `hyperspaceStreakShoot 0.92s cubic-bezier(0.16, 1, 0.3, 1) ${st.delayMs}ms forwards`
-                    : `hyperspaceStreakArrive 0.72s cubic-bezier(0.22, 1, 0.36, 1) ${st.delayMs * 0.5}ms forwards`,
-              }}
-              className="rounded-full"
-            />
-          </div>
-        ))}
-      </div>
-    );
-  }
-);
-
-// ============================================================================
-// CAMADA 1: CONSTELAÇÕES (COM MUITAS ESTRELAS COLORIDAS, ESTRELAS DUPLAS/BINÁRIAS,
-// SUPERGIGANTES, PULSARES E HYPER-SALTO ANIMADO PARA O SISTEMA PLANETÁRIO)
-// ============================================================================
-interface ConstellationLayerViewProps {
+/**
+ * ============================================================================
+ * 1. REALISTIC 6-STAR 3D CONSTELLATION VIEW
+ * ============================================================================
+ */
+export interface ConstellationLayerViewProps {
   project: MapProject;
   screenWidth: number;
   screenHeight: number;
   userZoom?: number;
-  pausedConstellationId: string | null;
-  onSelectPausedConstellation: (constellationId: string | null) => void;
+  pausedConstellationId?: string | null;
+  onSelectPausedConstellation?: (id: string | null) => void;
   onEnterSolarSystem: (constellation: ConstellationSystemNode) => void;
 }
 
@@ -1085,529 +1718,752 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
   onSelectPausedConstellation,
   onEnterSolarSystem,
 }) => {
-  const planetConfig = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
-  const constellations = useMemo(
-    () => planetConfig.constellations || [],
-    [planetConfig.constellations]
+  const canvasHolderRef = useRef<HTMLDivElement>(null);
+  const bgParallaxLayerRef = useRef<HTMLDivElement>(null);
+  const twinkleParallaxLayerRef = useRef<HTMLDivElement>(null);
+  const twinkleCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const vp = useMemo(
+    () => detectMapViewportProfile(screenWidth, screenHeight),
+    [screenWidth, screenHeight]
   );
 
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const dragStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    startX: number;
-    startY: number;
-    movedDistance: number;
-  } | null>(null);
+  // Automatic camera Z distance calibrated per device profile so all 6 stars fit 100% inside the screen
+  const idealBaseCamZ = useMemo(() => {
+    if (vp.isMobilePortrait) {
+      return Math.max(25.5, 15.2 / Math.max(0.45, vp.aspect));
+    }
+    if (vp.isTabletPortrait) {
+      return Math.max(21.5, 15.8 / Math.max(0.6, vp.aspect));
+    }
+    if (vp.isMobileLandscape) {
+      return 16.0;
+    }
+    return 17.0;
+  }, [vp]);
 
-  const [zoomingIntoConstellation, setZoomingIntoConstellation] = useState<{
-    constellation: ConstellationSystemNode;
-    screenX: number;
-    screenY: number;
-  } | null>(null);
+  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+  const constellations = useMemo(
+    () => config.constellations || [],
+    [config.constellations]
+  );
 
-  const isLandscape = screenWidth > screenHeight * 1.12;
-  const safePadX = isLandscape ? Math.min(165, screenWidth * 0.16) : screenWidth * 0.08;
-  const safePadY = isLandscape ? screenHeight * 0.14 : screenHeight * 0.12;
-  const usableW = Math.max(200, screenWidth - safePadX * 2);
-  const usableH = Math.max(200, screenHeight - safePadY * 2);
+  const [focusedSystemId, setFocusedSystemId] = useState<string | null>(
+    pausedConstellationId || null
+  );
+  const [hoveredSystemId, setHoveredSystemId] = useState<string | null>(null);
+  const [divingSystemId, setDivingSystemId] = useState<string | null>(null);
+  const [projectedStars, setProjectedStars] = useState<
+    Array<{
+      id: string;
+      x: number;
+      y: number;
+      scale: number;
+      visible: boolean;
+      zDepth: number;
+    }>
+  >([]);
 
-  // Estrelas avulsas ricas pelo firmamento (incluindo estrelas duplas, gigantes vermelhas, azuis, verdes, douradas e pulsares)
-  const ambientVariedStars = useMemo(() => {
-    const colors = [
-      '#38bdf8',
-      '#fde047',
-      '#f43f5e',
-      '#a855f7',
-      '#34d399',
-      '#fb923c',
-      '#f472b6',
-      '#22d3ee',
-      '#ffffff',
-    ];
-    const kinds: AstralStarKind[] = [
-      'single',
-      'binary',
-      'single',
-      'supergiant',
-      'single',
-      'binary',
-      'pulsar',
-      'single',
-      'nebula_star',
-    ];
-    return Array.from({ length: 54 }).map((_, i) => {
-      const rx = ((i * 61 + 17) % 92) + 4;
-      const ry = ((i * 47 + 13) % 88) + 6;
-      const kind = kinds[i % kinds.length];
-      const color = colors[i % colors.length];
-      const secondaryColor = colors[(i + 3) % colors.length];
-      const size =
-        kind === 'supergiant'
-          ? 6.2
-          : kind === 'binary'
-          ? 5.4
-          : kind === 'pulsar'
-          ? 5.0
-          : 3.4 + (i % 3) * 1.1;
-      return {
-        id: `ambient-varied-star-${i}`,
-        rx,
-        ry,
-        kind,
-        color,
-        secondaryColor,
-        size,
-        seed: i,
-      };
+  useEffect(() => {
+    setFocusedSystemId(pausedConstellationId || null);
+  }, [pausedConstellationId]);
+
+  const orbitRef = useRef({
+    rotY: 0,
+    rotX: 0,
+    targetRotY: 0,
+    targetRotX: 0,
+    autoRotPhase: 0,
+    pointerParallaxX: 0,
+    pointerParallaxY: 0,
+    targetPointerParallaxX: 0,
+    targetPointerParallaxY: 0,
+    camZ: idealBaseCamZ,
+    targetCamZ: idealBaseCamZ,
+    panX: 0,
+    panY: 0,
+    targetPanX: 0,
+    targetPanY: 0,
+    isDragging: false,
+    dragMoved: false,
+    startX: 0,
+    startY: 0,
+  });
+
+  useEffect(() => {
+    if (!divingSystemId) {
+      orbitRef.current.targetCamZ = Math.max(
+        9.5,
+        Math.min(34, idealBaseCamZ / Math.max(0.7, userZoom))
+      );
+    }
+  }, [userZoom, divingSystemId, idealBaseCamZ]);
+
+  const star3DPositions = useMemo(() => {
+    const map = new Map<string, THREE.Vector3>();
+    // In portrait viewports, slightly compress horizontal spread so stars never touch screen edges
+    const spreadX = vp.isMobilePortrait ? 15.2 : vp.isTabletPortrait ? 16.8 : 18.5;
+    const spreadY = vp.isMobileLandscape ? 9.6 : 11.2;
+    constellations.forEach((sys, idx) => {
+      const x = ((sys.xRatio ?? 0.5) - 0.5) * spreadX;
+      const y = (0.5 - (sys.yRatio ?? 0.5)) * spreadY;
+      const z = Math.sin(idx * 1.1) * 1.65;
+      map.set(sys.id, new THREE.Vector3(x, y, z));
     });
-  }, []);
+    return map;
+  }, [constellations, vp.isMobilePortrait, vp.isTabletPortrait, vp.isMobileLandscape]);
 
-  const computedConstellations = useMemo(() => {
-    const fallbackColors = ['#38bdf8', '#fde047', '#f43f5e', '#a855f7', '#34d399', '#fb923c'];
-    const fallbackKinds: AstralStarKind[] = ['single', 'binary', 'supergiant', 'pulsar', 'nebula_star'];
+  useEffect(() => {
+    if (!focusedSystemId || divingSystemId) return;
+    const pos = star3DPositions.get(focusedSystemId);
+    if (pos) {
+      orbitRef.current.targetPanX = pos.x * 0.25;
+      orbitRef.current.targetPanY = pos.y * 0.25;
+    }
+  }, [focusedSystemId, star3DPositions, divingSystemId]);
 
-    return constellations.map((c, cIdx) => {
-      const cx = safePadX + (c.xRatio - 0.15) * (usableW / 0.7) + panOffset.x;
-      const cy = safePadY + (c.yRatio - 0.18) * (usableH / 0.64) + panOffset.y;
+  const triggerZoomIntoSolarSystem = useCallback(
+    (sys: ConstellationSystemNode) => {
+      if (divingSystemId) return;
+      setDivingSystemId(sys.id);
+      const pos = star3DPositions.get(sys.id);
+      if (pos) {
+        orbitRef.current.targetRotY = 0;
+        orbitRef.current.targetRotX = 0;
+        orbitRef.current.targetPanX = pos.x * 0.92;
+        orbitRef.current.targetPanY = pos.y * 0.92;
+        orbitRef.current.targetCamZ = Math.max(2.2, pos.z + 2.6);
+      }
+      window.setTimeout(() => {
+        onEnterSolarSystem(sys);
+      }, 380);
+    },
+    [divingSystemId, onEnterSolarSystem, star3DPositions]
+  );
 
-      const patternPts = (
-        c.patternStars && c.patternStars.length > 0
-          ? c.patternStars
-          : [
-              { dx: -0.07, dy: -0.05, size: 6, color: '#38bdf8', starType: 'binary' as AstralStarKind },
-              { dx: 0, dy: 0, size: 10, color: '#fde047', starType: 'supergiant' as AstralStarKind },
-              { dx: 0.07, dy: -0.04, size: 6, color: '#f43f5e', starType: 'single' as AstralStarKind },
-              { dx: 0.03, dy: 0.06, size: 5.5, color: '#34d399', starType: 'pulsar' as AstralStarKind },
-            ]
-      ).map((pt, pIdx) => ({
-        x: cx + pt.dx * Math.min(screenWidth, screenHeight) * 1.05,
-        y: cy + pt.dy * Math.min(screenWidth, screenHeight) * 1.05,
-        size: pt.size || 6.0,
-        color: pt.color || fallbackColors[(cIdx + pIdx) % fallbackColors.length],
-        secondaryColor:
-          pt.secondaryColor || fallbackColors[(cIdx + pIdx + 2) % fallbackColors.length],
-        starType:
-          pt.starType || fallbackKinds[(cIdx * 2 + pIdx) % fallbackKinds.length],
-        connectFromIndex: pt.connectFromIndex,
-        isMain: Math.abs(pt.dx) < 0.002 && Math.abs(pt.dy) < 0.002,
-      }));
+  const handleStarClick = useCallback(
+    (sys: ConstellationSystemNode) => {
+      if (focusedSystemId === sys.id) {
+        triggerZoomIntoSolarSystem(sys);
+        return;
+      }
+      setFocusedSystemId(sys.id);
+      onSelectPausedConstellation?.(sys.id);
+      const pos = star3DPositions.get(sys.id);
+      if (pos) {
+        orbitRef.current.targetPanX = pos.x * 0.25;
+        orbitRef.current.targetPanY = pos.y * 0.25;
+        orbitRef.current.targetCamZ = 15.2;
+      }
+    },
+    [
+      focusedSystemId,
+      onSelectPausedConstellation,
+      star3DPositions,
+      triggerZoomIntoSolarSystem,
+    ]
+  );
 
-      return {
-        constellation: c,
-        cx,
-        cy,
-        patternPts,
-      };
+  // Twinkling micro-points overlay canvas for the Constellation layer
+  useEffect(() => {
+    const canvas = twinkleCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let rafId = 0;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = screenWidth || canvas.parentElement?.clientWidth || 1024;
+    const h = screenHeight || canvas.parentElement?.clientHeight || 768;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const microCount = 210;
+    const microStars = Array.from({ length: microCount }, (_, i) => {
+      const s1 = (i + 1) * 7919;
+      const rx = ((s1 * 293) % 10000) / 10000;
+      const ry = ((s1 * 643) % 10000) / 10000;
+      const radius =
+        i % 16 === 0 ? 1.4 : i % 6 === 0 ? 0.95 : 0.5 + (i % 3) * 0.16;
+      const speed = 1.2 + ((i * 41) % 30) * 0.14;
+      const phase = ((i * 59) % 100) * 0.0628;
+      const color =
+        i % 5 === 0
+          ? '195, 225, 255'
+          : i % 8 === 0
+          ? '255, 238, 205'
+          : '255, 255, 255';
+      return { rx, ry, radius, speed, phase, color };
     });
-  }, [constellations, safePadX, safePadY, usableW, usableH, panOffset, screenWidth, screenHeight]);
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (zoomingIntoConstellation) return;
-    setIsDragging(true);
-    dragStartRef.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      startX: panOffset.x,
-      startY: panOffset.y,
-      movedDistance: 0,
+    const renderTwinkle = (now: number) => {
+      rafId = requestAnimationFrame(renderTwinkle);
+      const t = now * 0.001;
+      ctx.clearRect(0, 0, w, h);
+
+      for (let i = 0; i < microStars.length; i++) {
+        const ms = microStars[i];
+        const wave = 0.5 + 0.5 * Math.sin(t * ms.speed + ms.phase);
+        const twinkle = Math.pow(wave, 2.0);
+        const alpha = 0.08 + twinkle * 0.88;
+        const x = ms.rx * w;
+        const y = ms.ry * h;
+
+        ctx.fillStyle = `rgba(${ms.color}, ${alpha.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(x, y, ms.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (ms.radius >= 1.2 && twinkle > 0.76) {
+          const arm = ms.radius * (2.5 + twinkle * 2.0);
+          ctx.strokeStyle = `rgba(${ms.color}, ${((twinkle - 0.72) * 1.4).toFixed(3)})`;
+          ctx.lineWidth = 0.55;
+          ctx.beginPath();
+          ctx.moveTo(x - arm, y);
+          ctx.lineTo(x + arm, y);
+          ctx.moveTo(x, y - arm);
+          ctx.lineTo(x, y + arm);
+          ctx.stroke();
+        }
+      }
     };
+
+    rafId = requestAnimationFrame(renderTwinkle);
+    return () => cancelAnimationFrame(rafId);
+  }, [screenWidth, screenHeight]);
+
+  // Build Realistic 3D Constellation Scene (Pure Optical Starburst Flares + Twinkling 3D Micro-Stars + Parallax + Auto-Rotation)
+  useEffect(() => {
+    const holder = canvasHolderRef.current;
+    if (!holder) return;
+
+    const width = screenWidth || holder.clientWidth || 800;
+    const height = screenHeight || holder.clientHeight || 600;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 200);
+    camera.position.set(0, 0, orbitRef.current.camZ);
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      return;
+    }
+
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    holder.innerHTML = '';
+    holder.appendChild(renderer.domElement);
+
+    // 1. 3D Twinkling Micro-Starfield Group (moves in intermediate parallax depth)
+    const starfieldParallaxGroup = new THREE.Group();
+    scene.add(starfieldParallaxGroup);
+
+    const bgCount = 360;
+    const bgPos = new Float32Array(bgCount * 3);
+    const bgCol = new Float32Array(bgCount * 3);
+    const bgPhase = new Float32Array(bgCount);
+    for (let i = 0; i < bgCount; i++) {
+      bgPos[i * 3] = (Math.random() - 0.5) * 62;
+      bgPos[i * 3 + 1] = (Math.random() - 0.5) * 40;
+      bgPos[i * 3 + 2] = -4 - Math.random() * 28;
+      const b = 0.65 + Math.random() * 0.35;
+      bgCol[i * 3] = b * 0.88;
+      bgCol[i * 3 + 1] = b * 0.94;
+      bgCol[i * 3 + 2] = b;
+      bgPhase[i] = Math.random() * Math.PI * 2;
+    }
+    const bgGeo = new THREE.BufferGeometry();
+    bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+    bgGeo.setAttribute('color', new THREE.BufferAttribute(bgCol, 3));
+    bgGeo.setAttribute('aPhase', new THREE.BufferAttribute(bgPhase, 1));
+
+    const bgTwinkleMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      },
+      vertexShader: `
+        attribute float aPhase;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vAlpha;
+        uniform float uTime;
+        uniform float uPixelRatio;
+        void main() {
+          vColor = color;
+          float tw = 0.5 + 0.5 * sin(uTime * 2.4 + aPhase * 3.0);
+          vAlpha = 0.15 + pow(tw, 2.2) * 0.85;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = (2.2 + tw * 2.1) * uPixelRatio * (14.0 / max(6.0, -mvPosition.z));
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        varying float vAlpha;
+        void main() {
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          float core = smoothstep(0.5, 0.05, dist);
+          gl_FragColor = vec4(vColor, core * vAlpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    starfieldParallaxGroup.add(new THREE.Points(bgGeo, bgTwinkleMat));
+
+    // 2. Rotatable 3D Constellation Glow Group (Foreground Parallax + Gentle Auto-Rotation)
+    const constellationGroup = new THREE.Group();
+    scene.add(constellationGroup);
+
+    // 3. Crisp Luminous White-Blue Constellation Lines (matching reference photo)
+    const lineVertices: number[] = [];
+    CONSTELLATION_6_CONNECTIONS.forEach(([fromId, toId]) => {
+      const fromPos = star3DPositions.get(fromId);
+      const toPos = star3DPositions.get(toId);
+      if (fromPos && toPos) {
+        lineVertices.push(fromPos.x, fromPos.y, fromPos.z);
+        lineVertices.push(toPos.x, toPos.y, toPos.z);
+      }
+    });
+
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(lineVertices, 3)
+    );
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0xf8fafc,
+      transparent: true,
+      opacity: 0.92,
+    });
+    constellationGroup.add(new THREE.LineSegments(lineGeo, lineMat));
+
+    // Soft blue aura line behind the crisp white line
+    const auraLineMat = new THREE.LineBasicMaterial({
+      color: 0x60a5fa,
+      transparent: true,
+      opacity: 0.45,
+    });
+    const auraLines = new THREE.LineSegments(lineGeo, auraLineMat);
+    auraLines.position.z = -0.02;
+    constellationGroup.add(auraLines);
+
+    // 4. Create the 6 Realistic Optical Starburst Flares (80% smaller as requested)
+    const starburstTex = getRealisticStarburstTexture();
+    const softHaloTex = getSoftHaloTexture();
+
+    const starFlareNodes = new Map<
+      string,
+      {
+        group: THREE.Group;
+        primaryFlare: THREE.Sprite;
+        secondaryFlare: THREE.Sprite;
+        ambientBloom: THREE.Sprite;
+      }
+    >();
+
+    constellations.forEach((sys) => {
+      const pos = star3DPositions.get(sys.id) || new THREE.Vector3();
+      const sGroup = new THREE.Group();
+      sGroup.position.copy(pos);
+
+      const bloomMat = new THREE.SpriteMaterial({
+        map: softHaloTex,
+        color: new THREE.Color('#60a5fa'),
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const ambientBloom = new THREE.Sprite(bloomMat);
+      ambientBloom.scale.setScalar(1.04);
+      sGroup.add(ambientBloom);
+
+      const primaryMat = new THREE.SpriteMaterial({
+        map: starburstTex,
+        color: new THREE.Color('#ffffff'),
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const primaryFlare = new THREE.Sprite(primaryMat);
+      primaryFlare.scale.setScalar(0.88);
+      sGroup.add(primaryFlare);
+
+      const secondaryMat = new THREE.SpriteMaterial({
+        map: starburstTex,
+        color: new THREE.Color('#bfdbfe'),
+        transparent: true,
+        opacity: 0.78,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const secondaryFlare = new THREE.Sprite(secondaryMat);
+      secondaryFlare.scale.setScalar(0.68);
+      sGroup.add(secondaryFlare);
+
+      constellationGroup.add(sGroup);
+      starFlareNodes.set(sys.id, {
+        group: sGroup,
+        primaryFlare,
+        secondaryFlare,
+        ambientBloom,
+      });
+    });
+
+    let rafId = 0;
+    let lastTime = performance.now();
+    const tempVec = new THREE.Vector3();
+    let frameCounter = 0;
+
+    const animate = (now: number) => {
+      rafId = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - lastTime) * 0.001);
+      lastTime = now;
+      const t = now * 0.001;
+      const st = orbitRef.current;
+
+      bgTwinkleMat.uniforms.uTime.value = t;
+
+      // Gentle continuous 3D auto-rotation when not dragging
+      if (!st.isDragging) {
+        st.autoRotPhase += dt * 0.24;
+      }
+      const autoYaw = Math.sin(st.autoRotPhase) * 0.16 + Math.cos(st.autoRotPhase * 0.45) * 0.07;
+      const autoPitch = Math.sin(st.autoRotPhase * 0.65) * 0.075;
+      const autoRoll = Math.sin(st.autoRotPhase * 0.38) * 0.028;
+
+      st.rotY += (st.targetRotY - st.rotY) * 0.08;
+      st.rotX += (st.targetRotX - st.rotX) * 0.08;
+      st.pointerParallaxX += (st.targetPointerParallaxX - st.pointerParallaxX) * 0.07;
+      st.pointerParallaxY += (st.targetPointerParallaxY - st.pointerParallaxY) * 0.07;
+      st.camZ += (st.targetCamZ - st.camZ) * 0.09;
+      st.panX += (st.targetPanX - st.panX) * 0.09;
+      st.panY += (st.targetPanY - st.panY) * 0.09;
+
+      // Apply 3D rotation + pointer parallax to the Constellation Glow Group
+      const totalRotY = st.rotY + autoYaw + st.pointerParallaxX * 0.14;
+      const totalRotX = st.rotX + autoPitch + st.pointerParallaxY * 0.11;
+      constellationGroup.rotation.y = totalRotY;
+      constellationGroup.rotation.x = totalRotX;
+      constellationGroup.rotation.z = autoRoll;
+
+      // Apply counter/intermediate parallax to the 3D twinkling starfield layer
+      starfieldParallaxGroup.rotation.y = totalRotY * 0.42;
+      starfieldParallaxGroup.rotation.x = totalRotX * 0.42;
+      starfieldParallaxGroup.position.x = -st.panX * 0.35 - st.pointerParallaxX * 0.65;
+      starfieldParallaxGroup.position.y = -st.panY * 0.35 + st.pointerParallaxY * 0.45;
+
+      // Apply multi-depth CSS parallax to the Galactic Background & Micro-Twinkle Canvas
+      const px = totalRotY * 34 + st.panX * 4.5 + st.pointerParallaxX * 18;
+      const py = totalRotX * 28 - st.panY * 4.5 + st.pointerParallaxY * 14;
+      if (bgParallaxLayerRef.current) {
+        bgParallaxLayerRef.current.style.transform = `translate3d(${(-px * 0.65).toFixed(
+          2
+        )}px, ${(-py * 0.65).toFixed(2)}px, 0) scale(1.12)`;
+      }
+      if (twinkleParallaxLayerRef.current) {
+        twinkleParallaxLayerRef.current.style.transform = `translate3d(${(-px * 1.15).toFixed(
+          2
+        )}px, ${(-py * 1.15).toFixed(2)}px, 0) scale(1.08)`;
+      }
+
+      camera.position.set(st.panX, st.panY, st.camZ);
+      camera.lookAt(st.panX * 0.85, st.panY * 0.85, 0);
+
+      let idx = 0;
+      starFlareNodes.forEach((item) => {
+        const shimmer = 1 + Math.sin(t * 2.2 + idx * 1.3) * 0.07;
+        item.primaryFlare.scale.setScalar(0.87 * shimmer);
+        item.secondaryFlare.scale.setScalar(0.67 / shimmer);
+        item.secondaryFlare.material.rotation = 0.35 + Math.sin(t * 0.4 + idx) * 0.06;
+        idx++;
+      });
+
+      renderer.render(scene, camera);
+
+      frameCounter++;
+      if (frameCounter % 2 === 0) {
+        const nextProj: typeof projectedStars = [];
+        starFlareNodes.forEach((item, id) => {
+          item.group.getWorldPosition(tempVec);
+          const dist = camera.position.distanceTo(tempVec);
+          tempVec.project(camera);
+          const sx = (tempVec.x * 0.5 + 0.5) * width;
+          const sy = (-tempVec.y * 0.5 + 0.5) * height;
+          const visible =
+            tempVec.z < 1.0 &&
+            sx >= -60 &&
+            sx <= width + 60 &&
+            sy >= -60 &&
+            sy <= height + 60;
+          const scale = Math.max(0.7, Math.min(1.45, 16.0 / Math.max(4, dist)));
+          nextProj.push({
+            id,
+            x: sx,
+            y: sy,
+            scale,
+            visible,
+            zDepth: tempVec.z,
+          });
+        });
+        setProjectedStars(nextProj);
+      }
+    };
+
+    rafId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      renderer.dispose();
+      bgGeo.dispose();
+      bgTwinkleMat.dispose();
+      lineGeo.dispose();
+      lineMat.dispose();
+      auraLineMat.dispose();
+    };
+  }, [constellations, star3DPositions, screenWidth, screenHeight]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    orbitRef.current.isDragging = true;
+    orbitRef.current.dragMoved = false;
+    orbitRef.current.startX = e.clientX;
+    orbitRef.current.startY = e.clientY;
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging || !dragStartRef.current || zoomingIntoConstellation) return;
-    const dx = e.clientX - dragStartRef.current.clientX;
-    const dy = e.clientY - dragStartRef.current.clientY;
-    dragStartRef.current.movedDistance = Math.max(
-      dragStartRef.current.movedDistance,
-      Math.hypot(dx, dy)
-    );
-    const maxPanX = screenWidth * 0.25;
-    const maxPanY = screenHeight * 0.25;
-    setPanOffset({
-      x: Math.max(-maxPanX, Math.min(maxPanX, dragStartRef.current.startX + dx)),
-      y: Math.max(-maxPanY, Math.min(maxPanY, dragStartRef.current.startY + dy)),
-    });
-  };
-
-  const handlePointerUpOrCancel = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    if (dragStartRef.current && dragStartRef.current.movedDistance < 8 && pausedConstellationId) {
-      onSelectPausedConstellation(null);
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+      const ny = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+      orbitRef.current.targetPointerParallaxX = nx;
+      orbitRef.current.targetPointerParallaxY = ny;
     }
+
+    if (!orbitRef.current.isDragging) return;
+    const dx = e.clientX - orbitRef.current.startX;
+    const dy = e.clientY - orbitRef.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      orbitRef.current.dragMoved = true;
+    }
+    orbitRef.current.startX = e.clientX;
+    orbitRef.current.startY = e.clientY;
+
+    orbitRef.current.targetRotY = Math.max(
+      -0.85,
+      Math.min(0.85, orbitRef.current.targetRotY + dx * 0.0045)
+    );
+    orbitRef.current.targetRotX = Math.max(
+      -0.55,
+      Math.min(0.55, orbitRef.current.targetRotX + dy * 0.004)
+    );
   };
 
-  // Dispara o HYPER-SALTO SIMULADO (Warp Jump) da Constelação para o Sistema Planetário!
-  const triggerEnterSolarLayer = useCallback(
-    (constellation: ConstellationSystemNode, screenX: number, screenY: number) => {
-      if (zoomingIntoConstellation) return;
-      playMarkersUnfurlChime();
-      setZoomingIntoConstellation({ constellation, screenX, screenY });
-      window.setTimeout(() => {
-        onEnterSolarSystem(constellation);
-      }, 1020);
-    },
-    [zoomingIntoConstellation, onEnterSolarSystem]
+  const handlePointerUp = () => {
+    orbitRef.current.isDragging = false;
+  };
+
+  const activeStar = useMemo(
+    () => constellations.find((c) => c.id === focusedSystemId) || null,
+    [constellations, focusedSystemId]
   );
 
-  const handleConstellationClick = (
-    e: React.MouseEvent,
-    cc: (typeof computedConstellations)[number],
-    idx: number
-  ) => {
+  const handleWheel = (e: React.WheelEvent) => {
     e.stopPropagation();
-    if (zoomingIntoConstellation) return;
-    if (dragStartRef.current && dragStartRef.current.movedDistance > 16) return;
-
-    if (pausedConstellationId === cc.constellation.id) {
-      triggerEnterSolarLayer(cc.constellation, cc.cx, cc.cy);
-    } else {
-      playConstellationStarNote(idx, false);
-      onSelectPausedConstellation(cc.constellation.id);
+    const nextZ = orbitRef.current.targetCamZ + e.deltaY * 0.011;
+    if (nextZ < 8.8 && (activeStar || constellations[0]) && e.deltaY < 0) {
+      triggerZoomIntoSolarSystem(activeStar || constellations[0]);
+      return;
     }
+    orbitRef.current.targetCamZ = Math.max(9.5, Math.min(24, nextZ));
   };
-
-  const cameraZoomScale = zoomingIntoConstellation ? 7.4 : userZoom;
-  const cameraTx = zoomingIntoConstellation
-    ? screenWidth * 0.5 - zoomingIntoConstellation.screenX * cameraZoomScale
-    : screenWidth * 0.5 * (1 - userZoom);
-  const cameraTy = zoomingIntoConstellation
-    ? screenHeight * 0.5 - zoomingIntoConstellation.screenY * cameraZoomScale
-    : screenHeight * 0.5 * (1 - userZoom);
 
   return (
     <div
+      className="relative w-full h-full overflow-hidden select-none bg-[#020308] cursor-grab active:cursor-grabbing"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUpOrCancel}
-      onPointerCancel={handlePointerUpOrCancel}
-      onPointerLeave={handlePointerUpOrCancel}
-      className="relative w-full h-full overflow-hidden select-none bg-[#010206] cursor-grab active:cursor-grabbing touch-none"
-      style={{
-        width: `${screenWidth}px`,
-        height: `${screenHeight}px`,
+      onPointerUp={handlePointerUp}
+      onPointerLeave={() => {
+        handlePointerUp();
+        orbitRef.current.targetPointerParallaxX = 0;
+        orbitRef.current.targetPointerParallaxY = 0;
       }}
+      onClick={() => {
+        if (!orbitRef.current.dragMoved) {
+          setFocusedSystemId(null);
+          onSelectPausedConstellation?.(null);
+        }
+      }}
+      onWheel={handleWheel}
     >
-      {/* OVERLAY DE HYPER-SALTO (WARP TUNNEL) AO VIAJAR DA CONSTELAÇÃO PARA O SISTEMA SOLAR */}
-      <HyperspaceWarpTunnelOverlay
-        active={Boolean(zoomingIntoConstellation)}
-        originX={zoomingIntoConstellation?.screenX ?? screenWidth * 0.5}
-        originY={zoomingIntoConstellation?.screenY ?? screenHeight * 0.5}
-        accentColor={zoomingIntoConstellation?.constellation.glowColor || '#38bdf8'}
-        secondaryColor={zoomingIntoConstellation?.constellation.secondaryColor || '#fde047'}
-        direction="jump_in"
+      {/* Layer 0: Deep Space Galactic Band Image with Parallax */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+        <div
+          ref={bgParallaxLayerRef}
+          className="absolute inset-0 bg-center bg-cover bg-no-repeat will-change-transform"
+          style={{
+            backgroundImage: `url('${DEEP_SPACE_GALACTIC_BG_URL}')`,
+            transform: 'translate3d(0px, 0px, 0) scale(1.12)',
+          }}
+        />
+        {/* Layer 0.5: Twinkling Micro-Points of Light Overlay with Parallax */}
+        <div
+          ref={twinkleParallaxLayerRef}
+          className="absolute inset-0 will-change-transform"
+          style={{
+            transform: 'translate3d(0px, 0px, 0) scale(1.08)',
+          }}
+        >
+          <canvas
+            ref={twinkleCanvasRef}
+            className="w-full h-full block opacity-95"
+          />
+        </div>
+      </div>
+
+      {/* Layer 1: Three.js 3D Constellation Glow Group + 3D Twinkling Depth Stars */}
+      <div
+        ref={canvasHolderRef}
+        className="absolute inset-0 z-10 pointer-events-none"
       />
 
-      <div
-        className="relative w-full h-full pointer-events-none"
-        style={{
-          transformOrigin: '0 0',
-          transform: `translate3d(${cameraTx}px, ${cameraTy}px, 0) scale(${cameraZoomScale})`,
-          transition: zoomingIntoConstellation
-            ? 'transform 1.02s cubic-bezier(0.5, 0, 0.15, 1), filter 0.95s ease-in, opacity 0.98s ease-in'
-            : isDragging
-            ? 'none'
-            : 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-          opacity: zoomingIntoConstellation ? 0.05 : 1,
-        }}
-      >
-        {/* 1. Espaço Profundo Realista */}
-        <RealisticDeepSpaceBackdrop accentGlowColor={planetConfig.glowColor} />
-
-        {/* 1B. Centenas de Estrelas Variadas de Campo (Binárias/Duplas, Gigantes Vermelhas/Azuis, Pulsares) */}
-        <div className="absolute inset-0 pointer-events-none z-[11]">
-          {ambientVariedStars.map((st) => (
-            <div
-              key={st.id}
-              style={{
-                left: `calc(${st.rx}% + ${panOffset.x * 0.45}px)`,
-                top: `calc(${st.ry}% + ${panOffset.y * 0.45}px)`,
-                transform: 'translate(-50%, -50%)',
-                opacity: 0.72,
-              }}
-              className="absolute"
-            >
-              <AstralStarVisual
-                size={st.size}
-                color={st.color}
-                secondaryColor={st.secondaryColor}
-                starType={st.kind}
-                animSeed={st.seed}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* 2. Linhas Astrais e Desenho Geométrico de Cada Constelação */}
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none z-15"
-          viewBox={`0 0 ${screenWidth} ${screenHeight}`}
-        >
-          {/* Círculos de Carta Celeste / Astrolábio no fundo */}
-          <circle
-            cx={screenWidth * 0.5 + panOffset.x * 0.4}
-            cy={screenHeight * 0.5 + panOffset.y * 0.4}
-            r={Math.min(screenWidth, screenHeight) * 0.43}
-            fill="none"
-            stroke="rgba(245, 198, 75, 0.11)"
-            strokeWidth="1"
-            strokeDasharray="4 10"
-          />
-          <circle
-            cx={screenWidth * 0.5 + panOffset.x * 0.4}
-            cy={screenHeight * 0.5 + panOffset.y * 0.4}
-            r={Math.min(screenWidth, screenHeight) * 0.26}
-            fill="none"
-            stroke="rgba(56, 189, 248, 0.09)"
-            strokeWidth="1"
-            strokeDasharray="2 8"
-          />
-
-          {/* Pontes Astrais conectando as Constelações */}
-          {computedConstellations.map((cc, idx) => {
-            const next = computedConstellations[(idx + 1) % computedConstellations.length];
-            if (!next) return null;
-            return (
-              <line
-                key={`astral-bridge-${cc.constellation.id}`}
-                x1={cc.cx}
-                y1={cc.cy}
-                x2={next.cx}
-                y2={next.cy}
-                stroke="rgba(245, 198, 75, 0.15)"
-                strokeWidth="1"
-                strokeDasharray="5 9"
-              />
-            );
-          })}
-
-          {/* Linhas internas que desenham a figura ramificada de cada Constelação */}
-          {computedConstellations.map((cc) => {
-            const isSelected = pausedConstellationId === cc.constellation.id;
-            const pts = cc.patternPts;
-            const mainColor = cc.constellation.glowColor || '#fde047';
-            return (
-              <g key={`constellation-lines-${cc.constellation.id}`}>
-                {pts.map((pt, i) => {
-                  if (i === 0 && pt.connectFromIndex === undefined) return null;
-                  const targetIdx =
-                    pt.connectFromIndex !== undefined && pts[pt.connectFromIndex]
-                      ? pt.connectFromIndex
-                      : Math.max(0, i - 1);
-                  const prev = pts[targetIdx];
-                  if (!prev || prev === pt) return null;
-                  return (
-                    <line
-                      key={`seg-${i}`}
-                      x1={prev.x}
-                      y1={prev.y}
-                      x2={pt.x}
-                      y2={pt.y}
-                      stroke={
-                        isSelected
-                          ? '#fef08a'
-                          : `${mainColor}88`
-                      }
-                      strokeWidth={isSelected ? '2.3' : '1.35'}
-                      strokeDasharray={isSelected ? 'none' : '4 4'}
-                    />
-                  );
-                })}
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* 3. Estrelas Secundárias (Coloridas, Binárias, Pulsares, Gigantes) e Estrela Matriz de Cada Constelação */}
-        {computedConstellations.map((cc, idx) => {
-          const isSelected = pausedConstellationId === cc.constellation.id;
-          const glowCol = cc.constellation.glowColor || '#38bdf8';
-          const secCol = cc.constellation.secondaryColor || '#fde047';
+      {/* Invisible Hit Targets over the 6 Realistic Star Flares + Popup ONLY when clicked/hovered */}
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {projectedStars.map((proj) => {
+          if (!proj.visible) return null;
+          const sys = constellations.find((s) => s.id === proj.id);
+          if (!sys) return null;
+          const isFocused = focusedSystemId === sys.id;
+          const isHovered = hoveredSystemId === sys.id;
+          const isExpanded = isFocused || isHovered;
+          const totalBodies =
+            (sys.planets?.length || 0) +
+            (sys.planets || []).reduce((acc, p) => acc + (p.moons?.length || 0), 0);
 
           return (
-            <React.Fragment key={cc.constellation.id}>
-              {/* Nebulosa local da Constelação */}
-              <div
-                style={{
-                  left: `${cc.cx}px`,
-                  top: `${cc.cy}px`,
-                  width: `${isSelected ? 240 : 175}px`,
-                  height: `${isSelected ? 240 : 175}px`,
-                  transform: 'translate(-50%, -50%)',
-                  background: `radial-gradient(circle, ${glowCol}${
-                    isSelected ? '52' : '28'
-                  } 0%, ${secCol}18 48%, rgba(0,0,0,0) 76%)`,
-                  filter: 'blur(16px)',
-                  zIndex: 14,
+            <div
+              key={sys.id}
+              className="absolute pointer-events-auto"
+              style={{
+                left: `${proj.x}px`,
+                top: `${proj.y}px`,
+                transform: `translate(-50%, -50%) scale(${
+                  isFocused ? Math.max(1.05, proj.scale) : proj.scale
+                })`,
+                zIndex: isFocused
+                  ? 90
+                  : isHovered
+                  ? 80
+                  : Math.round((1 - proj.zDepth) * 50),
+              }}
+              onMouseEnter={() => setHoveredSystemId(sys.id)}
+              onMouseLeave={() =>
+                setHoveredSystemId((prev) => (prev === sys.id ? null : prev))
+              }
+            >
+              {/* Pure transparent hit area over the realistic star flare */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (orbitRef.current.dragMoved) return;
+                  handleStarClick(sys);
                 }}
-                className="absolute rounded-full pointer-events-none transition-all duration-500"
+                className="relative w-14 h-14 -m-7 rounded-full flex items-center justify-center cursor-pointer focus:outline-none"
+                title={sys.name}
               />
 
-              {/* Estrelas Secundárias que formam o desenho da Constelação (cada uma com sua cor e tipo: dupla, pulsar, supergigante, etc.) */}
-              {cc.patternPts.map((pt, ptIdx) => {
-                if (pt.isMain) return null;
-                return (
-                  <div
-                    key={`substar-${cc.constellation.id}-${ptIdx}`}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => handleConstellationClick(e, cc, idx)}
-                    style={{
-                      left: `${pt.x}px`,
-                      top: `${pt.y}px`,
-                      width: '38px',
-                      height: '38px',
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: 35,
-                    }}
-                    className="absolute pointer-events-auto cursor-pointer flex items-center justify-center group"
-                  >
-                    <div className="transition-transform duration-300 group-hover:scale-135">
-                      <AstralStarVisual
-                        size={pt.size}
-                        color={pt.color}
-                        secondaryColor={pt.secondaryColor}
-                        starType={pt.starType}
-                        isSelected={isSelected}
-                        animSeed={idx * 11 + ptIdx}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Estrela Principal da Constelação + Pop-up/Marcador que surge de trás */}
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => handleConstellationClick(e, cc, idx)}
-                style={{
-                  left: `${cc.cx}px`,
-                  top: `${cc.cy}px`,
-                  transform: 'translate(-50%, -50%)',
-                  zIndex: isSelected ? 950 : 70 + idx,
-                }}
-                className="absolute pointer-events-auto cursor-pointer group select-none"
-                title={
-                  isSelected
-                    ? `Toque novamente para fazer o Hyper-Salto para "${cc.constellation.name}"`
-                    : `${cc.constellation.name} (Toque para iluminar a constelação)`
-                }
-              >
-                {isSelected && (
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerEnterSolarLayer(cc.constellation, cc.cx, cc.cy);
-                    }}
-                    style={{
-                      left: '26px',
-                      top: '6px',
-                      zIndex: -1,
-                      animation:
-                        'emergeFromBehindPlanet 0.44s cubic-bezier(0.18, 1.25, 0.36, 1) forwards',
-                    }}
-                    className="absolute pointer-events-auto cursor-pointer"
-                  >
-                    <OrnateMapMarkerPin
-                      name={cc.constellation.name}
-                      iconPng={cc.constellation.markerIconPng}
-                      iconEmoji={cc.constellation.markerIconEmoji || '✨'}
-                      status={cc.constellation.status || 'unlocked'}
-                      isSelected={true}
-                      isFocused={true}
-                      scale={(cc.constellation.scale || 1.0) * 0.96}
-                      sizeVariant="md"
-                      revealStage="full"
-                      hideTopAsset={true}
-                    />
-                  </div>
-                )}
-
-                {/* Estrela Matriz da Constelação (Binária, Tripla, Supergigante ou Pulsar!) */}
-                <div className="relative z-10 flex items-center justify-center w-14 h-14 transition-transform duration-300 group-hover:scale-125">
-                  <AstralStarVisual
-                    size={11.5}
-                    color={glowCol}
-                    secondaryColor={secCol}
-                    starType={cc.constellation.starType || 'binary'}
-                    isSelected={isSelected}
-                    isMain={true}
-                    animSeed={idx * 17}
+              {/* Popup appears ONLY when clicked or hovered, clamped so it never clips off-screen */}
+              {isExpanded && (
+                <div
+                  className="relative -top-6 cursor-pointer"
+                  style={{
+                    transform:
+                      proj.x > screenWidth * 0.72
+                        ? 'translateX(-38%)'
+                        : proj.x < screenWidth * 0.22
+                        ? 'translateX(22%)'
+                        : undefined,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isFocused) {
+                      triggerZoomIntoSolarSystem(sys);
+                    } else {
+                      handleStarClick(sys);
+                    }
+                  }}
+                >
+                  <OrnateMapMarkerPin
+                    name={sys.name}
+                    iconEmoji="✦"
+                    badgeText={
+                      isFocused
+                        ? `${totalBodies} MUNDOS • CLIQUE P/ ENTRAR`
+                        : `${totalBodies} PLANETAS/LUAS`
+                    }
+                    isSelected={isFocused}
+                    isFocused={isFocused}
+                    sizeVariant="sm"
+                    hideTopAsset={true}
                   />
                 </div>
-              </div>
-            </React.Fragment>
+              )}
+            </div>
           );
         })}
       </div>
 
-      <style>{`
-        @keyframes astralBinarySpin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        @keyframes hyperspaceFlashEnvelope {
-          0% { opacity: 0; background: rgba(2, 6, 23, 0); }
-          45% { opacity: 1; background: rgba(6, 18, 48, 0.38); }
-          82% { opacity: 1; background: rgba(224, 242, 254, 0.78); }
-          100% { opacity: 1; background: #ffffff; }
-        }
-        @keyframes hyperspaceArrivalFadeOut {
-          0% { opacity: 1; background: rgba(224, 242, 254, 0.85); }
-          40% { opacity: 0.75; background: rgba(6, 18, 48, 0.25); }
-          100% { opacity: 0; background: rgba(0, 0, 0, 0); }
-        }
-        @keyframes hyperspaceCoreBurst {
-          0% { transform: translate(-50%, -50%) scale(0.08); opacity: 0.4; }
-          60% { transform: translate(-50%, -50%) scale(1.6); opacity: 1; }
-          100% { transform: translate(-50%, -50%) scale(5.8); opacity: 1; }
-        }
-        @keyframes hyperspaceCoreArrival {
-          0% { transform: translate(-50%, -50%) scale(3.5); opacity: 0.95; }
-          100% { transform: translate(-50%, -50%) scale(0.15); opacity: 0; }
-        }
-        @keyframes hyperspaceStreakShoot {
-          0% {
-            transform: translateX(0px) scaleX(0.08);
-            opacity: 0;
-          }
-          25% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateX(620px) scaleX(3.8);
-            opacity: 0.95;
-          }
-        }
-        @keyframes hyperspaceStreakArrive {
-          0% {
-            transform: translateX(480px) scaleX(3.2);
-            opacity: 0.95;
-          }
-          100% {
-            transform: translateX(0px) scaleX(0.05);
-            opacity: 0;
-          }
-        }
-      `}</style>
+      {/* Bottom Destination Capsule ("Ir até [Sistema Estelar]") */}
+      {activeStar && (
+        <AstralDestinationCapsule
+          visible={Boolean(activeStar)}
+          categoryLabel="ESTRELA SELECIONADA"
+          destinationName={activeStar.name}
+          subtitle={activeStar.subtitle}
+          accentColor="#93c5fd"
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          actionLabel={`IR ATÉ ${activeStar.name.split('•').pop()?.trim() || activeStar.name}`}
+          onConfirm={() => triggerZoomIntoSolarSystem(activeStar)}
+        />
+      )}
     </div>
   );
 };
 
-// ============================================================================
-// CAMADA 2: SISTEMA SOLAR (PLANETAS MENORES SEM ESTRELAS, ARCOS MAIORES,
-// LUAS MAIS AFASTADAS E SENSÍVEIS AO CLIQUE, E POP-UP SURGINDO DE TRÁS)
-// ============================================================================
-interface SolarSystemLayerViewProps {
+/**
+ * ============================================================================
+ * 2. 3D SOLAR SYSTEM LAYER VIEW
+ * ============================================================================
+ * - Central Sun is a pure realistic optical starburst flare (matching the reference photo,
+ *   zero opaque ball!).
+ * - Populated with 6–7 celestial bodies per star (40 planets & moons across the 6 stars),
+ *   each spinning 360° with its 2:1 Equirectangular UV texture.
+ */
+export interface SolarSystemLayerViewProps {
   project: MapProject;
   activeConstellation?: ConstellationSystemNode | null;
   screenWidth: number;
   screenHeight: number;
   userZoom?: number;
-  pausedPlanetId: string | null;
-  onSelectPausedPlanet: (planetId: string | null) => void;
+  pausedPlanetId?: string | null;
+  onSelectPausedPlanet?: (id: string | null) => void;
   onEnterPlanetGlobe: (planet: SolarSystemPlanet) => void;
+  onBackToConstellation?: () => void;
 }
 
 export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
@@ -1619,824 +2475,680 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
   pausedPlanetId,
   onSelectPausedPlanet,
   onEnterPlanetGlobe,
+  onBackToConstellation,
 }) => {
-  const planetConfig = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+  const canvasHolderRef = useRef<HTMLDivElement>(null);
+  const vp = useMemo(
+    () => detectMapViewportProfile(screenWidth, screenHeight),
+    [screenWidth, screenHeight]
+  );
+  const idealSolarDist = useMemo(() => {
+    if (vp.isMobilePortrait) return 31;
+    if (vp.isTabletPortrait) return 26.5;
+    if (vp.isMobileLandscape) return 21.5;
+    return 23;
+  }, [vp]);
+
+  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+  const system = activeConstellation || config.constellations?.[0] || null;
   const planets = useMemo(
-    () =>
-      activeConstellation?.planets && activeConstellation.planets.length > 0
-        ? activeConstellation.planets
-        : planetConfig.planets || [],
-    [activeConstellation, planetConfig.planets]
+    () => system?.planets || config.planets || [],
+    [system, config.planets]
   );
 
-  const [orbitTimeSec, setOrbitTimeSec] = useState<number>(0);
-  const orbitTimeRef = useRef<number>(0);
+  const [focusedBodyId, setFocusedBodyId] = useState<string | null>(
+    pausedPlanetId || planets[0]?.id || null
+  );
+  const [hoveredBodyId, setHoveredBodyId] = useState<string | null>(null);
+  const [approachingBodyId, setApproachingBodyId] = useState<string | null>(null);
 
-  const [userRotationOffsetDeg, setUserRotationOffsetDeg] = useState<number>(0);
-  const userRotationRef = useRef<number>(0);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [projectedBodies, setProjectedBodies] = useState<
+    Array<{
+      id: string;
+      name: string;
+      isMoon: boolean;
+      accentColor: string;
+      markerCount: number;
+      x: number;
+      y: number;
+      visible: boolean;
+      zDepth: number;
+      planetObj: SolarSystemPlanet;
+    }>
+  >([]);
 
-  const dragStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    startOffset: number;
-    lastClientX: number;
-    lastTime: number;
-    velocityDegPerMs: number;
-    movedDistance: number;
-  } | null>(null);
-  const inertiaVelocityRef = useRef<number>(0);
-
-  // Estado de Hyper-Zoom de Aproximação quando o jogador confirma entrada no Planeta/Lua (2º clique)
-  const [zoomingIntoPlanet, setZoomingIntoPlanet] = useState<{
-    planet: SolarSystemPlanet;
-    screenX: number;
-    screenY: number;
-  } | null>(null);
-
-  // Efeito de chegada do Hyper-Salto (quando acaba de sair da camada de Constelação)
-  const [isArrivingFromHyperspace, setIsArrivingFromHyperspace] = useState<boolean>(true);
   useEffect(() => {
-    setIsArrivingFromHyperspace(true);
-    const t = window.setTimeout(() => setIsArrivingFromHyperspace(false), 820);
-    return () => window.clearTimeout(t);
-  }, [activeConstellation?.id]);
+    if (pausedPlanetId) {
+      setFocusedBodyId(pausedPlanetId);
+    } else if (planets[0]) {
+      setFocusedBodyId(planets[0].id);
+    }
+  }, [pausedPlanetId, planets, system?.id]);
 
-  const isLandscape = screenWidth > screenHeight * 1.12;
-  const systemScale = (planetConfig.planetScale ?? 1.0) * userZoom;
-  const orbitTilt = planetConfig.orbitTiltRatio ?? 0.66;
+  const camStateRef = useRef({
+    azimuth: 0.25,
+    elevation: 0.56,
+    targetAzimuth: 0.25,
+    targetElevation: 0.56,
+    distance: idealSolarDist,
+    targetDistance: idealSolarDist,
+    lookAt: new THREE.Vector3(0, 0, 0),
+    targetLookAt: new THREE.Vector3(0, 0, 0),
+    isDragging: false,
+    dragMoved: false,
+    startX: 0,
+    startY: 0,
+  });
 
-  // Centro e raio máximo dos arcos de órbita refinados para Retrato e Paisagem (Web e Mobile)
-  const centerX = screenWidth * 0.5;
-  const centerY = isLandscape ? screenHeight * 0.52 : screenHeight * 0.53;
+  useEffect(() => {
+    if (!approachingBodyId) {
+      camStateRef.current.targetDistance = Math.max(
+        8.5,
+        Math.min(42, idealSolarDist / Math.max(0.7, userZoom))
+      );
+    }
+  }, [userZoom, approachingBodyId, idealSolarDist]);
 
-  // Arcos maiores e bem distribuídos, respeitando as margens da tela em retrato e paisagem
-  const maxRxAvailable = isLandscape
-    ? Math.max(150, (screenWidth - 220) * 0.46)
-    : screenWidth * 0.45;
-  const maxRyAvailable = isLandscape
-    ? screenHeight * 0.42
-    : screenHeight * 0.38;
-
-  const maxSystemRadius =
-    Math.min(maxRxAvailable, maxRyAvailable / Math.max(0.45, orbitTilt)) * systemScale;
-
-  // Escala responsiva para que planetas e sol fiquem elegantes tanto no celular quanto na web paisagem
-  const responsiveUnit = Math.max(
-    0.68,
-    Math.min(1.12, Math.min(screenWidth, screenHeight) / 520)
+  const triggerApproachPlanet = useCallback(
+    (planetObj: SolarSystemPlanet) => {
+      if (approachingBodyId) return;
+      setApproachingBodyId(planetObj.id);
+      camStateRef.current.targetDistance = 4.0;
+      camStateRef.current.targetElevation = 0.16;
+      window.setTimeout(() => {
+        onEnterPlanetGlobe(planetObj);
+      }, 380);
+    },
+    [approachingBodyId, onEnterPlanetGlobe]
   );
 
-  // Pausa na órbita sempre que um planeta estiver clicado/selecionado (`pausedPlanetId !== null`)
-  const isOrbitPaused = Boolean(pausedPlanetId) || Boolean(zoomingIntoPlanet);
+  const handleBodyClick = useCallback(
+    (bodyId: string, planetObj: SolarSystemPlanet) => {
+      if (focusedBodyId === bodyId) {
+        triggerApproachPlanet(planetObj);
+        return;
+      }
+      setFocusedBodyId(bodyId);
+      onSelectPausedPlanet?.(bodyId);
+      camStateRef.current.targetDistance = 16.5;
+    },
+    [focusedBodyId, onSelectPausedPlanet, triggerApproachPlanet]
+  );
 
+  // Build Three.js 3D Solar System Scene with Realistic Starburst Sun + 40 Populated UV 2:1 Worlds
   useEffect(() => {
-    let rafId: number;
-    let lastTs = performance.now();
+    const holder = canvasHolderRef.current;
+    if (!holder) return;
 
-    const tick = (now: number) => {
-      const dtMs = Math.min(64, Math.max(1, now - lastTs));
-      lastTs = now;
+    const width = screenWidth || holder.clientWidth || 800;
+    const height = screenHeight || holder.clientHeight || 600;
 
-      if (!zoomingIntoPlanet) {
-        const speedMult = planetConfig.autoRotateSpeed ?? 1.0;
-        if (!isDragging && !isOrbitPaused) {
-          orbitTimeRef.current += (dtMs / 1000) * speedMult;
-          setOrbitTimeSec(orbitTimeRef.current);
-        }
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 300);
 
-        if (!isDragging && Math.abs(inertiaVelocityRef.current) > 0.002) {
-          userRotationRef.current += inertiaVelocityRef.current * dtMs;
-          inertiaVelocityRef.current *= Math.pow(0.94, dtMs / 16);
-          setUserRotationOffsetDeg(userRotationRef.current);
-        }
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      return;
+    }
+
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    holder.innerHTML = '';
+    holder.appendChild(renderer.domElement);
+
+    const starCount = 500;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      starPos[i * 3] = (Math.random() - 0.5) * 120;
+      starPos[i * 3 + 1] = (Math.random() - 0.5) * 80;
+      starPos[i * 3 + 2] = (Math.random() - 0.5) * 120;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.14,
+      transparent: true,
+      opacity: 0.5,
+    });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // Central Sun as a Pure Realistic Optical Starburst Flare (NO solid ball!)
+    const starburstTex = getRealisticStarburstTexture();
+    const softHaloTex = getSoftHaloTexture();
+
+    const sunBloomMat = new THREE.SpriteMaterial({
+      map: softHaloTex,
+      color: new THREE.Color('#60a5fa'),
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const sunBloom = new THREE.Sprite(sunBloomMat);
+    sunBloom.scale.setScalar(14.5);
+    scene.add(sunBloom);
+
+    const sunPrimaryFlareMat = new THREE.SpriteMaterial({
+      map: starburstTex,
+      color: new THREE.Color('#ffffff'),
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const sunPrimaryFlare = new THREE.Sprite(sunPrimaryFlareMat);
+    sunPrimaryFlare.scale.setScalar(11.5);
+    scene.add(sunPrimaryFlare);
+
+    const sunSecondaryFlareMat = new THREE.SpriteMaterial({
+      map: starburstTex,
+      color: new THREE.Color('#bfdbfe'),
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const sunSecondaryFlare = new THREE.Sprite(sunSecondaryFlareMat);
+    sunSecondaryFlare.scale.setScalar(8.8);
+    scene.add(sunSecondaryFlare);
+
+    const uvLib = config.uvTextureLibrary || getDefaultUvTextureLibrary();
+
+    const bodyRegistry = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        isMoon: boolean;
+        accentColor: string;
+        markerCount: number;
+        mesh: THREE.Object3D;
+        sphereMesh: THREE.Mesh;
+        orbitRadius: number;
+        orbitSpeed: number;
+        selfRotateSpeed: number;
+        baseAngle: number;
+        parentId?: string;
+        planetObj: SolarSystemPlanet;
+      }
+    >();
+
+    const sphereGeo = new THREE.SphereGeometry(1, 64, 32);
+    const disposables: Array<{ dispose: () => void }> = [
+      starGeo,
+      starMat,
+      sunBloomMat,
+      sunPrimaryFlareMat,
+      sunSecondaryFlareMat,
+      sphereGeo,
+    ];
+
+    planets.forEach((planet, pIdx) => {
+      const orbitRadius =
+        4.2 + (planet.orbitRadiusRatio || 0.16 + pIdx * 0.15) * 23.5;
+
+      const orbitPoints: THREE.Vector3[] = [];
+      const segments = 128;
+      for (let i = 0; i <= segments; i++) {
+        const theta = (i / segments) * Math.PI * 2;
+        orbitPoints.push(
+          new THREE.Vector3(
+            Math.cos(theta) * orbitRadius,
+            0,
+            Math.sin(theta) * orbitRadius * 0.88
+          )
+        );
+      }
+      const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+      const orbitMat = new THREE.LineBasicMaterial({
+        color: new THREE.Color('#93c5fd'),
+        transparent: true,
+        opacity: 0.28,
+      });
+      scene.add(new THREE.Line(orbitGeo, orbitMat));
+      disposables.push(orbitGeo, orbitMat);
+
+      const planetGroup = new THREE.Group();
+      const planetRadius = Math.max(
+        0.68,
+        Math.min(1.42, (planet.sizePx || 60) / 54)
+      );
+
+      const uvUrl =
+        planet.uvTexturePng ||
+        config.uvTexturePng ||
+        uvLib[pIdx % Math.max(1, uvLib.length)]?.url ||
+        DEFAULT_PLANET_IMAGE_URL;
+      const uvTex = getOrLoadPlanetTexture(uvUrl, true);
+      const mat = create3DEquirectangularUvMaterial({
+        texture: uvTex,
+        atmosphereColor: planet.glowColor || '#38bdf8',
+      });
+      disposables.push(mat);
+
+      const planetMesh = new THREE.Mesh(sphereGeo, mat);
+      planetMesh.scale.setScalar(planetRadius);
+      planetMesh.rotation.z = 0.18;
+      planetGroup.add(planetMesh);
+
+      const pHaloMat = new THREE.SpriteMaterial({
+        map: softHaloTex,
+        color: new THREE.Color(planet.glowColor || '#38bdf8'),
+        transparent: true,
+        opacity: 0.4,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const pHalo = new THREE.Sprite(pHaloMat);
+      pHalo.scale.setScalar(planetRadius * 2.9);
+      planetGroup.add(pHalo);
+      disposables.push(pHaloMat);
+
+      if (planet.hasRings) {
+        const ringGeo = new THREE.RingGeometry(
+          planetRadius * 1.38,
+          planetRadius * 2.15,
+          64
+        );
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(planet.glowColor || '#fde68a'),
+          transparent: true,
+          opacity: 0.55,
+          side: THREE.DoubleSide,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI * 0.42;
+        ringMesh.rotation.y = 0.22;
+        planetGroup.add(ringMesh);
+        disposables.push(ringGeo, ringMat);
       }
 
-      rafId = requestAnimationFrame(tick);
-    };
+      scene.add(planetGroup);
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [isDragging, isOrbitPaused, zoomingIntoPlanet, planetConfig.autoRotateSpeed]);
-
-  // Calcula posições de cada Planeta e Lua nos arcos elípticos maiores
-  const computedSolarSystem = useMemo(() => {
-    return planets.map((planet, pIdx) => {
-      const ratio =
-        planet.orbitRadiusRatio ??
-        Math.min(0.88, 0.28 + pIdx * (0.58 / Math.max(1, planets.length - 1)));
-      const orbitRx = maxSystemRadius * ratio;
-      const orbitRy = orbitRx * orbitTilt;
-
-      const currentAngleDeg =
-        (planet.initialAngleDeg ?? pIdx * 90) +
-        orbitTimeSec * (planet.orbitSpeed ?? 3.0) +
-        userRotationOffsetDeg;
-      const angleRad = (currentAngleDeg * Math.PI) / 180;
-
-      const px = centerX + Math.cos(angleRad) * orbitRx;
-      const py = centerY + Math.sin(angleRad) * orbitRy;
-
-      const depthFactor = Math.sin(angleRad); // -1 (atrás) a +1 (frente)
-      const perspectiveScale = 0.86 + (depthFactor + 1) * 0.12;
-      const baseSize = Math.min(54, Math.max(26, planet.sizePx || 42));
-      const renderedSizePx = baseSize * perspectiveScale * responsiveUnit * systemScale;
-      const selfRotationDeg =
-        (orbitTimeSec * (planet.selfRotateSpeed ?? 6) * 2.5) % 360;
-
-      const computedMoons = (planet.moons || []).map((moon, mIdx) => {
-        // Órbita circular perfeita (rx === ry === mOrbitR) e mais afastada do planeta
-        const mOrbitR = Math.max(
-          renderedSizePx * 1.18 + 18,
-          (moon.orbitRadiusPx || 56) * responsiveUnit * systemScale
-        );
-        const mAngleDeg =
-          (moon.initialAngleDeg ?? mIdx * 140) +
-          orbitTimeSec * (moon.orbitSpeed ?? 20) +
-          userRotationOffsetDeg * 1.4;
-        const mAngleRad = (mAngleDeg * Math.PI) / 180;
-
-        // Círculo perfeito ao redor do planeta (sem achatar em cápsula!)
-        const mx = px + Math.cos(mAngleRad) * mOrbitR;
-        const my = py + Math.sin(mAngleRad) * mOrbitR;
-        const mSizePx =
-          Math.min(22, Math.max(12, moon.sizePx || 15)) *
-          perspectiveScale *
-          responsiveUnit *
-          systemScale;
-
-        return {
-          moon,
-          mx,
-          my,
-          mOrbitR,
-          mOrbitRy: mOrbitR,
-          mSizePx,
-          mDepth: Math.sin(mAngleRad),
-        };
+      bodyRegistry.set(planet.id, {
+        id: planet.id,
+        name: planet.name,
+        isMoon: false,
+        accentColor: planet.glowColor || '#38bdf8',
+        markerCount: planet.markers?.length || 4,
+        mesh: planetGroup,
+        sphereMesh: planetMesh,
+        orbitRadius,
+        orbitSpeed: ((planet.orbitSpeed || 10) * Math.PI) / 180 * 0.35,
+        selfRotateSpeed: planet.selfRotateSpeed ?? 0.65,
+        baseAngle: ((planet.initialAngleDeg || pIdx * 72) * Math.PI) / 180,
+        planetObj: planet,
       });
 
-      return {
-        planet,
-        orbitRx,
-        orbitRy,
-        currentAngleDeg,
-        px,
-        py,
-        depthFactor,
-        perspectiveScale,
-        renderedSizePx,
-        selfRotationDeg,
-        computedMoons,
-      };
+      // Orbiting 3D Moons
+      (planet.moons || []).forEach((moon, mIdx) => {
+        const moonOrbitR = planetRadius * 1.75 + mIdx * 0.62;
+        const moonRadius = Math.max(
+          0.24,
+          Math.min(0.42, (moon.sizePx || 18) / 54)
+        );
+
+        const moonGroup = new THREE.Group();
+        const moonUvUrl =
+          moon.uvTexturePng ||
+          uvLib[(pIdx + mIdx + 5) % Math.max(1, uvLib.length)]?.url ||
+          uvUrl;
+        const moonTex = getOrLoadPlanetTexture(moonUvUrl, true);
+        const moonMat = create3DEquirectangularUvMaterial({
+          texture: moonTex,
+          atmosphereColor: '#e2e8f0',
+        });
+        disposables.push(moonMat);
+
+        const moonMesh = new THREE.Mesh(sphereGeo, moonMat);
+        moonMesh.scale.setScalar(moonRadius);
+        moonGroup.add(moonMesh);
+        scene.add(moonGroup);
+
+        const moonAsPlanet: SolarSystemPlanet = {
+          id: moon.id,
+          name: moon.name,
+          description: `Lua orbital de ${planet.name}`,
+          planetImagePng:
+            moon.imagePng ||
+            planet.planetImagePng ||
+            config.planetImagePng ||
+            DEFAULT_PLANET_IMAGE_URL,
+          uvTexturePng: moonUvUrl,
+          markerIconEmoji: moon.markerIconEmoji || '🌙',
+          glowColor: '#94a3b8',
+          hasRings: false,
+          sizePx: 48,
+          targetWorldMapId: moon.targetWorldMapId || planet.targetWorldMapId,
+          status: moon.status || 'unlocked',
+          markers:
+            moon.markers && moon.markers.length > 0
+              ? moon.markers
+              : buildDefaultMarkersForPlanet(moon.id, moon.name, project),
+          moons: [],
+        };
+
+        bodyRegistry.set(moon.id, {
+          id: moon.id,
+          name: moon.name,
+          isMoon: true,
+          accentColor: '#cbd5e1',
+          markerCount: moonAsPlanet.markers?.length || 3,
+          mesh: moonGroup,
+          sphereMesh: moonMesh,
+          orbitRadius: moonOrbitR,
+          orbitSpeed: ((moon.orbitSpeed || 20) * Math.PI) / 180 * 0.4,
+          selfRotateSpeed: 0.85,
+          baseAngle: ((moon.initialAngleDeg || mIdx * 140) * Math.PI) / 180,
+          parentId: planet.id,
+          planetObj: moonAsPlanet,
+        });
+      });
     });
+
+    let rafId = 0;
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCounter = 0;
+    const tempVec = new THREE.Vector3();
+
+    const animate = (now: number) => {
+      rafId = requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - lastTime) * 0.001);
+      lastTime = now;
+
+      if (!approachingBodyId) {
+        simTime += dt;
+      }
+
+      bodyRegistry.forEach((body) => {
+        if (!body.isMoon) {
+          const angle = body.baseAngle + simTime * body.orbitSpeed;
+          const x = Math.cos(angle) * body.orbitRadius;
+          const z = Math.sin(angle) * body.orbitRadius * 0.88;
+          body.mesh.position.set(x, 0, z);
+          body.sphereMesh.rotation.y += dt * body.selfRotateSpeed;
+        }
+      });
+
+      bodyRegistry.forEach((body) => {
+        if (body.isMoon && body.parentId) {
+          const parent = bodyRegistry.get(body.parentId);
+          if (parent) {
+            const angle = body.baseAngle + simTime * body.orbitSpeed;
+            const mx =
+              parent.mesh.position.x + Math.cos(angle) * body.orbitRadius;
+            const my = Math.sin(angle * 1.3) * (body.orbitRadius * 0.22);
+            const mz =
+              parent.mesh.position.z + Math.sin(angle) * body.orbitRadius;
+            body.mesh.position.set(mx, my, mz);
+            body.sphereMesh.rotation.y += dt * body.selfRotateSpeed;
+          }
+        }
+      });
+
+      const cs = camStateRef.current;
+      if (focusedBodyId && bodyRegistry.has(focusedBodyId)) {
+        const targetBody = bodyRegistry.get(focusedBodyId)!;
+        cs.targetLookAt.copy(targetBody.mesh.position);
+      } else {
+        cs.targetLookAt.set(0, 0, 0);
+      }
+
+      cs.azimuth += (cs.targetAzimuth - cs.azimuth) * 0.09;
+      cs.elevation += (cs.targetElevation - cs.elevation) * 0.09;
+      cs.distance += (cs.targetDistance - cs.distance) * 0.09;
+      cs.lookAt.lerp(cs.targetLookAt, 0.1);
+
+      const camX =
+        cs.lookAt.x +
+        cs.distance * Math.cos(cs.elevation) * Math.sin(cs.azimuth);
+      const camY = cs.lookAt.y + cs.distance * Math.sin(cs.elevation);
+      const camZ =
+        cs.lookAt.z +
+        cs.distance * Math.cos(cs.elevation) * Math.cos(cs.azimuth);
+
+      camera.position.set(camX, camY, camZ);
+      camera.lookAt(cs.lookAt);
+
+      // Shimmer the realistic central Sun starburst flare
+      const sunPulse = 1 + Math.sin(now * 0.0022) * 0.06;
+      sunPrimaryFlare.scale.setScalar(11.5 * sunPulse);
+      sunSecondaryFlare.scale.setScalar(8.8 / sunPulse);
+      sunSecondaryFlare.material.rotation = now * 0.00015;
+
+      renderer.render(scene, camera);
+
+      frameCounter++;
+      if (frameCounter % 2 === 0) {
+        const list: typeof projectedBodies = [];
+        bodyRegistry.forEach((body) => {
+          tempVec.copy(body.mesh.position);
+          tempVec.project(camera);
+          const sx = (tempVec.x * 0.5 + 0.5) * width;
+          const sy = (-tempVec.y * 0.5 + 0.5) * height;
+          const visible =
+            tempVec.z < 1.0 &&
+            sx >= -60 &&
+            sx <= width + 60 &&
+            sy >= -60 &&
+            sy <= height + 60;
+          list.push({
+            id: body.id,
+            name: body.name,
+            isMoon: body.isMoon,
+            accentColor: body.accentColor,
+            markerCount: body.markerCount,
+            x: sx,
+            y: sy,
+            visible,
+            zDepth: tempVec.z,
+            planetObj: body.planetObj,
+          });
+        });
+        setProjectedBodies(list);
+      }
+    };
+
+    rafId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      renderer.dispose();
+      disposables.forEach((d) => d.dispose());
+    };
   }, [
+    system,
     planets,
-    maxSystemRadius,
-    orbitTilt,
-    orbitTimeSec,
-    userRotationOffsetDeg,
-    centerX,
-    centerY,
-    responsiveUnit,
-    systemScale,
+    focusedBodyId,
+    approachingBodyId,
+    config.planetImagePng,
+    config.uvTexturePng,
+    config.uvTextureLibrary,
+    project,
+    screenWidth,
+    screenHeight,
   ]);
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (zoomingIntoPlanet) return;
-    setIsDragging(true);
-    inertiaVelocityRef.current = 0;
-
-    dragStartRef.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      startOffset: userRotationRef.current,
-      lastClientX: e.clientX,
-      lastTime: performance.now(),
-      velocityDegPerMs: 0,
-      movedDistance: 0,
-    };
+  const handlePointerDown = (e: React.PointerEvent) => {
+    camStateRef.current.isDragging = true;
+    camStateRef.current.dragMoved = false;
+    camStateRef.current.startX = e.clientX;
+    camStateRef.current.startY = e.clientY;
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging || !dragStartRef.current || zoomingIntoPlanet) return;
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!camStateRef.current.isDragging) return;
+    const dx = e.clientX - camStateRef.current.startX;
+    const dy = e.clientY - camStateRef.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      camStateRef.current.dragMoved = true;
+    }
+    camStateRef.current.startX = e.clientX;
+    camStateRef.current.startY = e.clientY;
 
-    const dx = e.clientX - dragStartRef.current.clientX;
-    const dy = e.clientY - dragStartRef.current.clientY;
-    const totalMoved = Math.hypot(dx, dy);
-    dragStartRef.current.movedDistance = Math.max(
-      dragStartRef.current.movedDistance,
-      totalMoved
+    camStateRef.current.targetAzimuth -= dx * 0.0055;
+    camStateRef.current.targetElevation = Math.max(
+      0.12,
+      Math.min(1.35, camStateRef.current.targetElevation + dy * 0.0045)
     );
-
-    const degPerPixel = 150 / Math.max(320, screenWidth);
-    const nextOffset = dragStartRef.current.startOffset + dx * degPerPixel;
-
-    const now = performance.now();
-    const dt = Math.max(1, now - dragStartRef.current.lastTime);
-    const stepDx = e.clientX - dragStartRef.current.lastClientX;
-    dragStartRef.current.velocityDegPerMs = (stepDx * degPerPixel) / dt;
-    dragStartRef.current.lastClientX = e.clientX;
-    dragStartRef.current.lastTime = now;
-
-    userRotationRef.current = nextOffset;
-    setUserRotationOffsetDeg(nextOffset);
   };
 
-  const handlePointerUpOrCancel = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-
-    if (dragStartRef.current) {
-      // Se foi apenas um clique no fundo do espaço (sem arrastar), despausa a órbita e recolhe o pop-up
-      if (dragStartRef.current.movedDistance < 6 && pausedPlanetId) {
-        onSelectPausedPlanet(null);
-      } else {
-        inertiaVelocityRef.current = Math.max(
-          -0.16,
-          Math.min(0.16, dragStartRef.current.velocityDegPerMs * 0.82)
-        );
-      }
-    }
+  const handlePointerUp = () => {
+    camStateRef.current.isDragging = false;
   };
 
-  // Dispara o mergulho de câmera (Zoom-In) no Planeta para abrir a CAMADA 2 (Globo do Planeta Girando)
-  const triggerEnterPlanetLayer2 = useCallback(
-    (planet: SolarSystemPlanet, screenX: number, screenY: number) => {
-      if (zoomingIntoPlanet) return;
-      playMarkersUnfurlChime();
-      setZoomingIntoPlanet({ planet, screenX, screenY });
-
-      window.setTimeout(() => {
-        onEnterPlanetGlobe(planet);
-      }, 920);
-    },
-    [zoomingIntoPlanet, onEnterPlanetGlobe]
+  const activeBody = useMemo(
+    () =>
+      projectedBodies.find((b) => b.id === focusedBodyId) ||
+      projectedBodies[0] ||
+      null,
+    [projectedBodies, focusedBodyId]
   );
 
-  const convertMoonToPlanetGlobe = useCallback(
-    (moon: SolarSystemMoon, parentPlanet: SolarSystemPlanet): SolarSystemPlanet => {
-      const moonMarkers =
-        moon.markers && moon.markers.length > 0
-          ? moon.markers
-          : buildDefaultMarkersForPlanet(moon.id, moon.name, project);
-      return {
-        id: moon.id,
-        name: moon.name,
-        description: `Satélite natural em órbita de ${parentPlanet.name}`,
-        planetImagePng:
-          moon.imagePng ||
-          parentPlanet.planetImagePng ||
-          planetConfig.planetImagePng ||
-          DEFAULT_PLANET_IMAGE_URL,
-        markerIconPng: moon.markerIconPng || parentPlanet.markerIconPng,
-        markerIconEmoji: moon.markerIconEmoji || '🌙',
-        glowColor: '#94a3b8',
-        hasRings: false,
-        sizePx: 40,
-        orbitRadiusRatio: parentPlanet.orbitRadiusRatio,
-        orbitSpeed: parentPlanet.orbitSpeed,
-        selfRotateSpeed: 6,
-        targetWorldMapId: moon.targetWorldMapId || parentPlanet.targetWorldMapId,
-        status: moon.status || 'unlocked',
-        scale: 1.0,
-        markers: moonMarkers,
-        moons: [
-          {
-            id: `sky-parent-${parentPlanet.id}`,
-            name: parentPlanet.name,
-            imagePng:
-              parentPlanet.planetImagePng ||
-              planetConfig.planetImagePng ||
-              DEFAULT_PLANET_IMAGE_URL,
-            markerIconEmoji: parentPlanet.markerIconEmoji || '🪐',
-            sizePx: 22,
-            orbitRadiusPx: 48,
-            orbitSpeed: 8,
-            status: 'unlocked',
-          },
-        ],
-      };
-    },
-    [project, planetConfig.planetImagePng]
-  );
-
-  const handlePlanetClick = (
-    e: React.MouseEvent,
-    cp: (typeof computedSolarSystem)[number]
-  ) => {
+  const handleWheel = (e: React.WheelEvent) => {
     e.stopPropagation();
-    if (zoomingIntoPlanet) return;
-    if (dragStartRef.current && dragStartRef.current.movedDistance > 16) return;
-
-    if (pausedPlanetId === cp.planet.id) {
-      // Segundo clique no planeta (ou clique no pop-up que surgiu de trás dele) -> Entra na Camada do Globo do Planeta!
-      triggerEnterPlanetLayer2(cp.planet, cp.px, cp.py);
-    } else {
-      // Primeiro clique no planeta -> Pausa a órbita e faz o pop-up/marcador surgir de trás dele!
-      const idx = planets.findIndex((p) => p.id === cp.planet.id);
-      playConstellationStarNote(Math.max(0, idx), false);
-      onSelectPausedPlanet(cp.planet.id);
+    const nextDist = camStateRef.current.targetDistance + e.deltaY * 0.016;
+    if (nextDist < 7.5 && activeBody && e.deltaY < 0) {
+      triggerApproachPlanet(activeBody.planetObj);
+      return;
     }
-  };
-
-  const handleMoonClick = (
-    e: React.MouseEvent | React.PointerEvent,
-    cp: (typeof computedSolarSystem)[number],
-    cm: (typeof computedSolarSystem)[number]['computedMoons'][number]
-  ) => {
-    e.stopPropagation();
-    if (zoomingIntoPlanet) return;
-    if (dragStartRef.current && dragStartRef.current.movedDistance > 18) return;
-
-    const moonAsGlobe = convertMoonToPlanetGlobe(cm.moon, cp.planet);
-    if (pausedPlanetId === cm.moon.id) {
-      // Segundo clique na lua (ou clique no pop-up que surgiu de trás dela) -> Entra na Camada do Globo da Lua!
-      triggerEnterPlanetLayer2(moonAsGlobe, cm.mx, cm.my);
-    } else {
-      // Primeiro clique na lua -> Pausa a órbita e faz o pop-up/marcador surgir de trás dela!
-      playConstellationStarNote(2, false);
-      onSelectPausedPlanet(cm.moon.id);
+    if (nextDist > 35 && e.deltaY > 0 && onBackToConstellation) {
+      onBackToConstellation();
+      return;
     }
+    camStateRef.current.targetDistance = Math.max(8.5, Math.min(35, nextDist));
   };
-
-  const cameraZoomScale = zoomingIntoPlanet ? 8.2 : 1.0;
-  const cameraTx = zoomingIntoPlanet
-    ? screenWidth * 0.5 - zoomingIntoPlanet.screenX * cameraZoomScale
-    : 0;
-  const cameraTy = zoomingIntoPlanet
-    ? screenHeight * 0.5 - zoomingIntoPlanet.screenY * cameraZoomScale
-    : 0;
-
-  const sunSize =
-    Math.min(64, Math.max(32, planetConfig.sunSizePx ?? 50)) *
-    responsiveUnit *
-    systemScale;
-
-  const depthSortedPlanets = useMemo(
-    () => [...computedSolarSystem].sort((a, b) => a.py - b.py),
-    [computedSolarSystem]
-  );
 
   return (
     <div
+      className="relative w-full h-full overflow-hidden select-none bg-[#050814] cursor-grab active:cursor-grabbing"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUpOrCancel}
-      onPointerCancel={handlePointerUpOrCancel}
-      onPointerLeave={handlePointerUpOrCancel}
-      className="relative w-full h-full overflow-hidden select-none bg-[#010206] cursor-grab active:cursor-grabbing touch-none"
-      style={{
-        width: `${screenWidth}px`,
-        height: `${screenHeight}px`,
-      }}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      onWheel={handleWheel}
     >
-      {/* 0A. EFEITO DE CHEGADA DO HYPER-SALTO (DESACELERAÇÃO DO WARP NO SISTEMA SOLAR) */}
-      <HyperspaceWarpTunnelOverlay
-        active={isArrivingFromHyperspace}
-        originX={centerX}
-        originY={centerY}
-        accentColor={activeConstellation?.glowColor || planetConfig.glowColor || '#38bdf8'}
-        secondaryColor={activeConstellation?.secondaryColor || '#fde047'}
-        direction="arrival"
-      />
-
-      {/* 0B. OVERLAY DE HYPER-ZOOM DE APROXIMAÇÃO ORBITAL AO ENTRAR NO PLANETA OU LUA */}
-      {zoomingIntoPlanet && (
-        <div className="absolute inset-0 pointer-events-none z-[2100] overflow-hidden">
-          <HyperspaceWarpTunnelOverlay
-            active={true}
-            originX={zoomingIntoPlanet.screenX}
-            originY={zoomingIntoPlanet.screenY}
-            accentColor={zoomingIntoPlanet.planet.glowColor || '#38bdf8'}
-            secondaryColor="#fde047"
-            direction="jump_in"
-          />
-          {/* Anéis de Telemetria de Aproximação Planetária + Esfera do Planeta Crescendo em Hyper-Zoom */}
-          <div
-            style={{
-              left: `${zoomingIntoPlanet.screenX}px`,
-              top: `${zoomingIntoPlanet.screenY}px`,
-              transform: 'translate(-50%, -50%)',
-              animation: 'hyperZoomPlanetSphereRush 0.94s cubic-bezier(0.22, 1, 0.36, 1) forwards',
-            }}
-            className="absolute flex items-center justify-center"
-          >
-            <div
-              style={{
-                width: '180px',
-                height: '180px',
-                border: `2px dashed ${zoomingIntoPlanet.planet.glowColor || '#38bdf8'}`,
-                boxShadow: `0 0 35px ${zoomingIntoPlanet.planet.glowColor || '#38bdf8'}`,
-              }}
-              className="absolute rounded-full opacity-75"
-            />
-            <img
-              src={
-                zoomingIntoPlanet.planet.planetImagePng ||
-                planetConfig.planetImagePng ||
-                DEFAULT_PLANET_IMAGE_URL
-              }
-              alt={zoomingIntoPlanet.planet.name}
-              className="w-28 h-28 object-contain rounded-full drop-shadow-[0_0_40px_rgba(56,189,248,0.9)]"
-            />
-          </div>
-        </div>
-      )}
+      <RealisticDeepSpaceBackdrop intensity={0.95} />
 
       <div
-        className="relative w-full h-full pointer-events-none"
-        style={{
-          transformOrigin: '0 0',
-          transform: `translate3d(${cameraTx}px, ${cameraTy}px, 0) scale(${cameraZoomScale})`,
-          transition: zoomingIntoPlanet
-            ? 'transform 0.95s cubic-bezier(0.45, 0, 0.15, 1), opacity 0.9s ease-in'
-            : 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-          opacity: zoomingIntoPlanet ? 0.06 : 1,
-          animation: isArrivingFromHyperspace
-            ? 'solarSystemArriveScaleIn 0.78s cubic-bezier(0.16, 1, 0.3, 1) forwards'
-            : 'none',
-        }}
-      >
-        {/* 1. Espaço Profundo Realista (Via Láctea, Nebulosas Volumétricas e Campo Estelar Multiespectral) */}
-        <RealisticDeepSpaceBackdrop
-          accentGlowColor={activeConstellation?.glowColor || planetConfig.glowColor}
-        />
+        ref={canvasHolderRef}
+        className="absolute inset-0 z-10 pointer-events-none"
+      />
 
-        {/* 2. Arcos de Órbita Maiores dos Planetas + Órbitas Circulares Perfeitas das Luas */}
-        <svg
-          className="absolute inset-0 w-full h-full pointer-events-none z-10"
-          viewBox={`0 0 ${screenWidth} ${screenHeight}`}
-        >
-          {computedSolarSystem.map((cp) => {
-            const isPausedTarget =
-              cp.planet.id === pausedPlanetId ||
-              cp.computedMoons.some((m) => m.moon.id === pausedPlanetId);
-            return (
-              <g key={`orbit-group-${cp.planet.id}`}>
-                <ellipse
-                  cx={centerX}
-                  cy={centerY}
-                  rx={cp.orbitRx}
-                  ry={cp.orbitRy}
-                  fill="none"
-                  stroke={
-                    isPausedTarget
-                      ? 'rgba(252, 211, 77, 0.62)'
-                      : 'rgba(245, 198, 75, 0.22)'
-                  }
-                  strokeWidth={isPausedTarget ? '1.8' : '1.15'}
-                  strokeDasharray={isPausedTarget ? 'none' : '6 8'}
-                />
-                {/* Órbita da Lua como CÍRCULO GEOMÉTRICO PERFEITO (nunca cápsula!) */}
-                {cp.computedMoons.map((cm) => {
-                  const isMoonSelected = cm.moon.id === pausedPlanetId;
-                  return (
-                    <circle
-                      key={`moon-circle-orbit-${cm.moon.id}`}
-                      cx={cp.px}
-                      cy={cp.py}
-                      r={cm.mOrbitR}
-                      fill="none"
-                      stroke={
-                        isMoonSelected
-                          ? 'rgba(252, 211, 77, 0.75)'
-                          : 'rgba(125, 211, 252, 0.28)'
-                      }
-                      strokeWidth={isMoonSelected ? '1.5' : '1.05'}
-                      strokeDasharray={isMoonSelected ? 'none' : '4 5'}
-                    />
-                  );
-                })}
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* 3. Sol / Astro Central */}
-        {planetConfig.showCentralSun !== false && (
-          <div
-            style={{
-              left: `${centerX}px`,
-              top: `${centerY}px`,
-              transform: 'translate(-50%, -50%)',
-              zIndex: Math.round(centerY),
-            }}
-            className="absolute pointer-events-none flex items-center justify-center"
-          >
-            <div
-              className="absolute rounded-full animate-pulse"
-              style={{
-                width: `${sunSize * 2.4}px`,
-                height: `${sunSize * 2.4}px`,
-                background:
-                  'radial-gradient(circle, rgba(251, 191, 36, 0.42) 0%, rgba(245, 158, 11, 0.15) 46%, rgba(0, 0, 0, 0) 72%)',
-                filter: 'blur(10px)',
-              }}
-            />
-
-            {planetConfig.sunImagePng ? (
-              <img
-                src={planetConfig.sunImagePng}
-                alt={planetConfig.sunName || 'Sol Central'}
-                style={{
-                  width: `${sunSize}px`,
-                  height: `${sunSize}px`,
-                  transform: `rotate(${(orbitTimeSec * 4) % 360}deg)`,
-                }}
-                className="object-contain drop-shadow-[0_0_24px_rgba(251,191,36,0.85)]"
-              />
-            ) : (
-              <div
-                style={{
-                  width: `${sunSize}px`,
-                  height: `${sunSize}px`,
-                  background:
-                    'radial-gradient(circle at 38% 35%, #fffef0 0%, #fde047 32%, #f59e0b 68%, #b45309 100%)',
-                  boxShadow:
-                    '0 0 28px rgba(251, 191, 36, 0.85), 0 0 54px rgba(245, 158, 11, 0.45), inset 0 0 14px rgba(255, 255, 255, 0.8)',
-                }}
-                className="rounded-full border border-amber-200/80"
-              />
-            )}
-          </div>
-        )}
-
-        {/* 4. Planetas e Luas Limpos (SEM estrelas de marcadores na órbita) + Pop-up/Marcador que surge de trás ao clicar */}
-        {depthSortedPlanets.map((cp) => {
-          const isPausedSelected = cp.planet.id === pausedPlanetId;
-          const planetImg =
-            cp.planet.planetImagePng ||
-            planetConfig.planetImagePng ||
-            DEFAULT_PLANET_IMAGE_URL;
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {projectedBodies.map((body) => {
+          if (!body.visible) return null;
+          const isFocused = focusedBodyId === body.id;
+          const isHovered = hoveredBodyId === body.id;
+          const isExpanded = isFocused || isHovered;
 
           return (
-            <React.Fragment key={cp.planet.id}>
-              {/* Container do Planeta */}
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => handlePlanetClick(e, cp)}
-                style={{
-                  left: `${cp.px}px`,
-                  top: `${cp.py}px`,
-                  transform: 'translate(-50%, -50%)',
-                  zIndex: isPausedSelected ? 950 : Math.round(cp.py),
+            <div
+              key={body.id}
+              className="absolute pointer-events-auto"
+              style={{
+                left: `${body.x}px`,
+                top: `${body.y}px`,
+                transform: 'translate(-50%, -50%)',
+                zIndex: isFocused
+                  ? 95
+                  : isHovered
+                  ? 85
+                  : Math.round((1 - body.zDepth) * 50),
+              }}
+              onMouseEnter={() => setHoveredBodyId(body.id)}
+              onMouseLeave={() =>
+                setHoveredBodyId((prev) => (prev === body.id ? null : prev))
+              }
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (camStateRef.current.dragMoved) return;
+                  handleBodyClick(body.id, body.planetObj);
                 }}
-                className="absolute pointer-events-auto cursor-pointer group select-none"
-                title={
-                  isPausedSelected
-                    ? `2º Clique: Hyper-Zoom de aproximação em "${cp.planet.name}"`
-                    : `1º Clique: Pausar órbita e exibir estrela + cápsula de "${cp.planet.name}"`
-                }
+                className={`rounded-full transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                  body.isMoon ? 'w-9 h-9 -m-4.5' : 'w-14 h-14 -m-7'
+                }`}
+                title={body.name}
               >
-                {/* 1º CLIQUE NO PLANETA: EXIBE APENAS ESTRELA + CÁPSULA SEM ASSET NO TOPO (hideTopAsset={true}) */}
-                {isPausedSelected && (
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerEnterPlanetLayer2(cp.planet, cp.px, cp.py);
-                    }}
-                    style={{
-                      left: `${cp.renderedSizePx * 0.5}px`,
-                      top: `${cp.renderedSizePx * 0.12}px`,
-                      zIndex: -1,
-                      animation:
-                        'emergeFromBehindPlanet 0.44s cubic-bezier(0.18, 1.25, 0.36, 1) forwards',
-                    }}
-                    className="absolute pointer-events-auto cursor-pointer"
-                  >
-                    <OrnateMapMarkerPin
-                      name={cp.planet.name}
-                      iconPng={cp.planet.markerIconPng}
-                      iconEmoji={cp.planet.markerIconEmoji || '🪐'}
-                      status={cp.planet.status || 'unlocked'}
-                      isSelected={true}
-                      isFocused={true}
-                      scale={(cp.planet.scale || 1.0) * 0.96}
-                      sizeVariant="md"
-                      revealStage="full"
-                      hideTopAsset={true}
-                    />
-                  </div>
-                )}
-
-                {/* Halo Atmosférico do Planeta */}
-                <div
-                  className="absolute rounded-full pointer-events-none transition-transform duration-300 group-hover:scale-125"
-                  style={{
-                    width: `${cp.renderedSizePx * 1.55}px`,
-                    height: `${cp.renderedSizePx * 1.55}px`,
-                    left: `${-cp.renderedSizePx * 0.275}px`,
-                    top: `${-cp.renderedSizePx * 0.275}px`,
-                    background: `radial-gradient(circle, ${
-                      cp.planet.glowColor || '#38bdf8'
-                    }${isPausedSelected ? '75' : '42'} 0%, rgba(251,191,36,0.12) 55%, rgba(0,0,0,0) 75%)`,
-                    filter: 'blur(6px)',
-                  }}
-                />
-
-                {/* Anéis Planetários (se ativado) */}
-                {cp.planet.hasRings && (
-                  <div
-                    className="absolute pointer-events-none"
-                    style={{
-                      width: `${cp.renderedSizePx * 1.9}px`,
-                      height: `${cp.renderedSizePx * 0.52}px`,
-                      left: `${-cp.renderedSizePx * 0.45}px`,
-                      top: `${cp.renderedSizePx * 0.24}px`,
-                      borderRadius: '999px',
-                      border: '2px solid rgba(252, 211, 77, 0.65)',
-                      boxShadow:
-                        '0 0 10px rgba(245, 158, 11, 0.45), inset 0 0 6px rgba(251, 191, 36, 0.35)',
-                      transform: 'rotate(-16deg)',
-                    }}
+                {isFocused && (
+                  <span
+                    className="w-full h-full rounded-full border-2 border-[#fde047] shadow-[0_0_20px_rgba(253,224,71,0.65)] animate-pulse"
+                    style={{ borderColor: body.accentColor }}
                   />
                 )}
+              </button>
 
-                {/* Esfera PNG do Planeta (na frente do ponto de origem do pop-up para que ele surja de trás dele!) */}
+              {isExpanded && (
                 <div
-                  style={{
-                    width: `${cp.renderedSizePx}px`,
-                    height: `${cp.renderedSizePx}px`,
+                  className="relative -top-6 cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isFocused) {
+                      triggerApproachPlanet(body.planetObj);
+                    } else {
+                      handleBodyClick(body.id, body.planetObj);
+                    }
                   }}
-                  className={`relative z-10 rounded-full transition-transform duration-300 ${
-                    isPausedSelected
-                      ? 'scale-115 ring-2 ring-amber-300/80 shadow-[0_0_24px_rgba(251,191,36,0.75)]'
-                      : 'group-hover:scale-110'
-                  }`}
                 >
-                  <img
-                    src={planetImg}
-                    alt={cp.planet.name}
-                    draggable={false}
-                    style={{
-                      transform: `rotate(${cp.selfRotationDeg}deg)`,
-                    }}
-                    className="w-full h-full object-contain select-none pointer-events-none drop-shadow-[0_6px_18px_rgba(0,0,0,0.95)]"
+                  <OrnateMapMarkerPin
+                    name={body.name}
+                    iconEmoji={body.planetObj.markerIconEmoji || '🪐'}
+                    badgeText={
+                      isFocused
+                        ? `${body.markerCount} REGIÕES • CLIQUE P/ MERGULHAR`
+                        : body.isMoon
+                        ? 'LUA 3D'
+                        : 'PLANETA 3D'
+                    }
+                    isSelected={isFocused}
+                    isFocused={isFocused}
+                    sizeVariant="sm"
+                    hideTopAsset={true}
                   />
                 </div>
-              </div>
-
-              {/* Luas Limpas Orbitando mais afastadas do Planeta e com Área de Toque/Clique Ampliada (46x46px) */}
-              {cp.computedMoons.map((cm) => {
-                const isMoonPausedSelected = cm.moon.id === pausedPlanetId;
-                const moonImg =
-                  cm.moon.imagePng ||
-                  cp.planet.planetImagePng ||
-                  planetConfig.planetImagePng ||
-                  DEFAULT_PLANET_IMAGE_URL;
-                const hitBoxSize = Math.max(46, cm.mSizePx + 28);
-
-                return (
-                  <div
-                    key={cm.moon.id}
-                    onPointerDown={(e) => {
-                      // Evita que o clique na lua inicie arraste acidental do fundo
-                      e.stopPropagation();
-                    }}
-                    onClick={(e) => handleMoonClick(e, cp, cm)}
-                    style={{
-                      left: `${cm.mx}px`,
-                      top: `${cm.my}px`,
-                      width: `${hitBoxSize}px`,
-                      height: `${hitBoxSize}px`,
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: isMoonPausedSelected
-                        ? 970
-                        : Math.round(cp.py) + 40,
-                    }}
-                    className="absolute pointer-events-auto cursor-pointer group select-none flex items-center justify-center rounded-full"
-                    title={
-                      isMoonPausedSelected
-                        ? `Toque novamente para entrar no globo de "${cm.moon.name}"`
-                        : `${cm.moon.name} (Toque para pausar a órbita e revelar a lua)`
-                    }
-                  >
-                    {isMoonPausedSelected && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerEnterPlanetLayer2(
-                            convertMoonToPlanetGlobe(cm.moon, cp.planet),
-                            cm.mx,
-                            cm.my
-                          );
-                        }}
-                        style={{
-                          left: `${hitBoxSize * 0.5}px`,
-                          top: `${hitBoxSize * 0.25}px`,
-                          zIndex: -1,
-                          animation:
-                            'emergeFromBehindPlanet 0.44s cubic-bezier(0.18, 1.25, 0.36, 1) forwards',
-                        }}
-                        className="absolute pointer-events-auto cursor-pointer"
-                      >
-                        <OrnateMapMarkerPin
-                          name={cm.moon.name}
-                          iconPng={cm.moon.markerIconPng}
-                          iconEmoji={cm.moon.markerIconEmoji || '🌙'}
-                          status={cm.moon.status || 'unlocked'}
-                          isSelected={true}
-                          isFocused={true}
-                          scale={0.92}
-                          sizeVariant="md"
-                          revealStage="full"
-                          hideTopAsset={true}
-                        />
-                      </div>
-                    )}
-
-                    {/* Halo sutil de seleção/hover da Lua */}
-                    <div
-                      style={{
-                        width: `${cm.mSizePx * 1.9}px`,
-                        height: `${cm.mSizePx * 1.9}px`,
-                      }}
-                      className={`absolute rounded-full pointer-events-none transition-all duration-300 ${
-                        isMoonPausedSelected
-                          ? 'bg-amber-300/35 blur-[4px] scale-125'
-                          : 'bg-sky-300/10 group-hover:bg-amber-200/30 blur-[3px] group-hover:scale-125'
-                      }`}
-                    />
-
-                    <div
-                      style={{
-                        width: `${cm.mSizePx}px`,
-                        height: `${cm.mSizePx}px`,
-                      }}
-                      className={`relative z-10 rounded-full transition-transform duration-300 ${
-                        isMoonPausedSelected
-                          ? 'scale-130 ring-2 ring-amber-300/90 shadow-[0_0_18px_rgba(251,191,36,0.85)]'
-                          : 'group-hover:scale-125'
-                      }`}
-                    >
-                      <img
-                        src={moonImg}
-                        alt={cm.moon.name}
-                        draggable={false}
-                        style={{
-                          transform: `rotate(${(orbitTimeSec * 14) % 360}deg)`,
-                        }}
-                        className="w-full h-full object-contain select-none pointer-events-none drop-shadow-[0_3px_8px_rgba(0,0,0,0.95)]"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </React.Fragment>
+              )}
+            </div>
           );
         })}
       </div>
 
-      {/* Keyframes para o pop-up/marcador surgir de trás do planeta clicado + Hyper-Zoom */}
-      <style>{`
-        @keyframes emergeFromBehindPlanet {
-          0% {
-            opacity: 0;
-            transform: translate(-20%, -10%) scale(0.28);
+      {activeBody && (
+        <AstralDestinationCapsule
+          visible={Boolean(activeBody)}
+          categoryLabel={
+            activeBody.isMoon ? 'LUA 3D SELECIONADA' : 'PLANETA 3D SELECIONADO'
           }
-          65% {
-            opacity: 1;
-            transform: translate(-20%, -115%) scale(1.04);
-          }
-          100% {
-            opacity: 1;
-            transform: translate(-20%, -108%) scale(1);
-          }
-        }
-        @keyframes solarSystemArriveScaleIn {
-          0% {
-            transform: scale(0.28);
-            opacity: 0.15;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-        @keyframes hyperZoomPlanetSphereRush {
-          0% {
-            transform: translate(-50%, -50%) scale(0.35);
-            opacity: 0.4;
-          }
-          65% {
-            opacity: 1;
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(6.5);
-            opacity: 1;
-          }
-        }
-      `}</style>
+          destinationName={activeBody.name}
+          subtitle={`${activeBody.markerCount} continentes no mergulho PNG`}
+          accentColor={activeBody.accentColor}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          actionLabel={`IR ATÉ ${activeBody.name}`}
+          onConfirm={() => triggerApproachPlanet(activeBody.planetObj)}
+        />
+      )}
     </div>
   );
 };
 
-// ============================================================================
-// CAMADA 2: GLOBO DO PLANETA GIRANDO DEVAGAR (MOSTRANDO METADE DELE) COM
-// ESTRELAS PULSANTES E MARCADOR EM FOCO (CLIQUE DÁ ZOOM P/ CAMADA 3 REGIONAL)
-// ============================================================================
-interface PlanetGlobeEmulatorViewProps {
+/**
+ * ============================================================================
+ * 3. PLANET DIVE CLOSE-UP VIEW (`PlanetGlobeEmulatorView`)
+ * ============================================================================
+ */
+export interface PlanetGlobeEmulatorViewProps {
   project: MapProject;
   activePlanet?: SolarSystemPlanet | null;
   screenWidth: number;
@@ -2444,8 +3156,12 @@ interface PlanetGlobeEmulatorViewProps {
   userZoom?: number;
   externalFocusedMarkerId?: string | null;
   availableMaps?: WorldMapConfig[];
-  onSelectRegionMarker: (marker: PlanetGlobeMarker, targetMap?: WorldMapConfig) => void;
   onOpenEditorTab?: () => void;
+  onSelectRegionMarker: (
+    marker: PlanetGlobeMarker,
+    targetMap?: WorldMapConfig
+  ) => void;
+  onBackToSolarSystem?: () => void;
 }
 
 export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = ({
@@ -2457,476 +3173,412 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
   externalFocusedMarkerId,
   availableMaps = [],
   onSelectRegionMarker,
+  onBackToSolarSystem,
 }) => {
-  const planetConfig = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
-  const targetPlanet = activePlanet || planetConfig.planets?.[0] || null;
+  const canvasHolderRef = useRef<HTMLDivElement>(null);
+  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+
+  const planetId = activePlanet?.id || 'planet-slimelands';
+  const planetName = activePlanet?.name || config.title || 'Mundo de Slimelands';
+  const planetImageUrl =
+    activePlanet?.planetImagePng ||
+    config.planetImagePng ||
+    DEFAULT_PLANET_IMAGE_URL;
+  const atmosphereColor =
+    activePlanet?.glowColor || config.glowColor || '#38bdf8';
+  const hasRings = Boolean(activePlanet?.hasRings);
 
   const markers = useMemo(() => {
-    if (targetPlanet?.markers && targetPlanet.markers.length > 0) {
-      return targetPlanet.markers;
-    }
-    if (planetConfig.markers && planetConfig.markers.length > 0) {
-      return planetConfig.markers;
-    }
-    return buildDefaultMarkersForPlanet(
-      targetPlanet?.id || 'solar-planet-1',
-      targetPlanet?.name || 'Planeta Gaia',
-      project
-    );
-  }, [targetPlanet, planetConfig.markers, project]);
+    const raw =
+      activePlanet?.markers && activePlanet.markers.length > 0
+        ? activePlanet.markers
+        : config.markers && config.markers.length > 0
+        ? config.markers
+        : buildDefaultMarkersForPlanet(planetId, planetName, project);
+    return raw.map((m) => ({
+      ...m,
+      nx: normalizeMarkerCoord(m.nx),
+      ny: normalizeMarkerCoord(m.ny),
+    }));
+  }, [activePlanet, config.markers, planetId, planetName, project]);
 
-  const [rotationDeg, setRotationDeg] = useState<number>(0);
-  const rotationRef = useRef<number>(0);
-  const targetRotationRef = useRef<number | null>(null);
+  const [selectedMarker, setSelectedMarker] =
+    useState<PlanetGlobeMarker | null>(() => markers[0] || null);
+  const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
+  const [divingMarkerId, setDivingMarkerId] = useState<string | null>(null);
 
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [isActivelySpinning, setIsActivelySpinning] = useState<boolean>(false);
-  const spinTimeoutRef = useRef<number | null>(null);
-  const dragStartRef = useRef<{
-    clientX: number;
-    startRotation: number;
-    lastClientX: number;
-    lastTime: number;
-    velocityDegPerMs: number;
-    movedDistance: number;
-  } | null>(null);
-  const inertiaVelocityRef = useRef<number>(0);
+  const [projectedMarkers, setProjectedMarkers] = useState<
+    Array<{
+      id: string;
+      x: number;
+      y: number;
+      visible: boolean;
+    }>
+  >([]);
 
-  const [zoomingIntoMarker, setZoomingIntoMarker] = useState<{
-    marker: PlanetGlobeMarker;
-    screenX: number;
-    screenY: number;
-  } | null>(null);
-
-  const prevFocusedIdRef = useRef<string | null>(null);
-
-  // Refinamento Responsivo do Globo (Retrato vs Paisagem Web/Celular):
-  // Nunca preenche a tela inteira em modo paisagem e deixa espaço livre para a UI de sobreposição!
-  const isLandscape = screenWidth > screenHeight * 1.12;
-  const globeDiameter = useMemo(() => {
-    const scale = (planetConfig.planetScale ?? 1.0) * userZoom;
-    if (isLandscape) {
-      // Em Paisagem (Web e Mobile): limita pela altura da tela e pela largura central livre entre LUGARES e REGIÕES
-      const safeCenterWidth = Math.max(240, screenWidth - 380);
-      return Math.min(screenHeight * 0.86, safeCenterWidth * 0.85) * scale;
-    }
-    // Em Retrato: metade superior do globo na base da tela
-    return Math.min(screenWidth * 1.08, screenHeight * 0.72) * scale;
-  }, [screenWidth, screenHeight, isLandscape, planetConfig.planetScale, userZoom]);
-
-  const globeRadius = globeDiameter / 2;
-  const globeCenterX = screenWidth * 0.5;
-  const globeCenterY = isLandscape
-    ? screenHeight * 0.96
-    : screenHeight * 0.92;
-
-  // Se o jogador clicou num lugar na lista esquerda `LUGARES`, gira o globo até aquele marcador
-  useEffect(() => {
-    if (!externalFocusedMarkerId) return;
-    const m = markers.find((item) => item.id === externalFocusedMarkerId);
-    if (!m) return;
-    const baseLonDeg = m.nx * 78;
-    const currentMod = ((rotationRef.current % 360) + 360) % 360;
-    const desiredMod = ((-baseLonDeg % 360) + 360) % 360;
-    let delta = desiredMod - currentMod;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
-    targetRotationRef.current = rotationRef.current + delta;
-  }, [externalFocusedMarkerId, markers]);
-
-  // Loop de rotação suave do Planeta
-  useEffect(() => {
-    let rafId: number;
-    let lastTs = performance.now();
-
-    const tick = (now: number) => {
-      const dtMs = Math.min(64, Math.max(1, now - lastTs));
-      lastTs = now;
-
-      if (!isDragging && !zoomingIntoMarker) {
-        if (targetRotationRef.current !== null) {
-          const diff = targetRotationRef.current - rotationRef.current;
-          if (Math.abs(diff) < 0.25) {
-            rotationRef.current = targetRotationRef.current;
-            targetRotationRef.current = null;
-            setIsActivelySpinning(false);
-          } else {
-            rotationRef.current += diff * Math.min(1, dtMs * 0.0085);
-          }
-          setRotationDeg(rotationRef.current);
-        } else if (Math.abs(inertiaVelocityRef.current) > 0.002) {
-          rotationRef.current += inertiaVelocityRef.current * dtMs;
-          inertiaVelocityRef.current *= Math.pow(0.94, dtMs / 16);
-          if (Math.abs(inertiaVelocityRef.current) <= 0.008) {
-            setIsActivelySpinning(false);
-          }
-          setRotationDeg(rotationRef.current);
-        } else {
-          const autoSpeed = planetConfig.autoRotateSpeed ?? 1.0;
-          if (autoSpeed > 0) {
-            rotationRef.current = (rotationRef.current + autoSpeed * 1.8 * (dtMs / 1000)) % 360;
-            setRotationDeg(rotationRef.current);
-          }
-        }
-      }
-
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [isDragging, zoomingIntoMarker, planetConfig.autoRotateSpeed]);
-
-  // Projeção Esférica 3D dos Marcadores na Superfície do Planeta
-  const projectedMarkers = useMemo(() => {
-    return markers.map((m) => {
-      const baseLonDeg = m.nx * 78;
-      const latRad = Math.max(-1.25, Math.min(0.35, m.ny * 1.15));
-
-      let effectiveLonDeg = (baseLonDeg + rotationDeg) % 360;
-      if (effectiveLonDeg > 180) effectiveLonDeg -= 360;
-      if (effectiveLonDeg < -180) effectiveLonDeg += 360;
-
-      const lonRad = (effectiveLonDeg * Math.PI) / 180;
-      const cosLat = Math.cos(latRad);
-      const sinLat = Math.sin(latRad);
-      const sinLon = Math.sin(lonRad);
-      const cosLon = Math.cos(lonRad);
-
-      const screenX = globeCenterX + globeRadius * 0.82 * cosLat * sinLon;
-      const screenY =
-        globeCenterY +
-        globeRadius * 0.82 * (sinLat * 0.88 - (1 - cosLon) * 0.14);
-
-      const depthZ = cosLat * cosLon;
-      const isVisibleOnFrontHemisphere = cosLon > -0.15;
-      const distFromFocusCenter = Math.hypot(effectiveLonDeg, (m.ny + 0.34) * 38);
-
-      return {
-        marker: m,
-        screenX,
-        screenY,
-        depthZ,
-        effectiveLonDeg,
-        isVisibleOnFrontHemisphere,
-        distFromFocusCenter,
-      };
-    });
-  }, [markers, rotationDeg, globeCenterX, globeCenterY, globeRadius]);
-
-  // Marcador em foco na frente do Globo
-  const focusedMarkerId = useMemo(() => {
-    const visible = projectedMarkers.filter(
-      (pm) => pm.isVisibleOnFrontHemisphere && Math.abs(pm.effectiveLonDeg) < 62
-    );
-    if (visible.length === 0) return null;
-    visible.sort((a, b) => a.distFromFocusCenter - b.distFromFocusCenter);
-    return visible[0].marker.id;
-  }, [projectedMarkers]);
+  const globeViewRef = useRef({
+    tiltX: 0,
+    tiltY: 0,
+    targetTiltX: 0,
+    targetTiltY: 0,
+    camZ: 2.32,
+    targetCamZ: 2.32,
+    camPanX: 0,
+    camPanY: 0,
+    targetCamPanX: 0,
+    targetCamPanY: 0,
+    isDragging: false,
+    dragMoved: false,
+    startX: 0,
+    startY: 0,
+  });
 
   useEffect(() => {
-    if (
-      focusedMarkerId &&
-      focusedMarkerId !== prevFocusedIdRef.current &&
-      !isActivelySpinning
-    ) {
-      const idx = markers.findIndex((m) => m.id === focusedMarkerId);
-      playConstellationStarNote(Math.max(0, idx), false);
-      prevFocusedIdRef.current = focusedMarkerId;
-    }
-  }, [focusedMarkerId, isActivelySpinning, markers]);
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (zoomingIntoMarker) return;
-    setIsDragging(true);
-    targetRotationRef.current = null;
-    inertiaVelocityRef.current = 0;
-
-    dragStartRef.current = {
-      clientX: e.clientX,
-      startRotation: rotationRef.current,
-      lastClientX: e.clientX,
-      lastTime: performance.now(),
-      velocityDegPerMs: 0,
-      movedDistance: 0,
-    };
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging || !dragStartRef.current || zoomingIntoMarker) return;
-
-    const dx = e.clientX - dragStartRef.current.clientX;
-    dragStartRef.current.movedDistance = Math.max(
-      dragStartRef.current.movedDistance,
-      Math.abs(dx)
-    );
-
-    if (Math.abs(dx) > 6 && !isActivelySpinning) {
-      setIsActivelySpinning(true);
-    }
-
-    const degPerPixel = 135 / Math.max(280, screenWidth);
-    const nextRot = dragStartRef.current.startRotation + dx * degPerPixel;
-
-    const now = performance.now();
-    const dt = Math.max(1, now - dragStartRef.current.lastTime);
-    const stepDx = e.clientX - dragStartRef.current.lastClientX;
-    dragStartRef.current.velocityDegPerMs = (stepDx * degPerPixel) / dt;
-    dragStartRef.current.lastClientX = e.clientX;
-    dragStartRef.current.lastTime = now;
-
-    rotationRef.current = nextRot;
-    setRotationDeg(nextRot);
-  };
-
-  const handlePointerUpOrCancel = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-
-    if (dragStartRef.current) {
-      inertiaVelocityRef.current = Math.max(
-        -0.18,
-        Math.min(0.18, dragStartRef.current.velocityDegPerMs * 0.85)
+    if (!divingMarkerId) {
+      globeViewRef.current.targetCamZ = Math.max(
+        1.65,
+        Math.min(3.35, 2.32 / Math.max(0.75, userZoom))
       );
     }
+  }, [userZoom, divingMarkerId]);
 
-    if (spinTimeoutRef.current) window.clearTimeout(spinTimeoutRef.current);
-    spinTimeoutRef.current = window.setTimeout(() => {
-      setIsActivelySpinning(false);
-    }, 280);
-  };
+  useEffect(() => {
+    if (externalFocusedMarkerId) {
+      const found = markers.find((m) => m.id === externalFocusedMarkerId);
+      if (found) {
+        setSelectedMarker(found);
+        globeViewRef.current.targetTiltY = -found.nx * 0.28;
+        globeViewRef.current.targetTiltX = found.ny * 0.28;
+        return;
+      }
+    }
+    setSelectedMarker(markers[0] || null);
+  }, [externalFocusedMarkerId, markers, planetId]);
 
-  const triggerZoomIntoRegion = useCallback(
-    (pm: (typeof projectedMarkers)[number]) => {
-      if (zoomingIntoMarker) return;
-      playMarkersUnfurlChime();
-      setZoomingIntoMarker({
-        marker: pm.marker,
-        screenX: pm.screenX,
-        screenY: pm.screenY,
-      });
+  const triggerEnterRegion = useCallback(
+    (marker: PlanetGlobeMarker) => {
+      if (divingMarkerId) return;
+      setDivingMarkerId(marker.id);
+
+      const local3D = markerNormalizedToSphereLocal3D(marker.nx, marker.ny, 1.0);
+      globeViewRef.current.targetTiltX = 0;
+      globeViewRef.current.targetTiltY = 0;
+      globeViewRef.current.targetCamPanX = local3D.x * 0.82;
+      globeViewRef.current.targetCamPanY = local3D.y * 0.82;
+      globeViewRef.current.targetCamZ = 1.15;
 
       const matchedMap =
-        availableMaps.find((m) => m.id === pm.marker.targetWorldMapId) ||
-        (project.worldMap?.id === pm.marker.targetWorldMapId ? project.worldMap : undefined) ||
-        availableMaps[0] ||
-        project.worldMap;
+        availableMaps.find((m) => m.id === marker.targetWorldMapId) ||
+        availableMaps[0];
 
       window.setTimeout(() => {
-        onSelectRegionMarker(pm.marker, matchedMap);
-      }, 980);
+        onSelectRegionMarker(marker, matchedMap);
+      }, 340);
     },
-    [zoomingIntoMarker, availableMaps, project.worldMap, onSelectRegionMarker]
+    [availableMaps, divingMarkerId, onSelectRegionMarker]
   );
 
-  const handleMarkerClick = (
-    e: React.MouseEvent,
-    pm: (typeof projectedMarkers)[number]
-  ) => {
-    e.stopPropagation();
-    if (zoomingIntoMarker) return;
-    if (dragStartRef.current && dragStartRef.current.movedDistance > 10) return;
+  const handleMarkerClick = useCallback(
+    (marker: PlanetGlobeMarker) => {
+      if (selectedMarker?.id === marker.id) {
+        triggerEnterRegion(marker);
+        return;
+      }
+      setSelectedMarker(marker);
+      globeViewRef.current.targetTiltY = -marker.nx * 0.28;
+      globeViewRef.current.targetTiltX = marker.ny * 0.28;
+    },
+    [selectedMarker, triggerEnterRegion]
+  );
 
-    const isFocused = pm.marker.id === focusedMarkerId && !isActivelySpinning;
+  useEffect(() => {
+    const holder = canvasHolderRef.current;
+    if (!holder) return;
 
-    if (isFocused) {
-      triggerZoomIntoRegion(pm);
-    } else {
-      const baseLonDeg = pm.marker.nx * 78;
-      const currentMod = ((rotationRef.current % 360) + 360) % 360;
-      const desiredMod = ((-baseLonDeg % 360) + 360) % 360;
-      let delta = desiredMod - currentMod;
-      if (delta > 180) delta -= 360;
-      if (delta < -180) delta += 360;
+    const width = screenWidth || holder.clientWidth || 800;
+    const height = screenHeight || holder.clientHeight || 600;
 
-      targetRotationRef.current = rotationRef.current + delta;
-      playConstellationStarNote(0, false);
+    const scene = new THREE.Scene();
+    const minDimRatio = width < height ? height / Math.max(1, width) : 1.0;
+    const fov = Math.min(62, Math.max(38, 40 * Math.pow(minDimRatio, 0.48)));
+    const camera = new THREE.PerspectiveCamera(fov, width / height, 0.05, 100);
+    camera.position.set(0, 0, globeViewRef.current.camZ);
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      return;
     }
+
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    holder.innerHTML = '';
+    holder.appendChild(renderer.domElement);
+
+    const planetRoot = new THREE.Group();
+    scene.add(planetRoot);
+
+    const sphereGeo = new THREE.SphereGeometry(1.0, 64, 64);
+    const tex = getOrLoadPlanetTexture(planetImageUrl, false);
+    const isDefaultAsset = planetImageUrl === DEFAULT_PLANET_IMAGE_URL;
+    const planetMat = create3DPlanetPngDiveMaterial({
+      texture: tex,
+      atmosphereColor,
+      tintColor: atmosphereColor,
+      tintStrength:
+        planetId === 'planet-slimelands' || !isDefaultAsset ? 0.0 : 0.30,
+    });
+    const planetMesh = new THREE.Mesh(sphereGeo, planetMat);
+    planetRoot.add(planetMesh);
+
+    const softHaloTex = getSoftHaloTexture();
+    const haloMat = new THREE.SpriteMaterial({
+      map: softHaloTex,
+      color: new THREE.Color(atmosphereColor),
+      transparent: true,
+      opacity: 0.42,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const haloSprite = new THREE.Sprite(haloMat);
+    haloSprite.scale.setScalar(2.75);
+    planetRoot.add(haloSprite);
+
+    let ringGeo: THREE.RingGeometry | null = null;
+    let ringMat: THREE.MeshBasicMaterial | null = null;
+    if (hasRings) {
+      ringGeo = new THREE.RingGeometry(1.32, 1.98, 96);
+      ringMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(atmosphereColor),
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+      });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.rotation.x = Math.PI * 0.41;
+      ringMesh.rotation.y = 0.18;
+      planetRoot.add(ringMesh);
+    }
+
+    const markerAnchors = new Map<string, THREE.Object3D>();
+    markers.forEach((m) => {
+      const anchor = new THREE.Object3D();
+      anchor.position.copy(markerNormalizedToSphereLocal3D(m.nx, m.ny, 1.0));
+      planetRoot.add(anchor);
+      markerAnchors.set(m.id, anchor);
+    });
+
+    let rafId = 0;
+    const tempVec = new THREE.Vector3();
+
+    const animate = () => {
+      rafId = requestAnimationFrame(animate);
+      const gv = globeViewRef.current;
+
+      gv.tiltX += (gv.targetTiltX - gv.tiltX) * 0.12;
+      gv.tiltY += (gv.targetTiltY - gv.tiltY) * 0.12;
+      gv.camZ += (gv.targetCamZ - gv.camZ) * 0.11;
+      gv.camPanX += (gv.targetCamPanX - gv.camPanX) * 0.12;
+      gv.camPanY += (gv.targetCamPanY - gv.camPanY) * 0.12;
+
+      planetRoot.rotation.x = gv.tiltX;
+      planetRoot.rotation.y = gv.tiltY;
+
+      camera.position.set(gv.camPanX, gv.camPanY, gv.camZ);
+      camera.lookAt(gv.camPanX * 0.9, gv.camPanY * 0.9, 0);
+
+      renderer.render(scene, camera);
+
+      const next: Array<{ id: string; x: number; y: number; visible: boolean }> =
+        [];
+      markerAnchors.forEach((anchor, id) => {
+        anchor.getWorldPosition(tempVec);
+        tempVec.project(camera);
+        const sx = (tempVec.x * 0.5 + 0.5) * width;
+        const sy = (-tempVec.y * 0.5 + 0.5) * height;
+        next.push({
+          id,
+          x: sx,
+          y: sy,
+          visible: tempVec.z < 1.0,
+        });
+      });
+      setProjectedMarkers(next);
+    };
+
+    rafId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      renderer.dispose();
+      sphereGeo.dispose();
+      planetMat.dispose();
+      haloMat.dispose();
+      if (ringGeo) ringGeo.dispose();
+      if (ringMat) ringMat.dispose();
+    };
+  }, [
+    planetId,
+    planetImageUrl,
+    atmosphereColor,
+    hasRings,
+    markers,
+    screenWidth,
+    screenHeight,
+  ]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    globeViewRef.current.isDragging = true;
+    globeViewRef.current.dragMoved = false;
+    globeViewRef.current.startX = e.clientX;
+    globeViewRef.current.startY = e.clientY;
   };
 
-  const [isArrivingToOrbit, setIsArrivingToOrbit] = useState<boolean>(true);
-  useEffect(() => {
-    setIsArrivingToOrbit(true);
-    const t = window.setTimeout(() => setIsArrivingToOrbit(false), 820);
-    return () => window.clearTimeout(t);
-  }, [targetPlanet?.id]);
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!globeViewRef.current.isDragging) return;
+    const dx = e.clientX - globeViewRef.current.startX;
+    const dy = e.clientY - globeViewRef.current.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      globeViewRef.current.dragMoved = true;
+    }
+    globeViewRef.current.startX = e.clientX;
+    globeViewRef.current.startY = e.clientY;
 
-  const cameraZoomScale = zoomingIntoMarker ? 3.5 : 1.0;
-  const cameraTx = zoomingIntoMarker
-    ? screenWidth * 0.5 - zoomingIntoMarker.screenX * cameraZoomScale
-    : 0;
-  const cameraTy = zoomingIntoMarker
-    ? screenHeight * 0.5 - zoomingIntoMarker.screenY * cameraZoomScale
-    : 0;
+    globeViewRef.current.targetTiltY = Math.max(
+      -0.65,
+      Math.min(0.65, globeViewRef.current.targetTiltY + dx * 0.0045)
+    );
+    globeViewRef.current.targetTiltX = Math.max(
+      -0.55,
+      Math.min(0.55, globeViewRef.current.targetTiltX + dy * 0.0045)
+    );
+  };
 
-  const activePlanetImage =
-    targetPlanet?.planetImagePng ||
-    planetConfig.planetImagePng ||
-    DEFAULT_PLANET_IMAGE_URL;
-  const activeGlowColor =
-    targetPlanet?.glowColor || planetConfig.glowColor || '#38bdf8';
+  const handlePointerUp = () => {
+    globeViewRef.current.isDragging = false;
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.stopPropagation();
+    const nextZ = globeViewRef.current.targetCamZ + e.deltaY * 0.0022;
+    if (nextZ < 1.55 && selectedMarker && e.deltaY < 0) {
+      triggerEnterRegion(selectedMarker);
+      return;
+    }
+    if (nextZ > 3.45 && e.deltaY > 0 && onBackToSolarSystem) {
+      onBackToSolarSystem();
+      return;
+    }
+    globeViewRef.current.targetCamZ = Math.max(1.65, Math.min(3.4, nextZ));
+  };
 
   return (
     <div
+      className="relative w-full h-full overflow-hidden select-none bg-[#050814] cursor-grab active:cursor-grabbing"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUpOrCancel}
-      onPointerCancel={handlePointerUpOrCancel}
-      onPointerLeave={handlePointerUpOrCancel}
-      className="relative w-full h-full overflow-hidden select-none bg-[#03050a] cursor-grab active:cursor-grabbing touch-none"
-      style={{
-        width: `${screenWidth}px`,
-        height: `${screenHeight}px`,
-      }}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      onWheel={handleWheel}
     >
-      {/* EFEITO DE DESACELERAÇÃO DO HYPER-ZOOM AO CHEGAR NA ÓRBITA DO PLANETA/LUA */}
-      <HyperspaceWarpTunnelOverlay
-        active={isArrivingToOrbit}
-        originX={screenWidth * 0.5}
-        originY={screenHeight * 0.65}
-        accentColor={activeGlowColor}
-        secondaryColor="#fde047"
-        direction="arrival"
-      />
+      <RealisticDeepSpaceBackdrop intensity={0.95} />
 
       <div
-        className="relative w-full h-full pointer-events-none"
-        style={{
-          transformOrigin: '0 0',
-          transform: `translate3d(${cameraTx}px, ${cameraTy}px, 0) scale(${cameraZoomScale})`,
-          transition: zoomingIntoMarker
-            ? 'transform 0.98s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.9s ease-in'
-            : 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-          opacity: zoomingIntoMarker ? 0.12 : 1,
-          animation: isArrivingToOrbit
-            ? 'planetGlobeHyperApproachArrive 0.78s cubic-bezier(0.16, 1, 0.3, 1) forwards'
-            : 'none',
-        }}
-      >
-        <style>{`
-          @keyframes planetGlobeHyperApproachArrive {
-            0% {
-              transform: translateY(160px) scale(0.45);
-              opacity: 0.2;
-            }
-            100% {
-              transform: translateY(0px) scale(1);
-              opacity: 1;
-            }
-          }
-        `}</style>
-        {/* 1. Espaço Profundo Realista no Fundo do Planeta */}
-        <RealisticDeepSpaceBackdrop accentGlowColor={activeGlowColor} />
+        ref={canvasHolderRef}
+        className="absolute inset-0 z-10 pointer-events-none"
+      />
 
-        {/* 2. Brilho Atmosférico ao Redor da Curvatura do Planeta */}
-        <div
-          style={{
-            left: `${globeCenterX - globeRadius * 1.12}px`,
-            top: `${globeCenterY - globeRadius * 1.12}px`,
-            width: `${globeDiameter * 1.12}px`,
-            height: `${globeDiameter * 1.12}px`,
-            background: `radial-gradient(circle at 50% 50%, ${activeGlowColor}33 0%, rgba(245, 192, 68, 0.16) 46%, rgba(0, 0, 0, 0) 72%)`,
-            filter: 'blur(20px)',
-          }}
-          className="absolute rounded-full pointer-events-none"
-        />
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {markers.map((marker) => {
+          const proj = projectedMarkers.find((p) => p.id === marker.id);
+          if (!proj || !proj.visible) return null;
 
-        {/* 3. O Globo do Planeta Mostrando Metade Dele e Rodando Devagar */}
-        <div
-          style={{
-            left: `${globeCenterX - globeRadius}px`,
-            top: `${globeCenterY - globeRadius}px`,
-            width: `${globeDiameter}px`,
-            height: `${globeDiameter}px`,
-          }}
-          className="absolute rounded-full pointer-events-none flex items-center justify-center"
-        >
-          <img
-            src={activePlanetImage}
-            alt={targetPlanet?.name || planetConfig.title || 'Planeta'}
-            draggable={false}
-            style={{
-              transform: `rotate(${rotationDeg * 0.65}deg)`,
-              transition: isDragging ? 'none' : 'transform 0.08s linear',
-            }}
-            className="w-full h-full object-contain select-none pointer-events-none filter drop-shadow-[0_-14px_42px_rgba(0,0,0,0.95)]"
-          />
+          const isSelected = selectedMarker?.id === marker.id;
+          const isHovered = hoveredMarkerId === marker.id;
 
-          <div
-            className="absolute inset-0 rounded-full pointer-events-none"
-            style={{
-              background:
-                'radial-gradient(circle at 50% 35%, rgba(0,0,0,0) 52%, rgba(2,6,18,0.62) 86%, rgba(0,0,0,0.92) 100%)',
-            }}
-          />
-        </div>
-
-        {/* 4. Marcadores no Globo do Planeta (Estrelas Pulsantes fora de foco + PNG e Nome em foco) */}
-        <div className="absolute inset-0 pointer-events-none z-30">
-          {projectedMarkers.map((pm) => {
-            if (!pm.isVisibleOnFrontHemisphere) return null;
-
-            const isFocused =
-              pm.marker.id === focusedMarkerId &&
-              !isActivelySpinning &&
-              !zoomingIntoMarker;
-
-            const revealStage = isFocused ? 'full' : 'star_only';
-            const edgeFade = Math.max(
-              0.25,
-              Math.min(1, (Math.cos((pm.effectiveLonDeg * Math.PI) / 180) + 0.1) * 1.15)
-            );
-            const depthScale =
-              (0.78 + Math.max(0, pm.depthZ) * 0.28) * (pm.marker.scale || 1.0);
-
-            return (
+          return (
+            <div
+              key={marker.id}
+              className="absolute pointer-events-auto"
+              style={{
+                left: `${proj.x}px`,
+                top: `${proj.y}px`,
+                transform: 'translate(-50%, -100%)',
+                zIndex: isSelected ? 95 : isHovered ? 85 : 50,
+              }}
+              onMouseEnter={() => setHoveredMarkerId(marker.id)}
+              onMouseLeave={() =>
+                setHoveredMarkerId((prev) => (prev === marker.id ? null : prev))
+              }
+            >
               <div
-                key={pm.marker.id}
-                onClick={(e) => handleMarkerClick(e, pm)}
-                style={{
-                  left: `${pm.screenX}px`,
-                  top: `${pm.screenY}px`,
-                  transform: 'translate(-20%, -84%)',
-                  opacity: edgeFade,
-                  zIndex: isFocused ? 100 : Math.round(50 + pm.depthZ * 40),
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (globeViewRef.current.dragMoved) return;
+                  handleMarkerClick(marker);
                 }}
-                className="absolute pointer-events-auto cursor-pointer transition-opacity duration-300"
-                title={
-                  isFocused
-                    ? `Toque para aproximar a câmera e abrir a região "${pm.marker.name}"`
-                    : `${pm.marker.name} (Toque para girar o planeta até aqui)`
-                }
               >
                 <OrnateMapMarkerPin
-                  name={pm.marker.name}
-                  iconPng={pm.marker.iconPng}
-                  iconEmoji={pm.marker.iconEmoji || '🏰'}
-                  status={pm.marker.status || 'unlocked'}
-                  isSelected={isFocused}
-                  isFocused={isFocused}
-                  scale={depthScale}
+                  name={marker.name}
+                  iconPng={marker.iconPng}
+                  iconEmoji={marker.iconEmoji || '🏰'}
+                  status={marker.status || 'unlocked'}
+                  badgeText={
+                    isSelected
+                      ? 'CLIQUE P/ EXPLORAR'
+                      : marker.badgeText || 'REGIÃO'
+                  }
+                  isSelected={isSelected}
+                  isFocused={isSelected || isHovered}
+                  scale={marker.scale || 1.0}
                   sizeVariant="md"
-                  revealStage={revealStage}
+                  revealStage={isSelected || isHovered ? 'full' : 'star_only'}
                 />
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
+
+      {selectedMarker && (
+        <AstralDestinationCapsule
+          visible={Boolean(selectedMarker)}
+          categoryLabel={`REGIÃO DE ${planetName.toUpperCase()}`}
+          destinationName={selectedMarker.name}
+          subtitle={selectedMarker.badgeText || 'Mapa Regional'}
+          accentColor={atmosphereColor}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          actionLabel={`IR ATÉ ${selectedMarker.name}`}
+          onConfirm={() => triggerEnterRegion(selectedMarker)}
+        />
+      )}
     </div>
   );
 };
 
-// ============================================================================
-// EDITOR UNIFICADO DAS CAMADAS 1 (SISTEMA SOLAR) E 2 (GLOBO DO PLANETA)
-// ============================================================================
-interface PlanetGlobeEditorSectionProps {
+/**
+ * ============================================================================
+ * 4. PLANET GLOBE & UV 2:1 TEXTURE GALLERY EDITOR SECTION
+ * ============================================================================
+ */
+export interface PlanetGlobeEditorSectionProps {
   project: MapProject;
   setProject: React.Dispatch<React.SetStateAction<MapProject>>;
   savedWorldMaps: WorldMapConfig[];
   onSwitchToRegionalMapEditor: (targetMapId: string) => void;
-  onCreateNewRegionalMapForMarker: (markerId: string, markerName: string) => void;
-  showToast: (msg: string) => void;
+  onCreateNewRegionalMapForMarker: (
+    markerId: string,
+    markerName: string
+  ) => void;
+  showToast?: (msg: string) => void;
 }
 
 export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> = ({
@@ -2934,987 +3586,755 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
   setProject,
   savedWorldMaps,
   onSwitchToRegionalMapEditor,
+  onCreateNewRegionalMapForMarker,
   showToast,
 }) => {
-  const planetConfig = getOrCreatePlanetGlobeConfig(project);
-  const planets = planetConfig.planets || [];
+  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+  const constellations = config.constellations || [];
+  const uvLibrary = config.uvTextureLibrary || getDefaultUvTextureLibrary();
 
-  // Alterna entre editar a Camada 1 (Sistema Solar) ou a Camada 2 (Globo do Planeta selecionado e seus marcadores)
-  const [editorLayerSubTab, setEditorLayerSubTab] = useState<'solar_layer1' | 'globe_layer2'>(
-    'solar_layer1'
+  const [selectedSysId, setSelectedSysId] = useState<string>(
+    constellations[0]?.id || 'sys-solaris-prime'
   );
+  const activeSystem =
+    constellations.find((c) => c.id === selectedSysId) || constellations[0];
 
   const [selectedPlanetId, setSelectedPlanetId] = useState<string>(
-    planets[0]?.id || ''
-  );
-  const [selectedMoonId, setSelectedMoonId] = useState<string | null>(null);
-  const [selectedGlobeMarkerId, setSelectedGlobeMarkerId] = useState<string | null>(null);
-
-  const [editorOrbitTimeSec, setEditorOrbitTimeSec] = useState<number>(0);
-  const [editorGlobeRotationDeg, setEditorGlobeRotationDeg] = useState<number>(0);
-  const [autoPlayPreview, setAutoPlayPreview] = useState<boolean>(true);
-  const [draggingPlanetId, setDraggingPlanetId] = useState<string | null>(null);
-  const [draggingGlobeMarkerId, setDraggingGlobeMarkerId] = useState<string | null>(null);
-
-  const bodyImageInputRef = useRef<HTMLInputElement>(null);
-  const markerIconInputRef = useRef<HTMLInputElement>(null);
-  const globeMarkerIconInputRef = useRef<HTMLInputElement>(null);
-  const sunImageInputRef = useRef<HTMLInputElement>(null);
-  const solarCanvasRef = useRef<HTMLDivElement>(null);
-  const globeCanvasRef = useRef<HTMLDivElement>(null);
-
-  const selectedPlanet =
-    planets.find((p) => p.id === selectedPlanetId) || planets[0] || null;
-  const selectedMoon =
-    selectedPlanet && selectedMoonId
-      ? (selectedPlanet.moons || []).find((m) => m.id === selectedMoonId) || null
-      : null;
-
-  const currentPlanetGlobeMarkers = useMemo(() => {
-    if (!selectedPlanet) return [];
-    if (selectedPlanet.markers && selectedPlanet.markers.length > 0) {
-      return selectedPlanet.markers;
-    }
-    return buildDefaultMarkersForPlanet(selectedPlanet.id, selectedPlanet.name, project);
-  }, [selectedPlanet, project]);
-
-  const selectedGlobeMarker =
-    currentPlanetGlobeMarkers.find((m) => m.id === selectedGlobeMarkerId) ||
-    currentPlanetGlobeMarkers[0] ||
-    null;
-
-  const updatePlanetConfig = useCallback(
-    (patch: Partial<PlanetGlobeConfig>) => {
-      setProject((prev) => {
-        const current = getOrCreatePlanetGlobeConfig(prev);
-        return {
-          ...prev,
-          planetGlobe: {
-            ...current,
-            ...patch,
-          },
-        };
-      });
-    },
-    [setProject]
-  );
-
-  const updateSolarPlanet = useCallback(
-    (planetId: string, patch: Partial<SolarSystemPlanet>) => {
-      setProject((prev) => {
-        const current = getOrCreatePlanetGlobeConfig(prev);
-        const nextPlanets = (current.planets || []).map((p) =>
-          p.id === planetId ? { ...p, ...patch } : p
-        );
-        return {
-          ...prev,
-          planetGlobe: {
-            ...current,
-            planets: nextPlanets,
-          },
-        };
-      });
-    },
-    [setProject]
-  );
-
-  const updateSolarMoon = useCallback(
-    (planetId: string, moonId: string, patch: Partial<SolarSystemMoon>) => {
-      setProject((prev) => {
-        const current = getOrCreatePlanetGlobeConfig(prev);
-        const nextPlanets = (current.planets || []).map((p) =>
-          p.id === planetId
-            ? {
-                ...p,
-                moons: (p.moons || []).map((m) =>
-                  m.id === moonId ? { ...m, ...patch } : m
-                ),
-              }
-            : p
-        );
-        return {
-          ...prev,
-          planetGlobe: {
-            ...current,
-            planets: nextPlanets,
-          },
-        };
-      });
-    },
-    [setProject]
-  );
-
-  const updatePlanetGlobeMarker = useCallback(
-    (planetId: string, markerId: string, patch: Partial<PlanetGlobeMarker>) => {
-      if (!selectedPlanet) return;
-      const nextMarkers = currentPlanetGlobeMarkers.map((m) =>
-        m.id === markerId ? { ...m, ...patch } : m
-      );
-      updateSolarPlanet(planetId, { markers: nextMarkers });
-    },
-    [selectedPlanet, currentPlanetGlobeMarkers, updateSolarPlanet]
+    activeSystem?.planets?.[0]?.id || 'planet-slimelands'
   );
 
   useEffect(() => {
-    if (!autoPlayPreview || draggingPlanetId || draggingGlobeMarkerId) return;
-    let rafId: number;
-    let lastTs = performance.now();
-
-    const step = (now: number) => {
-      const dt = Math.min(64, now - lastTs);
-      lastTs = now;
-      const mult = planetConfig.autoRotateSpeed ?? 1.0;
-      setEditorOrbitTimeSec((prev) => prev + (dt / 1000) * mult);
-      setEditorGlobeRotationDeg((prev) => (prev + mult * 1.6 * (dt / 1000)) % 360);
-      rafId = requestAnimationFrame(step);
-    };
-
-    rafId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafId);
-  }, [autoPlayPreview, draggingPlanetId, draggingGlobeMarkerId, planetConfig.autoRotateSpeed]);
-
-  const handleAddPlanet = () => {
-    const idx = planets.length + 1;
-    const defaultMapId =
-      savedWorldMaps[0]?.id || project.worldMap?.id || 'map-main-default';
-    const newId = `solar-planet-${Date.now()}`;
-    const newPlanet: SolarSystemPlanet = {
-      id: newId,
-      name: `Planeta ${idx}`,
-      description: 'Novo planeta explorável no sistema solar.',
-      planetImagePng: planetConfig.planetImagePng || DEFAULT_PLANET_IMAGE_URL,
-      markerIconEmoji: '🪐',
-      glowColor: idx % 2 === 0 ? '#a855f7' : '#38bdf8',
-      hasRings: idx % 2 === 0,
-      sizePx: 42,
-      orbitRadiusRatio: Math.min(0.88, 0.26 + idx * 0.14),
-      orbitSpeed: Math.max(1.2, 5.0 - idx * 0.7),
-      selfRotateSpeed: 6,
-      initialAngleDeg: (idx * 75) % 360,
-      targetWorldMapId: defaultMapId,
-      status: 'unlocked',
-      scale: 1.0,
-      markers: buildDefaultMarkersForPlanet(newId, `Planeta ${idx}`, project),
-      moons: [],
-    };
-
-    updatePlanetConfig({
-      planets: [...planets, newPlanet],
-    });
-    setSelectedPlanetId(newPlanet.id);
-    setSelectedMoonId(null);
-    showToast(`🪐 "${newPlanet.name}" adicionado à Camada 1 (Sistema Solar)!`);
-  };
-
-  const handleDeletePlanet = (planetId: string) => {
-    if (planets.length <= 1) {
-      showToast('O Sistema Solar precisa ter pelo menos 1 planeta.');
-      return;
+    if (
+      activeSystem?.planets &&
+      !activeSystem.planets.some((p) => p.id === selectedPlanetId)
+    ) {
+      setSelectedPlanetId(activeSystem.planets[0]?.id || '');
     }
-    const next = planets.filter((p) => p.id !== planetId);
-    updatePlanetConfig({ planets: next });
-    if (selectedPlanetId === planetId) {
-      setSelectedPlanetId(next[0]?.id || '');
-      setSelectedMoonId(null);
+  }, [activeSystem, selectedPlanetId]);
+
+  const activePlanet =
+    activeSystem?.planets?.find((p) => p.id === selectedPlanetId) ||
+    activeSystem?.planets?.[0];
+
+  const activeMarkers = useMemo(() => {
+    if (!activePlanet) return config.markers;
+    if (
+      activePlanet.id === 'planet-slimelands' ||
+      activePlanet.id === 'solar-planet-1'
+    ) {
+      return config.markers;
     }
-    showToast('🗑️ Planeta removido do Sistema Solar.');
-  };
+    return activePlanet.markers && activePlanet.markers.length > 0
+      ? activePlanet.markers
+      : buildDefaultMarkersForPlanet(activePlanet.id, activePlanet.name, project);
+  }, [activePlanet, config.markers, project]);
 
-  const handleAddMoonToPlanet = (planet: SolarSystemPlanet) => {
-    const currentMoons = planet.moons || [];
-    const mIdx = currentMoons.length + 1;
-    const defaultMapId =
-      planet.targetWorldMapId ||
-      savedWorldMaps[0]?.id ||
-      project.worldMap?.id ||
-      'map-main-default';
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(
+    activeMarkers[0]?.id || null
+  );
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
+  const discRef = useRef<HTMLDivElement>(null);
+  const pngFileInputRef = useRef<HTMLInputElement>(null);
+  const uvFileInputRef = useRef<HTMLInputElement>(null);
+  const uvLibraryMultiInputRef = useRef<HTMLInputElement>(null);
 
-    const newMoon: SolarSystemMoon = {
-      id: `moon-${Date.now()}`,
-      name: `Lua ${mIdx} de ${planet.name}`,
-      imagePng: planet.planetImagePng || DEFAULT_PLANET_IMAGE_URL,
-      markerIconEmoji: '🌙',
-      sizePx: 14,
-      orbitRadiusPx: 36 + currentMoons.length * 14,
-      orbitSpeed: mIdx % 2 === 0 ? -22 : 24,
-      initialAngleDeg: (mIdx * 110) % 360,
-      targetWorldMapId: defaultMapId,
-      status: 'unlocked',
-    };
+  const updatePlanetMarkers = (nextMarkers: PlanetGlobeMarker[]) => {
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      const isMainSlimelands =
+        !activePlanet ||
+        activePlanet.id === 'planet-slimelands' ||
+        activePlanet.id === 'solar-planet-1';
 
-    updateSolarPlanet(planet.id, {
-      moons: [...currentMoons, newMoon],
-    });
-    setSelectedMoonId(newMoon.id);
-    showToast(`🌙 "${newMoon.name}" adicionada à órbita de ${planet.name}!`);
-  };
-
-  const handleDeleteMoon = (planet: SolarSystemPlanet, moonId: string) => {
-    const nextMoons = (planet.moons || []).filter((m) => m.id !== moonId);
-    updateSolarPlanet(planet.id, { moons: nextMoons });
-    if (selectedMoonId === moonId) {
-      setSelectedMoonId(null);
-    }
-    showToast('🗑️ Lua removida.');
-  };
-
-  const handleAddGlobeMarker = () => {
-    if (!selectedPlanet) return;
-    const idx = currentPlanetGlobeMarkers.length + 1;
-    const defaultMapId =
-      selectedPlanet.targetWorldMapId ||
-      savedWorldMaps[0]?.id ||
-      project.worldMap?.id ||
-      'map-main-default';
-    const newMarker: PlanetGlobeMarker = {
-      id: `${selectedPlanet.id}-reg-${Date.now()}`,
-      name: `Região ${idx} de ${selectedPlanet.name}`,
-      nx: 0,
-      ny: -0.35,
-      iconEmoji: '🏰',
-      targetWorldMapId: defaultMapId,
-      status: 'unlocked',
-      scale: 1.0,
-    };
-    const next = [...currentPlanetGlobeMarkers, newMarker];
-    updateSolarPlanet(selectedPlanet.id, { markers: next });
-    setSelectedGlobeMarkerId(newMarker.id);
-    showToast(`📍 "${newMarker.name}" adicionado ao globo de ${selectedPlanet.name}!`);
-  };
-
-  const handleDeleteGlobeMarker = (markerId: string) => {
-    if (!selectedPlanet) return;
-    if (currentPlanetGlobeMarkers.length <= 1) {
-      showToast('O planeta precisa ter pelo menos 1 marcador de região.');
-      return;
-    }
-    const next = currentPlanetGlobeMarkers.filter((m) => m.id !== markerId);
-    updateSolarPlanet(selectedPlanet.id, { markers: next });
-    if (selectedGlobeMarkerId === markerId) {
-      setSelectedGlobeMarkerId(next[0]?.id || null);
-    }
-    showToast('🗑️ Marcador removido do globo.');
-  };
-
-  const applyBodyImageFile = async (file: File) => {
-    try {
-      const localRes = await readUploadedImage(file);
-      const diskUrl = await uploadFileToDisk(file, 'maps');
-      const finalUrl = diskUrl || localRes.dataUrl;
-
-      if (selectedPlanet && selectedMoon) {
-        updateSolarMoon(selectedPlanet.id, selectedMoon.id, {
-          imagePng: finalUrl,
-        });
-        showToast(`🌙 PNG da Lua "${selectedMoon.name}" atualizada!`);
-      } else if (selectedPlanet) {
-        updateSolarPlanet(selectedPlanet.id, { planetImagePng: finalUrl });
-        showToast(`🌍 PNG do Planeta "${selectedPlanet.name}" atualizada!`);
-      }
-    } catch {
-      showToast('Erro ao carregar PNG do astro.');
-    }
-  };
-
-  const handleBodyImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    await applyBodyImageFile(file);
-  };
-
-  const handleMarkerIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedPlanet) return;
-    e.target.value = '';
-    try {
-      const localRes = await readUploadedImage(file);
-      const diskUrl = await uploadFileToDisk(file, 'maps');
-      const finalUrl = diskUrl || localRes.dataUrl;
-
-      if (selectedMoon) {
-        updateSolarMoon(selectedPlanet.id, selectedMoon.id, {
-          markerIconPng: finalUrl,
-        });
-      } else {
-        updateSolarPlanet(selectedPlanet.id, { markerIconPng: finalUrl });
-      }
-      showToast('✨ PNG do pop-up do planeta atualizada!');
-    } catch {
-      showToast('Erro ao carregar PNG do marcador.');
-    }
-  };
-
-  const handleGlobeMarkerIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedPlanet || !selectedGlobeMarker) return;
-    e.target.value = '';
-    try {
-      const localRes = await readUploadedImage(file);
-      const diskUrl = await uploadFileToDisk(file, 'maps');
-      const finalUrl = diskUrl || localRes.dataUrl;
-      updatePlanetGlobeMarker(selectedPlanet.id, selectedGlobeMarker.id, {
-        iconPng: finalUrl,
+      const nextConstellations = (curr.constellations || []).map((sys) => {
+        if (sys.id !== activeSystem?.id) return sys;
+        return {
+          ...sys,
+          planets: (sys.planets || []).map((p) =>
+            p.id === activePlanet?.id ? { ...p, markers: nextMarkers } : p
+          ),
+        };
       });
-      showToast(`✨ PNG do marcador "${selectedGlobeMarker.name}" atualizada!`);
-    } catch {
-      showToast('Erro ao carregar PNG do marcador.');
-    }
-  };
 
-  const handleSunImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    try {
-      const localRes = await readUploadedImage(file);
-      const diskUrl = await uploadFileToDisk(file, 'maps');
-      updatePlanetConfig({ sunImagePng: diskUrl || localRes.dataUrl });
-      showToast('☀️ PNG do Sol Central atualizada!');
-    } catch {
-      showToast('Erro ao carregar PNG do Sol.');
-    }
-  };
-
-  // Geometria do Canvas de Preview no Editor
-  const canvasWidth = 860;
-  const canvasHeight = 620;
-  const centerX = canvasWidth * 0.5;
-  const centerY = canvasHeight * 0.52;
-  const systemScale = planetConfig.planetScale ?? 1.0;
-  const orbitTilt = planetConfig.orbitTiltRatio ?? 0.66;
-  const maxRadius = Math.min(canvasWidth * 0.45, canvasHeight * 0.44) * systemScale;
-
-  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingPlanetId || !solarCanvasRef.current) return;
-    const rect = solarCanvasRef.current.getBoundingClientRect();
-    const dx = e.clientX - rect.left - centerX;
-    const dy = (e.clientY - rect.top - centerY) / Math.max(0.25, orbitTilt);
-
-    const rawDist = Math.hypot(dx, dy);
-    const newRatio = Math.max(0.16, Math.min(0.88, Number((rawDist / maxRadius).toFixed(3))));
-    const angleDeg = Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360);
-
-    const draggedPlanet = planets.find((p) => p.id === draggingPlanetId);
-    const compensatedAngle =
-      (angleDeg - editorOrbitTimeSec * (draggedPlanet?.orbitSpeed ?? 3.0) + 3600) % 360;
-
-    updateSolarPlanet(draggingPlanetId, {
-      orbitRadiusRatio: newRatio,
-      initialAngleDeg: Math.round(compensatedAngle),
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          markers: isMainSlimelands ? nextMarkers : curr.markers,
+          constellations: nextConstellations,
+        },
+      };
     });
   };
 
-  const handleGlobeMarkerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingGlobeMarkerId || !globeCanvasRef.current || !selectedPlanet) return;
-    const rect = globeCanvasRef.current.getBoundingClientRect();
-    const globeR = 260;
-    const gCx = canvasWidth * 0.5;
-    const gCy = canvasHeight * 0.92;
-    const dx = e.clientX - rect.left - gCx;
-    const dy = e.clientY - rect.top - gCy;
-
-    const nx = Math.max(-0.85, Math.min(0.85, Number((dx / (globeR * 0.82)).toFixed(3))));
-    const ny = Math.max(-0.85, Math.min(-0.08, Number((dy / (globeR * 0.82)).toFixed(3))));
-    updatePlanetGlobeMarker(selectedPlanet.id, draggingGlobeMarkerId, { nx, ny });
+  const assignUvTextureToActivePlanet = (uvDataUrl: string, label?: string) => {
+    if (!activePlanet || !activeSystem) return;
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      const isMain =
+        activePlanet.id === 'planet-slimelands' ||
+        activePlanet.id === 'solar-planet-1';
+      const nextConstellations = (curr.constellations || []).map((sys) => {
+        if (sys.id !== activeSystem.id) return sys;
+        return {
+          ...sys,
+          planets: (sys.planets || []).map((p) =>
+            p.id === activePlanet.id ? { ...p, uvTexturePng: uvDataUrl } : p
+          ),
+        };
+      });
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          uvTexturePng: isMain ? uvDataUrl : curr.uvTexturePng,
+          constellations: nextConstellations,
+        },
+      };
+    });
+    showToast?.(
+      `🪐 Textura UV 2:1 ${label ? `"${label}" ` : ''}aplicada à esfera 3D de ${activePlanet.name}!`
+    );
   };
 
-  const activeEditingImage = selectedMoon
-    ? selectedMoon.imagePng ||
-      selectedPlanet?.planetImagePng ||
-      planetConfig.planetImagePng ||
-      DEFAULT_PLANET_IMAGE_URL
-    : selectedPlanet?.planetImagePng ||
-      planetConfig.planetImagePng ||
-      DEFAULT_PLANET_IMAGE_URL;
+  const handleUploadDirectPlanetUv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activePlanet || !activeSystem) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) return;
+      const newItem: PlanetUvTextureItem = {
+        id: `uv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        url: dataUrl,
+        accentColor: activePlanet.glowColor || '#38bdf8',
+        createdAt: new Date().toISOString(),
+      };
+      setProject((prev) => {
+        const curr = getOrCreatePlanetGlobeConfig(prev);
+        const isMain =
+          activePlanet.id === 'planet-slimelands' ||
+          activePlanet.id === 'solar-planet-1';
+        const nextLib = [newItem, ...(curr.uvTextureLibrary || [])];
+        const nextConstellations = (curr.constellations || []).map((sys) => {
+          if (sys.id !== activeSystem.id) return sys;
+          return {
+            ...sys,
+            planets: (sys.planets || []).map((p) =>
+              p.id === activePlanet.id ? { ...p, uvTexturePng: dataUrl } : p
+            ),
+          };
+        });
+        return {
+          ...prev,
+          planetGlobe: {
+            ...curr,
+            uvTexturePng: isMain ? dataUrl : curr.uvTexturePng,
+            uvTextureLibrary: nextLib,
+            constellations: nextConstellations,
+          },
+        };
+      });
+      showToast?.(
+        `✨ Textura UV 2:1 "${newItem.name}" adicionada à galeria e aplicada em ${activePlanet.name}!`
+      );
+    };
+    reader.readAsDataURL(file);
+  };
 
-  const activeEditingMarkerPng = selectedMoon
-    ? selectedMoon.markerIconPng
-    : selectedPlanet?.markerIconPng;
+  const handleBatchUploadUvLibrary = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-  const activeEditingMarkerEmoji = selectedMoon
-    ? selectedMoon.markerIconEmoji || '🌙'
-    : selectedPlanet?.markerIconEmoji || '🪐';
+    Promise.all(
+      files.map(
+        (file) =>
+          new Promise<PlanetUvTextureItem | null>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result || '');
+              if (!dataUrl) {
+                resolve(null);
+                return;
+              }
+              resolve({
+                id: `uv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                name: file.name.replace(/\.[^.]+$/, ''),
+                url: dataUrl,
+                accentColor: '#38bdf8',
+                createdAt: new Date().toISOString(),
+              });
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+          })
+      )
+    ).then((items) => {
+      const valid = items.filter((x): x is PlanetUvTextureItem => Boolean(x));
+      if (valid.length === 0) return;
+      setProject((prev) => {
+        const curr = getOrCreatePlanetGlobeConfig(prev);
+        return {
+          ...prev,
+          planetGlobe: {
+            ...curr,
+            uvTextureLibrary: [...valid, ...(curr.uvTextureLibrary || [])],
+          },
+        };
+      });
+      showToast?.(
+        `🪐 ${valid.length} textura(s) UV 2:1 importada(s) para a Galeria Planetária!`
+      );
+    });
+  };
+
+  const handleDistributeUvAcrossSystem = () => {
+    if (!activeSystem || uvLibrary.length === 0) return;
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      const nextConstellations = (curr.constellations || []).map((sys) => {
+        if (sys.id !== activeSystem.id) return sys;
+        return {
+          ...sys,
+          planets: (sys.planets || []).map((p, idx) => ({
+            ...p,
+            uvTexturePng: uvLibrary[idx % uvLibrary.length].url,
+            moons: (p.moons || []).map((m, mIdx) => ({
+              ...m,
+              uvTexturePng:
+                uvLibrary[(idx + mIdx + 1) % uvLibrary.length].url,
+            })),
+          })),
+        };
+      });
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          constellations: nextConstellations,
+        },
+      };
+    });
+    showToast?.(
+      `✨ Texturas UV 2:1 distribuídas pelos planetas e luas de ${activeSystem.name}!`
+    );
+  };
+
+  const handleDeleteUvFromLibrary = (uvId: string) => {
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          uvTextureLibrary: (curr.uvTextureLibrary || []).filter(
+            (item) => item.id !== uvId
+          ),
+        },
+      };
+    });
+  };
+
+  const handleUploadPlanetPng = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !activePlanet || !activeSystem) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) return;
+      setProject((prev) => {
+        const curr = getOrCreatePlanetGlobeConfig(prev);
+        const isMain =
+          activePlanet.id === 'planet-slimelands' ||
+          activePlanet.id === 'solar-planet-1';
+        const nextConstellations = (curr.constellations || []).map((sys) => {
+          if (sys.id !== activeSystem.id) return sys;
+          return {
+            ...sys,
+            planets: (sys.planets || []).map((p) =>
+              p.id === activePlanet.id ? { ...p, planetImagePng: dataUrl } : p
+            ),
+          };
+        });
+        return {
+          ...prev,
+          planetGlobe: {
+            ...curr,
+            planetImagePng: isMain ? dataUrl : curr.planetImagePng,
+            constellations: nextConstellations,
+          },
+        };
+      });
+      showToast?.('✨ PNG de Mergulho do Planeta atualizado!');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePointerMoveDisc = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingMarkerId || !discRef.current) return;
+    const rect = discRef.current.getBoundingClientRect();
+    const ratioX = (e.clientX - rect.left) / rect.width;
+    const ratioY = (e.clientY - rect.top) / rect.height;
+    const nx = normalizeMarkerCoord((ratioX - 0.5) * 2);
+    const ny = normalizeMarkerCoord((ratioY - 0.5) * 2);
+    const updated = activeMarkers.map((m) =>
+      m.id === draggingMarkerId
+        ? { ...m, nx: Number(nx.toFixed(3)), ny: Number(ny.toFixed(3)) }
+        : m
+    );
+    updatePlanetMarkers(updated);
+  };
+
+  const handleAddMarker = () => {
+    const firstMapId =
+      project.worldMap?.id || savedWorldMaps[0]?.id || 'world-map-main';
+    const newMarker: PlanetGlobeMarker = {
+      id: `p-marker-${Date.now().toString(36)}`,
+      name: `Nova Região ${activeMarkers.length + 1}`,
+      description: 'Clique para viajar diretamente para o mapa regional.',
+      nx: 0,
+      ny: 0,
+      iconEmoji: '🏰',
+      targetWorldMapId: firstMapId,
+      status: 'unlocked',
+      badgeText: 'REGIÃO',
+      scale: 1.0,
+    };
+    const next = [...activeMarkers, newMarker];
+    updatePlanetMarkers(next);
+    setSelectedMarkerId(newMarker.id);
+    showToast?.('✨ Novo marcador adicionado à superfície do planeta!');
+  };
+
+  const selectedMarker =
+    activeMarkers.find((m) => m.id === selectedMarkerId) ||
+    activeMarkers[0] ||
+    null;
 
   return (
-    <div className="flex-1 flex overflow-hidden relative bg-zinc-950">
-      <input
-        ref={bodyImageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleBodyImageUpload}
-        className="hidden"
-      />
-      <input
-        ref={markerIconInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleMarkerIconUpload}
-        className="hidden"
-      />
-      <input
-        ref={globeMarkerIconInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleGlobeMarkerIconUpload}
-        className="hidden"
-      />
-      <input
-        ref={sunImageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleSunImageUpload}
-        className="hidden"
-      />
-
-      {/* PAINEL LATERAL DO EDITOR DAS 3 CAMADAS */}
-      <div className="w-[450px] xl:w-[490px] bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 z-20 shadow-xl overflow-y-auto">
-        {/* Seletor das Camadas do Mapa no Editor */}
-        <div className="p-3 bg-zinc-950 border-b border-zinc-800 space-y-2">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400">
-            Arquitetura de 3 Camadas do Mapa
+    <div className="flex-1 overflow-y-auto p-6 bg-zinc-950 text-white">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="rounded-2xl border border-amber-500/30 bg-slate-950/90 p-5 space-y-4 shadow-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <Globe className="w-5 h-5 text-amber-400" />
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300">
+                  Atlas Astral 3D • 6 Estrelas Realistas & 40 Planetas/Luas (UV 2:1 + PNG)
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Use suas texturas retangulares UV 2:1 para girar em 360° no Sistema Solar 3D, e os PNGs ilustrados para o mergulho close-up com marcadores fixos!
+                </p>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setEditorLayerSubTab('solar_layer1')}
-              className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                editorLayerSubTab === 'solar_layer1'
-                  ? 'bg-amber-500 text-slate-950 shadow'
-                  : 'bg-zinc-900 text-zinc-300 border border-zinc-800 hover:text-white'
-              }`}
-            >
-              <Orbit className="w-3.5 h-3.5" />
-              <span>1. Sistema Solar</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditorLayerSubTab('globe_layer2')}
-              className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                editorLayerSubTab === 'globe_layer2'
-                  ? 'bg-amber-500 text-slate-950 shadow'
-                  : 'bg-zinc-900 text-zinc-300 border border-zinc-800 hover:text-white'
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>2. Globo do Planeta</span>
-            </button>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                1. Estrela da Constelação (6 Sistemas Populados • 40 Mundos)
+              </label>
+              <select
+                value={selectedSysId}
+                onChange={(e) => setSelectedSysId(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white font-semibold"
+              >
+                {constellations.map((sys) => {
+                  const moonCount = (sys.planets || []).reduce(
+                    (acc, p) => acc + (p.moons?.length || 0),
+                    0
+                  );
+                  return (
+                    <option key={sys.id} value={sys.id}>
+                      {sys.name} ({sys.planets?.length || 0} planetas + {moonCount} luas)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                2. Planeta Selecionado neste Sistema Solar
+              </label>
+              <select
+                value={activePlanet?.id || ''}
+                onChange={(e) => setSelectedPlanetId(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white font-semibold"
+              >
+                {(activeSystem?.planets || []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
-        {editorLayerSubTab === 'solar_layer1' ? (
-          <>
-            {/* SUB-ABA CAMADA 1: SISTEMA SOLAR */}
-            <div className="p-3.5 bg-zinc-950/60 border-b border-zinc-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">
-                    Camada 1: Sistema Solar & Órbitas
-                  </h3>
-                  <p className="text-[10px] text-zinc-400">
-                    Planetas sem estrelas em órbita. Clicar pausa a órbita e revela o pop-up de trás do planeta.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddPlanet}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Planeta</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[9.5px]">
-                    <span className="text-zinc-400">Vel. Órbitas:</span>
-                    <span className="font-mono font-bold text-amber-300">
-                      {(planetConfig.autoRotateSpeed ?? 1.0).toFixed(1)}x
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={4}
-                    step={0.2}
-                    value={planetConfig.autoRotateSpeed ?? 1.0}
-                    onChange={(e) =>
-                      updatePlanetConfig({ autoRotateSpeed: parseFloat(e.target.value) })
-                    }
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[9.5px]">
-                    <span className="text-zinc-400">Escala Geral:</span>
-                    <span className="font-mono font-bold text-amber-300">
-                      {Math.round((planetConfig.planetScale ?? 1.0) * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0.7}
-                    max={1.35}
-                    step={0.05}
-                    value={planetConfig.planetScale ?? 1.0}
-                    onChange={(e) =>
-                      updatePlanetConfig({ planetScale: parseFloat(e.target.value) })
-                    }
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
-                </div>
+        {/* SECTION A: GALERIA DE TEXTURAS RETANGULARES UV 2:1 (SISTEMA PLANETÁRIO 3D) */}
+        <div className="rounded-2xl border border-cyan-500/35 bg-slate-950/90 p-5 space-y-4 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <Layers className="w-5 h-5 text-cyan-400" />
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-cyan-300">
+                  Galeria de Texturas Retangulares UV 2:1 (Visão Sistema Planetário 3D)
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Importe suas texturas retangulares equiretangulares (2:1) e clique em qualquer textura abaixo para aplicá-la à esfera 3D de{' '}
+                  <strong className="text-white">{activePlanet?.name}</strong>.
+                </p>
               </div>
             </div>
 
-            {/* Lista de Planetas do Sistema Solar */}
-            <div className="p-2.5 space-y-2 max-h-[210px] overflow-y-auto border-b border-zinc-800 bg-zinc-950/30">
-              {planets.map((p) => {
-                const isPlanSel = p.id === selectedPlanet?.id && !selectedMoonId;
-                return (
-                  <div
-                    key={p.id}
-                    className="rounded-xl border border-zinc-800 bg-zinc-900/70 overflow-hidden"
-                  >
-                    <div
-                      onClick={() => {
-                        setSelectedPlanetId(p.id);
-                        setSelectedMoonId(null);
-                      }}
-                      className={`flex items-center justify-between p-2 text-xs cursor-pointer transition-all ${
-                        isPlanSel
-                          ? 'bg-amber-500/20 text-white'
-                          : 'text-zinc-200 hover:bg-zinc-800/80'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <img
-                          src={
-                            p.planetImagePng ||
-                            planetConfig.planetImagePng ||
-                            DEFAULT_PLANET_IMAGE_URL
-                          }
-                          alt={p.name}
-                          className="w-8 h-8 rounded-full object-contain bg-black/60 p-0.5 border border-amber-500/40 shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="font-extrabold truncate text-xs">
-                            {p.name}
-                          </div>
-                          <div className="text-[9.5px] text-amber-300/80 truncate">
-                            📍 {(p.markers || []).length} regiões no globo • {(p.moons || []).length} lua(s)
-                          </div>
-                        </div>
-                      </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={uvLibraryMultiInputRef}
+                type="file"
+                multiple
+                accept="image/png,image/webp,image/jpeg"
+                className="hidden"
+                onChange={handleBatchUploadUvLibrary}
+              />
+              <button
+                type="button"
+                onClick={() => uvLibraryMultiInputRef.current?.click()}
+                className="px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-400/50 text-cyan-200 text-xs font-bold flex items-center gap-1.5 hover:bg-cyan-500/30 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                + Importar Texturas UV 2:1 (Lote)
+              </button>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPlanetId(p.id);
-                            setEditorLayerSubTab('globe_layer2');
-                          }}
-                          className="px-2 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-[9.5px] font-bold cursor-pointer"
-                          title="Editar os marcadores e o globo giratório deste Planeta (Camada 2)"
-                        >
-                          🌍 Globo (Camada 2)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPlanetId(p.id);
-                            handleAddMoonToPlanet(p);
-                          }}
-                          className="px-2 py-1 rounded-md bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 text-[9.5px] font-bold cursor-pointer"
-                        >
-                          + Lua
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeletePlanet(p.id);
-                          }}
-                          className="p-1 text-zinc-500 hover:text-rose-400 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+              <button
+                type="button"
+                onClick={handleDistributeUvAcrossSystem}
+                className="px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30 cursor-pointer"
+                title="Distribuir automaticamente as texturas da galeria pelos planetas deste sistema solar"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Distribuir no Sistema Atual
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+            <div className="relative w-44 aspect-[2/1] rounded-lg overflow-hidden border-2 border-cyan-400/60 bg-black shrink-0 shadow-md">
+              <img
+                src={activePlanet?.uvTexturePng || uvLibrary[0]?.url}
+                alt="UV 2:1 Ativa"
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-cyan-300 border border-cyan-400/40">
+                UV 2:1 ATIVA
+              </span>
+            </div>
+
+            <div className="flex-1 min-w-0 space-y-1 text-center sm:text-left">
+              <div className="text-xs font-bold text-white">
+                Textura Esférica 3D Atual de <span className="text-cyan-300">{activePlanet?.name}</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Esta textura retangular 2:1 é mapeada em 360° ao redor da esfera 3D do planeta enquanto ele gira e orbita o sol na camada do Sistema Planetário.
+              </p>
+            </div>
+
+            <div>
+              <input
+                ref={uvFileInputRef}
+                type="file"
+                accept="image/png,image/webp,image/jpeg"
+                className="hidden"
+                onChange={handleUploadDirectPlanetUv}
+              />
+              <button
+                type="button"
+                onClick={() => uvFileInputRef.current?.click()}
+                className="px-3 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shrink-0 shadow"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Enviar UV 2:1 p/ {activePlanet?.name}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {uvLibrary.map((uvItem) => {
+              const isAssigned = activePlanet?.uvTexturePng === uvItem.url;
+              return (
+                <div
+                  key={uvItem.id}
+                  onClick={() =>
+                    assignUvTextureToActivePlanet(uvItem.url, uvItem.name)
+                  }
+                  className={`group relative rounded-xl overflow-hidden border transition-all cursor-pointer flex flex-col bg-slate-900 ${
+                    isAssigned
+                      ? 'border-cyan-400 ring-2 ring-cyan-400/40 shadow-lg'
+                      : 'border-slate-800 hover:border-cyan-400/60'
+                  }`}
+                >
+                  <div className="relative w-full aspect-[2/1] bg-black overflow-hidden">
+                    <img
+                      src={uvItem.url}
+                      alt={uvItem.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                    />
+                    {isAssigned && (
+                      <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-cyan-500 text-slate-950 text-[9px] font-black uppercase flex items-center gap-1 shadow">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                        Em Uso
                       </div>
-                    </div>
+                    )}
+                    {!uvItem.id.startsWith('uv-preset-') && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteUvFromLibrary(uvItem.id);
+                        }}
+                        className="absolute top-1.5 right-1.5 p-1 rounded bg-rose-950/85 text-rose-300 hover:bg-rose-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remover da galeria"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
+                  <div className="px-2.5 py-1.5 flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-bold text-slate-200 truncate">
+                      {uvItem.name}
+                    </span>
+                    <span className="text-[9px] font-bold text-cyan-400 shrink-0">
+                      Aplicar
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SECTION B: PNG DO MERGULHO PLANETÁRIO + EDITOR DE MARCADORES FIXOS 1:1 */}
+        <div className="rounded-2xl border border-amber-500/35 bg-slate-950/90 p-5 space-y-4 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <ImageIcon className="w-5 h-5 text-amber-400" />
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-300">
+                  PNG Ilustrado do Mergulho Close-up & Marcadores Fixos ({activePlanet?.name})
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Quando o jogador dá o mergulho no planeta, este PNG ilustrado é exibido em 3D com os marcadores de continentes 100% cravados nas coordenadas abaixo.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <input
+                ref={pngFileInputRef}
+                type="file"
+                accept="image/png,image/webp,image/jpeg"
+                className="hidden"
+                onChange={handleUploadPlanetPng}
+              />
+              <button
+                type="button"
+                onClick={() => pngFileInputRef.current?.click()}
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Trocar PNG de Mergulho ({activePlanet?.name})
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            <div
+              ref={discRef}
+              onPointerMove={handlePointerMoveDisc}
+              onPointerUp={() => setDraggingMarkerId(null)}
+              onPointerLeave={() => setDraggingMarkerId(null)}
+              className="relative aspect-square w-full max-w-[380px] mx-auto rounded-2xl border border-slate-800 bg-[#030712] overflow-hidden select-none shadow-inner"
+            >
+              <img
+                src={
+                  activePlanet?.planetImagePng ||
+                  config.planetImagePng ||
+                  DEFAULT_PLANET_IMAGE_URL
+                }
+                alt={activePlanet?.name || 'Planeta'}
+                className="w-full h-full object-contain pointer-events-none select-none"
+                draggable={false}
+              />
+              {activeMarkers.map((m) => {
+                const isSel = selectedMarker?.id === m.id;
+                const leftPct = (m.nx * 0.5 + 0.5) * 100;
+                const topPct = (m.ny * 0.5 + 0.5) * 100;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      setSelectedMarkerId(m.id);
+                      setDraggingMarkerId(m.id);
+                    }}
+                    style={{
+                      left: `${leftPct}%`,
+                      top: `${topPct}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                    className={`absolute px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-transform cursor-move ${
+                      isSel
+                        ? 'bg-amber-400 text-slate-950 border-white scale-110 z-20 shadow-lg'
+                        : 'bg-slate-900/90 text-amber-200 border-amber-400/50 hover:scale-105 z-10'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <MapPin className="w-3 h-3" />
+                      {m.name}
+                    </span>
+                  </button>
                 );
               })}
             </div>
 
-            {/* Propriedades do Planeta selecionado na Camada 1 */}
-            {selectedPlanet && (
-              <div className="p-3.5 space-y-3 flex-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-300">
-                    Nome do Planeta
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedPlanet.name}
-                    onChange={(e) =>
-                      updateSolarPlanet(selectedPlanet.id, { name: e.target.value })
-                    }
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-bold text-white"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-2.5 rounded-xl bg-zinc-950 border border-amber-500/35 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={activeEditingImage}
-                        alt=""
-                        className="w-10 h-10 object-contain rounded-lg bg-black p-1 border border-amber-500/40"
-                      />
-                      <span className="text-[10px] font-extrabold text-white">
-                        PNG do Planeta
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => bodyImageInputRef.current?.click()}
-                      className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Upload className="w-3 h-3" />
-                      <span>Trocar PNG</span>
-                    </button>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center">
-                        {activeEditingMarkerPng ? (
-                          <img
-                            src={activeEditingMarkerPng}
-                            alt=""
-                            className="w-8 h-8 object-contain"
-                          />
-                        ) : (
-                          <span className="text-lg">{activeEditingMarkerEmoji}</span>
-                        )}
-                      </div>
-                      <span className="text-[10px] font-extrabold text-white">
-                        PNG do Pop-up
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => markerIconInputRef.current?.click()}
-                      className="w-full py-1.5 bg-zinc-800 hover:bg-zinc-700 text-amber-300 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Upload className="w-3 h-3" />
-                      <span>Trocar Ícone</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 p-2.5 rounded-xl bg-zinc-950/60 border border-zinc-800">
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-zinc-400">Tamanho Planeta:</span>
-                      <span className="font-mono font-bold text-amber-300">
-                        {selectedPlanet.sizePx || 42}px
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={24}
-                      max={64}
-                      step={2}
-                      value={selectedPlanet.sizePx || 42}
-                      onChange={(e) =>
-                        updateSolarPlanet(selectedPlanet.id, {
-                          sizePx: parseInt(e.target.value, 10),
-                        })
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-zinc-400">Raio do Arco:</span>
-                      <span className="font-mono font-bold text-amber-300">
-                        {Math.round((selectedPlanet.orbitRadiusRatio ?? 0.35) * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0.2}
-                      max={0.88}
-                      step={0.02}
-                      value={selectedPlanet.orbitRadiusRatio ?? 0.35}
-                      onChange={(e) =>
-                        updateSolarPlanet(selectedPlanet.id, {
-                          orbitRadiusRatio: parseFloat(e.target.value),
-                        })
-                      }
-                      className="w-full accent-amber-500 cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setEditorLayerSubTab('globe_layer2')}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg"
-                >
-                  <Globe className="w-4 h-4" />
-                  <span>Editar Camada 2: Marcadores no Globo de "{selectedPlanet.name}" ➔</span>
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            {/* SUB-ABA CAMADA 2: GLOBO DO PLANETA & SEUS MARCADORES DE REGIÃO */}
-            <div className="p-3.5 bg-zinc-950/60 border-b border-zinc-800 space-y-2.5">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                  Planeta Selecionado:
-                </label>
-                <select
-                  value={selectedPlanet?.id || ''}
-                  onChange={(e) => {
-                    setSelectedPlanetId(e.target.value);
-                    setSelectedGlobeMarkerId(null);
-                  }}
-                  className="bg-zinc-800 border border-amber-500/50 rounded-lg px-2.5 py-1 text-xs font-extrabold text-amber-300"
-                >
-                  {planets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      🪐 {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-xs font-extrabold text-white uppercase tracking-wider">
-                  Marcadores no Globo ({currentPlanetGlobeMarkers.length})
+                <span className="text-xs font-bold text-slate-300">
+                  Continentes / Regiões Fixas no PNG ({activeMarkers.length})
                 </span>
                 <button
                   type="button"
-                  onClick={handleAddGlobeMarker}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer"
+                  onClick={handleAddMarker}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-bold hover:bg-emerald-500/30 cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                  <span>+ Região no Globo</span>
+                  <Plus className="w-3.5 h-3.5" />
+                  Nova Região
                 </button>
               </div>
-            </div>
 
-            <div className="p-2.5 space-y-1.5 max-h-[200px] overflow-y-auto border-b border-zinc-800">
-              {currentPlanetGlobeMarkers.map((m) => {
-                const isSel = m.id === selectedGlobeMarker?.id;
-                const linkedMap = savedWorldMaps.find(
-                  (wm) => wm.id === m.targetWorldMapId
-                );
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => setSelectedGlobeMarkerId(m.id)}
-                    className={`flex items-center justify-between p-2 rounded-xl text-xs cursor-pointer transition-all ${
-                      isSel
-                        ? 'bg-amber-500/20 border border-amber-500/50 text-white'
-                        : 'bg-zinc-900/70 border border-zinc-800 text-zinc-300 hover:bg-zinc-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <span>{m.iconEmoji || '🏰'}</span>
-                      <div className="min-w-0">
-                        <div className="font-extrabold truncate">{m.name}</div>
-                        <div className="text-[9.5px] text-amber-300/80 truncate">
-                          Abre Camada 3: {linkedMap?.title || 'Mapa Regional Principal'}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteGlobeMarker(m.id);
+              {selectedMarker && (
+                <div className="space-y-3 rounded-xl bg-slate-900/90 border border-slate-800 p-4">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                      Nome do Continente / Região
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedMarker.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updatePlanetMarkers(
+                          activeMarkers.map((m) =>
+                            m.id === selectedMarker.id ? { ...m, name: val } : m
+                          )
+                        );
                       }}
-                      className="p-1 text-zinc-500 hover:text-rose-400 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs text-white"
+                    />
                   </div>
-                );
-              })}
-            </div>
 
-            {selectedPlanet && selectedGlobeMarker && (
-              <div className="p-3.5 space-y-3 flex-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-300">
-                    Nome da Região no Globo
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedGlobeMarker.name}
-                    onChange={(e) =>
-                      updatePlanetGlobeMarker(selectedPlanet.id, selectedGlobeMarker.id, {
-                        name: e.target.value,
-                      })
-                    }
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs font-bold text-white"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                      Selo / Subtítulo
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedMarker.badgeText || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updatePlanetMarkers(
+                          activeMarkers.map((m) =>
+                            m.id === selectedMarker.id
+                              ? { ...m, badgeText: val }
+                              : m
+                          )
+                        );
+                      }}
+                      className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs text-white"
+                    />
+                  </div>
 
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-950 border border-zinc-800">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-700 flex items-center justify-center">
-                      {selectedGlobeMarker.iconPng ? (
-                        <img
-                          src={selectedGlobeMarker.iconPng}
-                          alt=""
-                          className="w-8 h-8 object-contain"
-                        />
-                      ) : (
-                        <span className="text-lg">
-                          {selectedGlobeMarker.iconEmoji || '🏰'}
-                        </span>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
+                      Mapa Regional Vinculado
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedMarker.targetWorldMapId || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updatePlanetMarkers(
+                            activeMarkers.map((m) =>
+                              m.id === selectedMarker.id
+                                ? { ...m, targetWorldMapId: val }
+                                : m
+                            )
+                          );
+                        }}
+                        className="flex-1 rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white"
+                      >
+                        {savedWorldMaps.map((wm) => (
+                          <option key={wm.id} value={wm.id}>
+                            {wm.title || wm.id}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedMarker.targetWorldMapId && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSwitchToRegionalMapEditor(
+                              selectedMarker.targetWorldMapId!
+                            )
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 text-xs font-bold flex items-center gap-1 hover:bg-indigo-600/50 cursor-pointer"
+                          title="Abrir Editor deste Mapa Regional"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Editar
+                        </button>
                       )}
                     </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        Ícone PNG em Foco
-                      </span>
-                      <span className="text-[9.5px] text-zinc-400">
-                        Exibido quando o marcador entra em foco no globo
-                      </span>
-                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => globeMarkerIconInputRef.current?.click()}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold cursor-pointer"
-                  >
-                    Upload PNG
-                  </button>
-                </div>
 
-                <div className="p-3 rounded-xl bg-indigo-950/35 border border-indigo-500/40 space-y-2">
-                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Qual Mapa Regional (Camada 3) abre ao clicar?</span>
-                  </label>
-                  <select
-                    value={
-                      selectedGlobeMarker.targetWorldMapId ||
-                      savedWorldMaps[0]?.id ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      updatePlanetGlobeMarker(selectedPlanet.id, selectedGlobeMarker.id, {
-                        targetWorldMapId: e.target.value,
-                      })
-                    }
-                    className="w-full bg-zinc-900 border border-indigo-500/40 rounded-lg px-2.5 py-2 text-xs font-bold text-white"
-                  >
-                    {savedWorldMaps.map((wm, idx) => (
-                      <option key={wm.id || idx} value={wm.id}>
-                        🗺️ {wm.title || `Mapa Regional ${idx + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const targetId =
-                        selectedGlobeMarker.targetWorldMapId ||
-                        savedWorldMaps[0]?.id ||
-                        'map-main-default';
-                      onSwitchToRegionalMapEditor(targetId);
-                    }}
-                    className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Editar Camada 3 (Mapa Regional)</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onCreateNewRegionalMapForMarker(
+                          selectedMarker.id,
+                          selectedMarker.name
+                        )
+                      }
+                      className="text-[11px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
+                    >
+                      + Criar Novo Mapa Regional Exclusivo
+                    </button>
 
-      {/* CANVAS INTERATIVO DO EDITOR (EXIBE CAMADA 1 OU CAMADA 2) */}
-      <div className="flex-1 overflow-auto flex flex-col items-center justify-center p-6 bg-zinc-950 relative select-none">
-        <div className="mb-3 flex items-center justify-between w-full max-w-[860px] px-4 py-2 rounded-xl bg-zinc-900/90 border border-zinc-800">
-          <span className="text-xs font-bold text-zinc-200">
-            {editorLayerSubTab === 'solar_layer1'
-              ? '🪐 Preview Camada 1: Arraste os planetas nas órbitas'
-              : `🌍 Preview Camada 2: Arraste os marcadores sobre o globo de "${selectedPlanet?.name}"`}
-          </span>
-          <button
-            type="button"
-            onClick={() => setAutoPlayPreview((p) => !p)}
-            className={`px-3 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 cursor-pointer border ${
-              autoPlayPreview
-                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-            }`}
-          >
-            {autoPlayPreview ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-            <span>{autoPlayPreview ? 'Pausar Giro' : 'Girar'}</span>
-          </button>
+                    {activeMarkers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const filtered = activeMarkers.filter(
+                            (m) => m.id !== selectedMarker.id
+                          );
+                          updatePlanetMarkers(filtered);
+                          setSelectedMarkerId(filtered[0]?.id || null);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 text-[11px] font-bold hover:bg-rose-500/30 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-
-        {editorLayerSubTab === 'solar_layer1' ? (
-          <div
-            ref={solarCanvasRef}
-            onPointerMove={handleCanvasPointerMove}
-            onPointerUp={() => setDraggingPlanetId(null)}
-            onPointerLeave={() => setDraggingPlanetId(null)}
-            style={{ width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-            className="relative rounded-2xl overflow-hidden border-2 border-zinc-800 shadow-[0_0_50px_rgba(0,0,0,0.85)] bg-[#020308] shrink-0"
-          >
-            <SolarSystemLayerView
-              project={project}
-              screenWidth={canvasWidth}
-              screenHeight={canvasHeight}
-              pausedPlanetId={selectedPlanet?.id || null}
-              onSelectPausedPlanet={(id) => {
-                if (id) setSelectedPlanetId(id);
-              }}
-              onEnterPlanetGlobe={(planet) => {
-                setSelectedPlanetId(planet.id);
-                setEditorLayerSubTab('globe_layer2');
-              }}
-            />
-          </div>
-        ) : (
-          <div
-            ref={globeCanvasRef}
-            onPointerMove={handleGlobeMarkerPointerMove}
-            onPointerUp={() => setDraggingGlobeMarkerId(null)}
-            onPointerLeave={() => setDraggingGlobeMarkerId(null)}
-            style={{ width: `${canvasWidth}px`, height: `${canvasHeight}px` }}
-            className="relative rounded-2xl overflow-hidden border-2 border-zinc-800 shadow-[0_0_50px_rgba(0,0,0,0.85)] bg-[#03050a] shrink-0"
-          >
-            <PlanetGlobeEmulatorView
-              project={project}
-              activePlanet={selectedPlanet}
-              screenWidth={canvasWidth}
-              screenHeight={canvasHeight}
-              availableMaps={savedWorldMaps}
-              onSelectRegionMarker={(marker) => {
-                setSelectedGlobeMarkerId(marker.id);
-                if (marker.targetWorldMapId) {
-                  onSwitchToRegionalMapEditor(marker.targetWorldMapId);
-                }
-              }}
-            />
-          </div>
-        )}
       </div>
     </div>
   );

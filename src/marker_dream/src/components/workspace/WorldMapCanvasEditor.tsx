@@ -43,6 +43,8 @@ import {
 import { DEFAULT_CLOUD_SVG, DEFAULT_FOG_SVG } from '../../data/defaultAtmosphereAssets';
 import { readUploadedImage } from '../../utils/tileGenerator';
 import { uploadFileToDisk } from '../../../../core/DiskAssetEngine';
+import { OrnateMapMarkerPin } from './OrnateMapMarkerPin';
+import { PlanetGlobeEditorSection, getOrCreatePlanetGlobeConfig } from './PlanetGlobeView';
 
 // Imagens padrão de Mapas Panorâmicos (SVG estilizados e decorativos)
 export const DEFAULT_WORLD_MAP_BACKGROUNDS = [
@@ -175,6 +177,7 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
   showToast,
 }) => {
   const worldMap = getOrCreateWorldMapConfig(project);
+  const [editorLayerMode, setEditorLayerMode] = useState<'planet' | 'region'>('planet');
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('pois');
   const [selectedPoiId, setSelectedPoiId] = useState<string | null>(
     worldMap.pointsOfInterest[0]?.id || null
@@ -434,29 +437,35 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
     }
   };
 
-  // Upload de PNG de ícone para o POI selecionado (Persistido na unidade de disco)
+  // Upload de PNG de ícone para o POI selecionado (Persistido na unidade de disco + fallback local)
   const handleUploadPoiIcon = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedPoiId) return;
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    const diskUrl = await uploadFileToDisk(file, 'maps');
-    if (diskUrl) {
-      updatePoi(selectedPoiId, { iconPng: diskUrl });
-      showToast('🖼️ PNG personalizado do ponto salvo na unidade local!');
+    try {
+      const localRes = await readUploadedImage(file);
+      const diskUrl = await uploadFileToDisk(file, 'maps');
+      updatePoi(selectedPoiId, { iconPng: diskUrl || localRes.dataUrl });
+      showToast('🖼️ PNG personalizado do marcador atualizado!');
+    } catch {
+      showToast('Erro ao carregar PNG do marcador.');
     }
   };
 
-  // Upload de Banner da Janela de Viagem (Persistido na unidade de disco)
+  // Upload de Banner da Janela de Viagem (Persistido na unidade de disco + fallback local)
   const handleUploadPoiBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedPoiId) return;
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    const diskUrl = await uploadFileToDisk(file, 'maps');
-    if (diskUrl) {
-      updatePoi(selectedPoiId, { bannerPng: diskUrl });
-      showToast('🖼️ Banner da janela de viagem salvo na unidade local!');
+    try {
+      const localRes = await readUploadedImage(file);
+      const diskUrl = await uploadFileToDisk(file, 'maps');
+      updatePoi(selectedPoiId, { bannerPng: diskUrl || localRes.dataUrl });
+      showToast('🖼️ Banner da janela de viagem atualizado!');
+    } catch {
+      showToast('Erro ao carregar banner.');
     }
   };
 
@@ -581,8 +590,6 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
   // Camadas de visibilidade
   const isBgVisible = layers.find((l) => l.id === 'background')?.visible !== false;
   const bgOpacity = layers.find((l) => l.id === 'background')?.opacity ?? 1.0;
-  const isRoutesVisible = layers.find((l) => l.id === 'routes')?.visible !== false;
-  const routesOpacity = layers.find((l) => l.id === 'routes')?.opacity ?? 1.0;
   const isPoisVisible = layers.find((l) => l.id === 'pois')?.visible !== false;
   const poisOpacity = layers.find((l) => l.id === 'pois')?.opacity ?? 1.0;
   const isDecorationsVisible = layers.find((l) => l.id === 'decorations')?.visible !== false;
@@ -617,16 +624,62 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
 
           <div className="h-4 w-[1px] bg-zinc-800" />
 
-          {/* Botão Adicionar Ponto de Interesse */}
-          <button
-            type="button"
-            onClick={handleAddNewPoi}
-            className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
-            title="Adicionar novo Ponto de Interesse (Local clicável no mapa)"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[3]" />
-            <span>Adicionar Ponto</span>
-          </button>
+          {/* Seletor Principal: Editor do Globo Planetário vs Editor de Mapa Regional */}
+          <div className="flex items-center bg-zinc-950 p-0.5 rounded-xl border border-zinc-800">
+            <button
+              type="button"
+              onClick={() => setEditorLayerMode('planet')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                editorLayerMode === 'planet'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Editar o Planeta Giratório e os Marcadores Globais das Regiões"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>🌍 Globo do Planeta</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditorLayerMode('region')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                editorLayerMode === 'region'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Editar o Mapa Regional selecionado e seus Locais/Fases"
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>🗺️ Mapa Regional ({worldMap.title || 'Ativo'})</span>
+            </button>
+          </div>
+
+          <div className="h-4 w-[1px] bg-zinc-800" />
+
+          {/* Botão Adicionar Ponto de Interesse (quando no Mapa Regional) */}
+          {editorLayerMode === 'region' && (
+            <>
+              <button
+                type="button"
+                onClick={handleAddNewPoi}
+                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
+                title="Adicionar novo Ponto de Interesse (Local clicável no mapa)"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                <span>+ Novo Marcador</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => bgUploadInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
+                title="Trocar a imagem PNG de fundo deste Mapa Regional"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>🖼️ Trocar PNG desta Região</span>
+              </button>
+            </>
+          )}
 
           {/* Botão do Modo de Inserção Contínua com Ramificação */}
           <button
@@ -716,7 +769,69 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Área Principal: Menu Lateral à ESQUERDA + Canvas Panorâmico ao CENTRO */}
+      {/* Área Principal: Modo Globo do Planeta OU Modo Mapa Regional */}
+      {editorLayerMode === 'planet' ? (
+        <PlanetGlobeEditorSection
+          project={project}
+          setProject={setProject}
+          savedWorldMaps={savedWorldMaps}
+          onSwitchToRegionalMapEditor={(targetMapId) => {
+            handleSwitchMap(targetMapId);
+            setEditorLayerMode('region');
+          }}
+          onCreateNewRegionalMapForMarker={(markerId, markerName) => {
+            const newMapId = `map-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+            const nowIso = new Date().toISOString();
+            const newMap: WorldMapConfig = {
+              id: newMapId,
+              enabled: true,
+              title: `Região: ${markerName}`,
+              description: `Mapa regional vinculado ao marcador planetário ${markerName}.`,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+              backgroundPng: DEFAULT_WORLD_MAP_BACKGROUNDS[0].url,
+              mapWidth: 1600,
+              mapHeight: 667,
+              initialScrollX: 0,
+              layers: DEFAULT_WORLD_MAP_LAYERS,
+              atmosphere: DEFAULT_WORLD_MAP_ATMOSPHERE,
+              pointsOfInterest: [
+                {
+                  id: `poi-start-${Date.now()}`,
+                  name: `Entrada de ${markerName}`,
+                  description: 'Ponto inicial desta região.',
+                  x: 280,
+                  y: 330,
+                  iconEmoji: '🏰',
+                  iconType: 'town',
+                  status: 'unlocked',
+                  badgeText: 'Início',
+                  scale: 1.0,
+                },
+              ],
+            };
+            const nextSaved = [...savedWorldMaps, newMap];
+            setProject((prev) => {
+              const currentGlobe = getOrCreatePlanetGlobeConfig(prev);
+              return {
+                ...prev,
+                worldMap: newMap,
+                savedWorldMaps: nextSaved,
+                activeWorldMapId: newMapId,
+                planetGlobe: {
+                  ...currentGlobe,
+                  markers: currentGlobe.markers.map((m) =>
+                    m.id === markerId ? { ...m, targetWorldMapId: newMapId } : m
+                  ),
+                },
+              };
+            });
+            setEditorLayerMode('region');
+            showToast(`✨ Mapa Regional "${newMap.title}" criado e vinculado ao marcador!`);
+          }}
+          showToast={showToast}
+        />
+      ) : (
       <div className="flex-1 flex overflow-hidden relative">
         {/* Painel Lateral ESQUERDO: Abas de Pontos, Camadas, Atmosfera e Fundo */}
         <div className="w-[420px] xl:w-[460px] 2xl:w-[500px] bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 z-20 shadow-xl overflow-hidden">
@@ -2149,127 +2264,6 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
               </div>
             )}
 
-            {/* Camada 2: Rotas e Trilhas entre POIs com Suporte a Ramificações */}
-            {isRoutesVisible && (
-              <svg
-                className="absolute inset-0 pointer-events-none z-10 transition-opacity duration-200"
-                style={{ width: `${mapW}px`, height: `${mapH}px`, opacity: routesOpacity }}
-              >
-                <defs>
-                  <linearGradient id="editorRouteGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.8" />
-                    <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.85" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.8" />
-                  </linearGradient>
-                </defs>
-
-                {/* Coleta todos os pares de rotas encadeadas e ramificações */}
-                {(() => {
-                  const pairs: Array<{ from: WorldMapPOI; to: WorldMapPOI; id: string }> = [];
-
-                  if (worldMap.routeConnections && worldMap.routeConnections.length > 0) {
-                    worldMap.routeConnections.forEach((rc) => {
-                      const f = worldMap.pointsOfInterest.find((p) => p.id === rc.fromId);
-                      const t = worldMap.pointsOfInterest.find((p) => p.id === rc.toId);
-                      if (f && t) pairs.push({ from: f, to: t, id: rc.id });
-                    });
-                  }
-
-                  worldMap.pointsOfInterest.forEach((poi) => {
-                    if (poi.parentId) {
-                      const parent = worldMap.pointsOfInterest.find((p) => p.id === poi.parentId);
-                      if (parent && !pairs.some((p) => p.from.id === parent.id && p.to.id === poi.id)) {
-                        pairs.push({ from: parent, to: poi, id: `parent-${parent.id}-${poi.id}` });
-                      }
-                    }
-                  });
-
-                  if (pairs.length === 0) {
-                    worldMap.pointsOfInterest.forEach((poi, idx) => {
-                      const nextPoi = worldMap.pointsOfInterest[idx + 1];
-                      if (nextPoi) pairs.push({ from: poi, to: nextPoi, id: `seq-${poi.id}-${nextPoi.id}` });
-                    });
-                  }
-
-                  return pairs.map((pair) => {
-                    const mx = (pair.from.x + pair.to.x) / 2;
-                    const my = (pair.from.y + pair.to.y) / 2 - 25;
-
-                    return (
-                      <g key={`editor-path-${pair.id}`} className="transition-all duration-300">
-                        {/* Camada 1: Valeta / Sombra profunda do caminho RPG */}
-                        <path
-                          d={`M ${pair.from.x} ${pair.from.y} Q ${mx} ${my} ${pair.to.x} ${pair.to.y}`}
-                          fill="none"
-                          stroke="#180e06"
-                          strokeWidth={9}
-                          strokeLinecap="round"
-                          opacity={0.85}
-                        />
-                        {/* Camada 2: Borda de pergaminho/estrada de pedra dourada */}
-                        <path
-                          d={`M ${pair.from.x} ${pair.from.y} Q ${mx} ${my} ${pair.to.x} ${pair.to.y}`}
-                          fill="none"
-                          stroke="#b45309"
-                          strokeWidth={6}
-                          strokeLinecap="round"
-                          opacity={0.9}
-                        />
-                        {/* Camada 3: Trilha de energia/pegadas luminosas com pontilhado de jogo */}
-                        <path
-                          d={`M ${pair.from.x} ${pair.from.y} Q ${mx} ${my} ${pair.to.x} ${pair.to.y}`}
-                          fill="none"
-                          stroke="#fef08a"
-                          strokeWidth={3}
-                          strokeDasharray="9,6"
-                          strokeLinecap="round"
-                          className="animate-pulse"
-                        />
-                        {/* Marcador de Passo intermediário da jornada RPG */}
-                        <circle
-                          cx={mx}
-                          cy={my}
-                          r={4.5}
-                          fill="#f59e0b"
-                          stroke="#78350f"
-                          strokeWidth={2}
-                          className="shadow-sm"
-                        />
-                        <circle cx={mx} cy={my} r={2} fill="#fef08a" />
-                      </g>
-                    );
-                  });
-                })()}
-
-                {/* Linha Guia em Tempo Real no Modo Contínuo */}
-                {continuousMode && activeParentPoiId && mouseMapPos && (() => {
-                  const parentPoi = worldMap.pointsOfInterest.find((p) => p.id === activeParentPoiId);
-                  if (!parentPoi) return null;
-                  return (
-                    <g key="live-continuous-guide-line">
-                      <path
-                        d={`M ${parentPoi.x} ${parentPoi.y} L ${mouseMapPos.x} ${mouseMapPos.y}`}
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth={2.5}
-                        strokeDasharray="5,5"
-                        className="animate-pulse"
-                      />
-                      <circle
-                        cx={mouseMapPos.x}
-                        cy={mouseMapPos.y}
-                        r={12}
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        strokeDasharray="3,3"
-                      />
-                    </g>
-                  );
-                })()}
-              </svg>
-            )}
-
             {/* Camada 3: Pontos de Interesse (POIs) com PNGs */}
             {isPoisVisible && (
               <div
@@ -2300,7 +2294,9 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                       style={{
                         left: `${poi.x}px`,
                         top: `${poi.y}px`,
-                        transform: 'translate(-50%, -50%)',
+                        transform: poi.isInvisible
+                          ? 'translate(-50%, -50%)'
+                          : 'translate(-20%, -84%)',
                       }}
                       className={`absolute pointer-events-auto cursor-grab active:cursor-grabbing group select-none flex flex-col items-center transition-transform ${
                         isSelected ? 'z-30' : ''
@@ -2311,20 +2307,7 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                         <div className="absolute -inset-4 rounded-full border-2 border-dashed border-amber-400 animate-spin opacity-85 pointer-events-none" />
                       )}
 
-                      {/* Tag / Badge (Mantém tamanho fixo independente do zoom do mapa) */}
-                      {poi.badgeText && (
-                        <span
-                          style={{
-                            transform: `scale(${1 / Math.max(0.1, zoom)})`,
-                            transformOrigin: 'bottom center',
-                          }}
-                          className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-md mb-1 border border-amber-300"
-                        >
-                          {poi.badgeText}
-                        </span>
-                      )}
-
-                      {/* Ícone PNG Puro do POI ou Ponto Invisível (Sem Container Box) */}
+                      {/* Ícone PNG Puro do POI ou Ponto Invisível */}
                       {poi.isInvisible ? (
                         <div
                           style={{
@@ -2340,70 +2323,17 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                           <EyeOff className="w-4 h-4 text-amber-400" />
                         </div>
                       ) : (
-                        <div className="relative flex flex-col items-center">
-                          <div
-                            style={{
-                              transform: `scale(${poiScale * (isSelected ? 1.15 : 1.0)})`,
-                              transformOrigin: 'bottom center',
-                            }}
-                            className="relative transition-transform group-hover: brightness-110"
-                          >
-                            {poi.iconPng ? (
-                              <img
-                                src={poi.iconPng}
-                                alt={poi.name}
-                                className={`w-14 h-14 object-contain select-none pointer-events-none transition-all ${
-                                  isLocked
-                                    ? 'filter grayscale(100%) contrast(110%) brightness(80%) drop-shadow-[0_6px_12px_rgba(0,0,0,0.9)]'
-                                    : 'filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)]'
-                                }`}
-                                draggable={false}
-                              />
-                            ) : (
-                              <div
-                                className={`text-4xl select-none transition-all ${
-                                  isLocked
-                                    ? 'filter grayscale(100%) brightness(80%) drop-shadow-[0_6px_12px_rgba(0,0,0,0.9)]'
-                                    : 'filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)]'
-                                }`}
-                              >
-                                {poi.iconEmoji || '📍'}
-                              </div>
-                            )}
-
-                            {/* Ícone de Cadeado em Destaque na Frente quando Bloqueado */}
-                            {isLocked && (
-                              <div className="absolute inset-0 flex items-center justify-center z-20">
-                                {worldMap.customLockIconPng ? (
-                                  <img
-                                    src={worldMap.customLockIconPng}
-                                    alt="Bloqueado"
-                                    className="w-7 h-7 object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.9)]"
-                                  />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full bg-black/90 border border-rose-500/80 text-rose-400 flex items-center justify-center shadow-lg">
-                                    <Lock className="w-3.5 h-3.5 stroke-[2.5]" />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Cápsula na Frente e Inferior com Apenas o Nome do Ponto (Tamanho fixo no zoom) */}
-                          <div
-                            style={{
-                              transform: `scale(${1 / Math.max(0.1, zoom)})`,
-                              transformOrigin: 'top center',
-                            }}
-                            className={`mt-1 px-2.5 py-0.5 rounded-full bg-black/90 backdrop-blur-md border text-[10px] font-black shadow-lg whitespace-nowrap transition-colors ${
-                              isSelected
-                                ? 'border-amber-300 text-amber-300 bg-amber-950/90 ring-2 ring-amber-400/40'
-                                : 'border-amber-400/50 text-amber-300'
-                            }`}
-                          >
-                            {poi.name}
-                          </div>
-                        </div>
+                        <OrnateMapMarkerPin
+                          name={poi.name}
+                          iconPng={poi.iconPng}
+                          iconEmoji={poi.iconEmoji || '📍'}
+                          status={poi.status}
+                          customLockIconPng={worldMap.customLockIconPng}
+                          badgeText={poi.badgeText}
+                          isSelected={isSelected}
+                          scale={poiScale}
+                          sizeVariant="md"
+                        />
                       )}
                     </div>
                   );
@@ -2547,6 +2477,7 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* MODAL DE GERENCIAMENTO DE MÚLTIPLOS MAPAS */}
       {showMapManagerModal && (

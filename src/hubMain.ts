@@ -52,12 +52,47 @@ class HubApp {
   constructor() {
     this.container = document.getElementById('app')!;
     autoFullscreen();
-    this.menu = new MenuScreen(() => {
-      this.togglePrepMode(true);
-    });
+    const handleSideAction = (actionId: string): boolean => {
+      if (actionId === 'mapa') {
+        this.lastBattleTab = 'map';
+        this.switchTab('map');
+        return true;
+      }
+      if (actionId === 'inventario') {
+        (window as any).__hubAcademyInitialTab = 'backpack';
+        this.lastBattleTab = 'academy';
+        this.switchTab('academy', true);
+        return true;
+      }
+      if (actionId === 'missoes') {
+        (window as any).__hubAcademyInitialTab = 'jornada';
+        this.lastBattleTab = 'academy';
+        this.switchTab('academy', true);
+        return true;
+      }
+      if (actionId === 'tarefas') {
+        (window as any).__hubAcademyInitialTab = 'tarefas';
+        this.lastBattleTab = 'academy';
+        this.switchTab('academy', true);
+        return true;
+      }
+      if (actionId === 'forja') {
+        this.navigate('forge.html');
+        return true;
+      }
+      return false;
+    };
+
+    this.menu = new MenuScreen(
+      () => {
+        this.togglePrepMode(true);
+      },
+      handleSideAction
+    );
     this.menuLandscape = new MenuScreenLandscape(
       () => this.togglePrepMode(true),
-      (tab: TabId) => this.switchTab(tab)
+      (tab: TabId) => this.switchTab(tab),
+      handleSideAction
     );
     this.settings = new SettingsScreen(
       () => {
@@ -199,17 +234,25 @@ class HubApp {
     mainContent?.addEventListener(
       'scroll',
       (ev) => {
+        if (
+          this.currentTab === 'academy' ||
+          this.currentTab === 'profile' ||
+          this.currentTab === 'settings'
+        ) {
+          document.body.classList.add('hub-scroll-hide-bars');
+          return;
+        }
         const target = ev.target as HTMLElement | null;
         if (!target || typeof target.scrollTop !== 'number') return;
         // Ignore horizontal carousels
-        if (target.scrollHeight <= target.clientHeight + 24) return;
+        if (target.scrollHeight <= target.clientHeight + 20) return;
         const curY = target.scrollTop;
         const prevY = lastScrollByEl.get(target) ?? curY;
         const dy = curY - prevY;
         lastScrollByEl.set(target, curY);
-        if (curY > 28 && dy > 3) {
+        if (curY > 18 && dy > 2) {
           document.body.classList.add('hub-scroll-hide-bars');
-        } else if (dy < -3 || curY <= 20) {
+        } else if (dy < -3 || curY <= 12) {
           document.body.classList.remove('hub-scroll-hide-bars');
         }
       },
@@ -342,7 +385,16 @@ class HubApp {
   }
 
   private updateUIComponents() {
-    document.body.classList.remove('hub-scroll-hide-bars');
+    if (
+      this.currentTab === 'map' ||
+      this.currentTab === 'academy' ||
+      this.currentTab === 'profile' ||
+      this.currentTab === 'settings'
+    ) {
+      document.body.classList.add('hub-scroll-hide-bars');
+    } else {
+      document.body.classList.remove('hub-scroll-hide-bars');
+    }
     document.body.classList.remove('hub-in-active-phase');
     this.bottomNav.update(this.currentTab, this.isPrepMode);
 
@@ -357,7 +409,12 @@ class HubApp {
 
     const topHeader = document.getElementById('top-header-component');
     if (topHeader) {
-      if (this.currentTab === 'profile' || this.currentTab === 'settings') {
+      if (
+        this.currentTab === 'map' ||
+        this.currentTab === 'academy' ||
+        this.currentTab === 'profile' ||
+        this.currentTab === 'settings'
+      ) {
         topHeader.style.display = 'none';
       } else {
         topHeader.style.display = 'flex';

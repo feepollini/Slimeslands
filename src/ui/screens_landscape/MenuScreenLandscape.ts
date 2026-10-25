@@ -12,10 +12,14 @@ export class MenuScreenLandscape {
   private _onSwitchTab?: (tab: any) => void;
   private sideActions: SideActions;
 
-  constructor(onStart: () => void, onSwitchTab?: (tab: any) => void) {
+  constructor(
+    onStart: () => void,
+    onSwitchTab?: (tab: any) => void,
+    onSideAction?: (actionId: string) => boolean | void
+  ) {
     this._onStart = onStart;
     this._onSwitchTab = onSwitchTab;
-    this.sideActions = new SideActions();
+    this.sideActions = new SideActions(undefined, onSideAction);
   }
 
   public render(): string {

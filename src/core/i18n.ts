@@ -14,7 +14,9 @@ const DICT: Record<string, Record<Lang, string>> = {
 'header.lv': { pt: 'LV', en: 'LV', es: 'NV' },
 'header.xps': { pt: 'XPS', en: 'XP', es: 'XP' },
 // ─── LATERAIS (SideActions) ───
-'side.missoes': { pt: 'MISSÕES', en: 'QUESTS', es: 'MISIONES' },
+'side.missoes': { pt: 'JORNADA', en: 'JOURNEY', es: 'JORNADA' },
+'side.tarefas': { pt: 'TAREFAS', en: 'TASKS', es: 'TAREAS' },
+'side.inventario': { pt: 'INVENTÁRIO', en: 'INVENTORY', es: 'INVENTARIO' },
 'side.correio': { pt: 'CORREIO', en: 'MAIL', es: 'CORREO' },
 'side.ranking': { pt: 'RANKING', en: 'RANKING', es: 'RANKING' },
 'side.amigos': { pt: 'AMIGOS', en: 'FRIENDS', es: 'AMIGOS' },

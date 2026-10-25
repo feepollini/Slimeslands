@@ -25,29 +25,41 @@ body.is-landscape-mode {
   overflow: hidden;
 }
 
-/* Scrollbars discretas e elegantes em todos os painéis internos do modo paisagem */
-body.is-landscape-mode * {
+/* Scrollbars discretas e elegantes em painéis internos do modo paisagem (respeitando .no-scrollbar) */
+body.is-landscape-mode *:not(.no-scrollbar) {
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 175, 55, 0.35) rgba(0, 0, 0, 0.2);
 }
 
-body.is-landscape-mode *::-webkit-scrollbar {
+body.is-landscape-mode *:not(.no-scrollbar)::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
-body.is-landscape-mode *::-webkit-scrollbar-track {
+body.is-landscape-mode *:not(.no-scrollbar)::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.18);
   border-radius: 999px;
 }
 
-body.is-landscape-mode *::-webkit-scrollbar-thumb {
+body.is-landscape-mode *:not(.no-scrollbar)::-webkit-scrollbar-thumb {
   background: rgba(212, 175, 55, 0.38);
   border-radius: 999px;
 }
 
-body.is-landscape-mode *::-webkit-scrollbar-thumb:hover {
+body.is-landscape-mode *:not(.no-scrollbar)::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 175, 55, 0.65);
+}
+
+/* Garante ocultação total de scrollbars nativas em elementos .no-scrollbar no modo paisagem */
+body.is-landscape-mode .no-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+body.is-landscape-mode .no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Containers raiz ocupam 100% da janela horizontal sem o limite de 430px */
@@ -1649,12 +1661,12 @@ body.is-landscape-mode #overlay-fullscreen .premium-card-container {
    8. MAPA, ACADEMIA, PERFIL E CONFIGURAÇÕES EM MODO PAISAGEM
    ============================================================================ */
 body.is-landscape-mode #map-screen-inner {
-  padding: clamp(44px, 9.5dvh, 68px) clamp(12px, 2.2vw, 28px) clamp(48px, 10.5dvh, 80px) !important;
+  padding: 0 !important;
   box-sizing: border-box !important;
 }
 
 body.is-landscape-mode .academy-screen {
-  padding: clamp(44px, 9.5dvh, 68px) clamp(12px, 2.2vw, 28px) clamp(48px, 10.5dvh, 80px) !important;
+  padding: 0 !important;
   box-sizing: border-box !important;
 }
 
@@ -1919,3 +1931,27 @@ body.is-landscape-mode .settings-screen .settings-list {
   display: none !important;
 }
 
+/* ============================================================================
+   9. OCULTAÇÃO AUTOMÁTICA DO HEADER E BARRA DE NAVEGAÇÃO EM TELAS INTERNAS / ROLAGEM
+   ============================================================================ */
+body.is-landscape-mode #top-header-component,
+body.is-landscape-mode .menu-top-bar,
+body.is-landscape-mode .menu-bottom-nav {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease !important;
+}
+
+body.is-landscape-mode.hub-scroll-hide-bars #top-header-component,
+body.is-landscape-mode.hub-scroll-hide-bars .menu-top-bar,
+body.is-landscape-mode.hub-in-active-phase #top-header-component,
+body.is-landscape-mode.hub-in-active-phase .menu-top-bar {
+  transform: translateY(-130%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.is-landscape-mode.hub-scroll-hide-bars .menu-bottom-nav,
+body.is-landscape-mode.hub-in-active-phase .menu-bottom-nav {
+  transform: translate(-50%, 150%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

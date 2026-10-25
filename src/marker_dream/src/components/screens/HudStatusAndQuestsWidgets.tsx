@@ -1106,7 +1106,7 @@ export const QuestJourneyPopupModal: React.FC<{
   initialTab?: 'jornada' | 'tarefas';
   initialSelectedQuestId?: string;
   onClose: () => void;
-  onSwitchToBackpack?: () => void;
+  onSwitchToBackpack?: (folderTab?: 'equipamento' | 'inventario_geral' | 'deck') => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
   isInsideEmulator?: boolean;
   isHubFullScreen?: boolean;
@@ -1126,6 +1126,10 @@ export const QuestJourneyPopupModal: React.FC<{
   const [selectedQuestId, setSelectedQuestId] = useState<string | null>(
     initialSelectedQuestId || null
   );
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const { jornada, tarefas } = useMemo(
     () => getOrderedPhaseQuests(project, true),
@@ -1306,188 +1310,404 @@ export const QuestJourneyPopupModal: React.FC<{
     });
   };
 
-  // Renderizador do Painel de Detalhes da Quest Selecionada
-  const renderQuestDetailsBoard = (q: UnifiedHudQuestEntry) => {
+  // Extrai slots visuais de recompensas (Assets / Moedas / EXP / Baús) para exibir como ícones de jogo sem poluição textual
+  const getVisualRewardSlots = (q: UnifiedHudQuestEntry) => {
+    const slots: { icon: string; badge: string; rarityBg: string; label: string }[] = [];
+    const rawRewards = q.rawQuest?.rewards || [];
+
+    for (const r of rawRewards) {
+      if (r.category === 'xp' && r.xpAmount) {
+        slots.push({
+          icon: '⭐',
+          badge: `+${r.xpAmount}`,
+          rarityBg: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+          label: 'EXP',
+        });
+      } else if (r.category === 'currency') {
+        const amt = (r as any).amount || (r as any).currencyAmount || 100;
+        slots.push({
+          icon: '🪙',
+          badge: `+${amt}`,
+          rarityBg: 'linear-gradient(180deg, #9b6c15 0%, #523707 100%)',
+          label: 'Ouro',
+        });
+      } else if (r.category === 'item') {
+        slots.push({
+          icon: (r as any).iconEmoji || '🎁',
+          badge: `x${(r as any).quantity || 1}`,
+          rarityBg: 'linear-gradient(180deg, #4c1d95 0%, #2e1065 100%)',
+          label: (r as any).itemName || 'Item',
+        });
+      }
+    }
+
+    if (slots.length === 0) {
+      slots.push(
+        {
+          icon: '⭐',
+          badge: '+200',
+          rarityBg: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+          label: 'EXP',
+        },
+        {
+          icon: '🪙',
+          badge: '+150',
+          rarityBg: 'linear-gradient(180deg, #9b6c15 0%, #523707 100%)',
+          label: 'Ouro',
+        },
+        {
+          icon: q.category === 'jornada' ? '🏆' : '🎁',
+          badge: 'x1',
+          rarityBg: 'linear-gradient(180deg, #064e3b 0%, #022c22 100%)',
+          label: 'Baú',
+        }
+      );
+    }
+
+    return slots.slice(0, 4);
+  };
+
+  // Barra de Abas Unificada no Topo (EQUIPAR | ITENS | PETS | JORNADA | TAREFAS)
+  const renderUnifiedTopSubTabs = () => (
+    <div
+      className="w-full p-1.5 rounded-2xl flex items-center justify-between gap-1.5 shrink-0"
+      style={{
+        background: 'linear-gradient(180deg, rgba(11, 47, 98, 0.86) 0%, rgba(4, 18, 42, 0.94) 100%)',
+        border: '2px solid #c59638',
+        outline: '1.5px solid #4a3006',
+        boxShadow: '0 8px 22px rgba(0, 8, 22, 0.65), inset 0 1px 1px rgba(255, 243, 194, 0.35)',
+        backdropFilter: 'blur(10px)',
+      }}
+    >
+      <div
+        className={`grid ${
+          onSwitchToBackpack ? 'grid-cols-5' : 'grid-cols-2'
+        } gap-1 sm:gap-1.5 flex-1 min-w-0`}
+      >
+        {onSwitchToBackpack && (
+          <>
+            <button
+              type="button"
+              onClick={() => onSwitchToBackpack('equipamento')}
+              className="btn-pearl-gold cursor-pointer w-full"
+              title="Equipamento & Herói"
+            >
+              <div className="btn-pearl-inner py-1.5 px-1.5 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase flex items-center justify-center gap-1 truncate">
+                <span>🛡️</span>
+                <span className="truncate">EQUIPAR</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSwitchToBackpack('inventario_geral')}
+              className="btn-pearl-gold cursor-pointer w-full"
+              title="Mochila de Itens"
+            >
+              <div className="btn-pearl-inner py-1.5 px-1.5 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase flex items-center justify-center gap-1 truncate">
+                <span>🎒</span>
+                <span className="truncate">ITENS</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSwitchToBackpack('deck')}
+              className="btn-pearl-gold cursor-pointer w-full"
+              title="Deck de Pets & Criaturas"
+            >
+              <div className="btn-pearl-inner py-1.5 px-1.5 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase flex items-center justify-center gap-1 truncate">
+                <span>🃏</span>
+                <span className="truncate">PETS</span>
+              </div>
+            </button>
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('jornada');
+            setSelectedQuestId(null);
+          }}
+          className={
+            activeTab === 'jornada'
+              ? 'btn-royal-gold cursor-pointer w-full'
+              : 'btn-pearl-gold cursor-pointer w-full'
+          }
+          title="Jornada Principal"
+        >
+          <div
+            className={
+              activeTab === 'jornada'
+                ? 'btn-royal-inner py-1.5 px-1.5 flex items-center justify-center gap-1 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase truncate'
+                : 'btn-pearl-inner py-1.5 px-1.5 flex items-center justify-center gap-1 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase truncate'
+            }
+          >
+            <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
+            <span className="truncate">JORNADA</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('tarefas');
+            setSelectedQuestId(null);
+          }}
+          className={
+            activeTab === 'tarefas'
+              ? 'btn-royal-gold cursor-pointer w-full'
+              : 'btn-pearl-gold cursor-pointer w-full'
+          }
+          title="Tarefas & Recompensas Rápidas"
+        >
+          <div
+            className={
+              activeTab === 'tarefas'
+                ? 'btn-royal-inner py-1.5 px-1.5 flex items-center justify-center gap-1 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase truncate'
+                : 'btn-pearl-inner py-1.5 px-1.5 flex items-center justify-center gap-1 font-cinzel font-black text-[8.5px] sm:text-[10px] uppercase truncate'
+            }
+          >
+            <span>📋</span>
+            <span className="truncate">TAREFAS</span>
+          </div>
+        </button>
+      </div>
+
+      {!isHubFullScreen && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="close-btn-outer cursor-pointer shrink-0 ml-1"
+          title="Fechar"
+        >
+          <div className="close-btn-inner">✕</div>
+        </button>
+      )}
+    </div>
+  );
+
+  // Card Gamificado Visual de cada Missão / Tarefa (Foco em Assets, Slots de Loot e Barra Visual)
+  const renderGamifiedQuestCard = (q: UnifiedHudQuestEntry) => {
+    const isSelected = selectedQuest?.id === q.id;
     const doneCount = q.objectives.filter((o) => o.completed).length;
     const totalCount = Math.max(1, q.objectives.length);
     const pct = Math.round((doneCount / totalCount) * 100);
+    const rewardSlots = getVisualRewardSlots(q);
 
     return (
-      <div className="rounded-2xl bg-[#fffdf7] border-[3px] border-[#d97706] shadow-[0_4px_0_#b45309] p-3 space-y-2.5 text-[#451a03]">
-        {/* Cabeçalho interno do card de detalhes + Botão de Selecionar Quest no Mapa */}
-        <div className="flex items-start justify-between gap-2 border-b-2 border-[#fde68a] pb-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-2 py-0.5 rounded-full bg-[#fbbf24] border-2 border-[#78350f] text-[#451a03] font-black text-[10px] shadow-[0_2px_0_#78350f]">
-                {q.iconEmoji} MISSÃO #{q.orderIndex}
+      <div
+        key={q.id}
+        onClick={() => setSelectedQuestId(isSelected ? null : q.id)}
+        className={`pearl-surface p-3 transition-all cursor-pointer relative overflow-hidden ${
+          isSelected
+            ? 'ring-2 ring-[#e5c168]'
+            : q.isLocked
+            ? 'opacity-80 hover:opacity-100'
+            : 'hover:brightness-[1.02]'
+        }`}
+        style={{
+          borderRadius: '20px',
+          border: q.isCompleted
+            ? '2.5px solid #16a34a'
+            : isSelected
+            ? '2.5px solid #c59638'
+            : '2px solid #c59638',
+          outline: '1.5px solid #4a3006',
+        }}
+      >
+        {/* Linha Principal do Card: Medalhão de Asset + Título/Barra Visual + Slots Visuais de Recompensa + Botão de Ação */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* 1. Medalhão Visual do Asset da Missão */}
+          <div
+            className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex flex-col items-center justify-center shrink-0 relative"
+            style={{
+              background: q.isCompleted
+                ? 'linear-gradient(180deg, #065f46 0%, #022c22 100%)'
+                : q.isLocked
+                ? 'linear-gradient(180deg, #334155 0%, #0f172a 100%)'
+                : 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+              border: '2px solid #e5c168',
+              boxShadow: '0 4px 10px rgba(0,8,22,0.5), inset 0 1px 2px rgba(255,243,194,0.45)',
+            }}
+          >
+            <span className="text-2xl sm:text-3xl leading-none drop-shadow-[0_3px_4px_rgba(0,0,0,0.65)]">
+              {q.isLocked ? '🔒' : q.iconEmoji || '⚔️'}
+            </span>
+            <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 rounded-full bg-[#2b1f14] border border-[#e5c168] font-cinzel font-black text-[8px] text-[#fff3c2]">
+              #{q.orderIndex}
+            </span>
+            {q.isCompleted && (
+              <span className="absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-full bg-emerald-500 border border-white text-white text-[9px] font-black flex items-center justify-center shadow">
+                ✓
               </span>
-              <span
-                className={`px-2 py-0.5 rounded-full font-black text-[10px] border-2 ${
-                  q.isCompleted
-                    ? 'bg-[#4ade80] border-[#14532d] text-[#052e16]'
-                    : q.isLocked
-                    ? 'bg-[#cbd5e1] border-[#475569] text-[#1e293b]'
-                    : q.status === 'active'
-                    ? 'bg-[#fef08a] border-[#92400e] text-[#78350f]'
-                    : 'bg-[#e0f2fe] border-[#0369a1] text-[#0c4a6e]'
-                }`}
-              >
-                {q.isCompleted
-                  ? '✔️ CONCLUÍDA'
-                  : q.isLocked
-                  ? '🔒 BLOQUEADA'
-                  : q.status === 'active'
-                  ? '✦ EM ANDAMENTO'
-                  : '❗ DISPONÍVEL'}
+            )}
+          </div>
+
+          {/* 2. Bloco Central: Título + Barra de Progresso Gamificada */}
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-cinzel font-black text-xs sm:text-sm text-[#2b1f14] truncate uppercase tracking-wide">
+                {q.title}
+              </h4>
+            </div>
+
+            {/* Barra de Progresso Estilo RPG com Contador Integrado */}
+            <div className="relative h-4 w-full rounded-full bg-[#1e140c] border border-[#8c6518] p-0.5 overflow-hidden shadow-inner">
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{
+                  width: `${Math.max(q.isCompleted ? 100 : 10, pct)}%`,
+                  background: q.isCompleted
+                    ? 'linear-gradient(90deg, #16a34a 0%, #4ade80 100%)'
+                    : 'linear-gradient(90deg, #0b3778 0%, #2563eb 50%, #e5c168 100%)',
+                }}
+              />
+              <span className="absolute inset-0 flex items-center justify-center font-cinzel font-black text-[8.5px] text-[#fff3c2] drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
+                {doneCount} / {totalCount} ETAPAS
               </span>
             </div>
-            <h4 className="text-sm sm:text-base font-black text-[#451a03] mt-1 leading-tight">
-              {q.title}
-            </h4>
           </div>
 
-          {/* Botão Tátil 3D de Selecionar Quest para o Mapa */}
-          <button
-            type="button"
-            onClick={(e) => handleToggleSelectQuestForMap(q, e)}
-            className={`shrink-0 px-3 py-1.5 rounded-full border-[2.5px] font-black text-[11px] flex items-center gap-1.5 transition-all active:translate-y-0.5 cursor-pointer ${
-              q.isSelectedForMap
-                ? 'bg-gradient-to-b from-[#22c55e] to-[#15803d] border-white text-white shadow-[0_3px_0_#14532d,0_4px_10px_rgba(0,0,0,0.3)]'
-                : 'bg-gradient-to-b from-[#38bdf8] to-[#0284c7] border-white text-white shadow-[0_3px_0_#075985,0_4px_10px_rgba(0,0,0,0.25)] hover:brightness-110'
-            }`}
-            title="Selecionar esta quest para que o ícone dela apareça destacado no Mapa"
-          >
-            <span>{q.isSelectedForMap ? '🎯' : '📍'}</span>
-            <span>{q.isSelectedForMap ? 'NO MAPA ✓' : 'SELECIONAR P/ MAPA'}</span>
-          </button>
-        </div>
-
-        {/* Descrição */}
-        <p className="text-xs font-semibold text-[#78350f] bg-[#fef3c7]/80 p-2.5 rounded-xl border-2 border-[#fde68a] leading-relaxed">
-          {q.description}
-        </p>
-
-        {/* Barra de Progresso Geral Estilo Clash Royale */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] font-black text-[#78350f]">
-            <span>PROGRESSO DAS ETAPAS</span>
-            <span>
-              {doneCount}/{q.objectives.length} ({pct}%)
-            </span>
-          </div>
-          <div className="h-4 w-full rounded-full bg-[#451a03] p-0.5 border-2 border-[#78350f] shadow-inner overflow-hidden relative">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#22c55e] via-[#4ade80] to-[#16a34a] transition-all duration-300"
-              style={{ width: `${Math.max(8, pct)}%` }}
-            />
-            <div className="absolute top-0.5 left-2 right-2 h-1 rounded-full bg-white/40 pointer-events-none" />
-          </div>
-        </div>
-
-        {/* Lista de Objetivos / Etapas */}
-        <div className="space-y-1.5">
-          {q.objectives.map((obj, oIdx) => (
-            <div
-              key={obj.id}
-              className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border-2 font-bold text-xs ${
-                obj.completed
-                  ? 'bg-[#dcfce7] border-[#22c55e] text-[#14532d]'
-                  : 'bg-white border-[#e2e8f0] text-[#334155]'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border-2 shrink-0 ${
-                    obj.completed
-                      ? 'bg-[#22c55e] border-[#14532d] text-white'
-                      : 'bg-[#fef08a] border-[#92400e] text-[#78350f]'
-                  }`}
-                >
-                  {obj.completed ? '✓' : oIdx + 1}
-                </span>
-                <span className={`truncate ${obj.completed ? 'line-through opacity-80' : ''}`}>
-                  {obj.title}
+          {/* 3. Slots Visuais de Recompensas (Loot Frames) */}
+          <div className="hidden xs:flex items-center gap-1.5 shrink-0">
+            {rewardSlots.map((slot, sIdx) => (
+              <div
+                key={`${q.id}-rew-${sIdx}`}
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex flex-col items-center justify-center relative shrink-0"
+                style={{
+                  background: slot.rarityBg,
+                  border: '1.5px solid #e5c168',
+                  boxShadow: '0 3px 8px rgba(0,8,22,0.45), inset 0 1px 1px rgba(255,243,194,0.35)',
+                }}
+                title={`${slot.label}: ${slot.badge}`}
+              >
+                <span className="text-base sm:text-lg leading-none drop-shadow">{slot.icon}</span>
+                <span className="font-cinzel font-black text-[7.5px] text-[#fff3c2] leading-none mt-0.5">
+                  {slot.badge}
                 </span>
               </div>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                  obj.completed
-                    ? 'bg-[#bbf7d0] border-[#16a34a] text-[#14532d]'
-                    : 'bg-[#fef3c7] border-[#d97706] text-[#92400e]'
-                }`}
-              >
-                {obj.current}/{obj.required}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Baú de Recompensas + Indicador de Ícone no Mapa */}
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-gradient-to-r from-[#fef3c7] via-[#fde68a] to-[#fef3c7] border-[2.5px] border-[#d97706] shadow-[0_3px_0_#b45309]">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-lg shrink-0">🎁</span>
-            <div className="min-w-0">
-              <span className="text-[9px] font-black uppercase tracking-wider text-[#92400e] block">
-                RECOMPENSA DA MISSÃO
-              </span>
-              <span className="text-xs font-black text-[#451a03] truncate block">
-                {q.rewardsSummary}
-              </span>
-            </div>
+            ))}
           </div>
 
-          <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/90 border-2 border-[#d97706] text-[10px] font-black text-[#78350f]">
-            <span>{q.iconEmoji}</span>
-            <span>{q.isSelectedForMap ? 'Ícone Ativo no Mapa' : 'Ícone do Mapa'}</span>
+          {/* 4. Botões Gamificados Rápidos: Pin de Mapa (📍) + Ação Direta */}
+          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={(e) => handleToggleSelectQuestForMap(q, e)}
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
+                q.isSelectedForMap ? 'scale-105' : 'opacity-85 hover:opacity-100'
+              }`}
+              style={{
+                background: q.isSelectedForMap
+                  ? 'linear-gradient(180deg, #16a34a 0%, #14532d 100%)'
+                  : 'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #e5dac5 100%)',
+                border: '2px solid #c59638',
+                boxShadow: '0 3px 8px rgba(0,8,22,0.45)',
+              }}
+              title={q.isSelectedForMap ? 'Rastreando no Mapa ✓' : 'Fixar no Mapa 📍'}
+            >
+              <span className="text-sm sm:text-base leading-none">
+                {q.isSelectedForMap ? '🎯' : '📍'}
+              </span>
+            </button>
+
+            {onUpdateProject && (
+              <>
+                {(q.isLocked || q.status === 'available') && (
+                  <button
+                    type="button"
+                    onClick={() => handleChangeQuestStatus(q, 'active')}
+                    className="btn-pearl-gold cursor-pointer active:scale-95"
+                    title="Iniciar Missão"
+                  >
+                    <div className="btn-pearl-inner px-2.5 py-2 font-cinzel font-black text-[9px] text-[#2b1f14] uppercase">
+                      INICIAR
+                    </div>
+                  </button>
+                )}
+
+                {!q.isLocked && !q.isCompleted && q.status === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => handleChangeQuestStatus(q, 'completed')}
+                    className="btn-royal-gold cursor-pointer active:scale-95"
+                    title="Concluir e Resgatar Recompensas"
+                  >
+                    <div className="btn-royal-inner px-2.5 py-2 font-cinzel font-black text-[9px] text-[#fff3c2] uppercase flex items-center gap-1">
+                      <span>🎁</span>
+                      <span>RESGATAR</span>
+                    </div>
+                  </button>
+                )}
+
+                {q.isCompleted && (
+                  <button
+                    type="button"
+                    onClick={() => handleChangeQuestStatus(q, 'active')}
+                    className="w-9 h-9 rounded-xl pearl-pill flex items-center justify-center text-[#5c3d08] font-black text-xs cursor-pointer active:scale-90"
+                    title="Repetir Missão"
+                  >
+                    ↺
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Botões Táteis 3D Estilo Brawl Stars / Clash Royale */}
-        {onUpdateProject && (
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            {(q.isLocked || q.status === 'available') && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleChangeQuestStatus(q, 'active');
-                }}
-                className="flex-1 min-w-[140px] py-2 px-3 rounded-full bg-gradient-to-b from-[#fbbf24] to-[#d97706] border-[2.5px] border-white text-white font-black text-xs shadow-[0_4px_0_#78350f,0_6px_12px_rgba(0,0,0,0.35)] active:translate-y-1 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                style={{ textShadow: '0 1.5px 0 #78350f' }}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{q.isLocked ? 'DESBLOQUEAR & ACEITAR' : '🎯 ACEITAR MISSÃO'}</span>
-              </button>
-            )}
+        {/* Expansão Visual Compacta dos Objetivos e Slots de Recompensa ao clicar */}
+        {isSelected && (
+          <div className="mt-3 pt-2.5 border-t border-[#c59638]/50 flex flex-col gap-2">
+            {/* Slots de Recompensa Visíveis em Telas Pequenas + Chips de Objetivos */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {q.objectives.map((obj, oIdx) => (
+                  <div
+                    key={obj.id}
+                    className={`px-2.5 py-1 rounded-xl border flex items-center gap-1.5 text-[10px] font-bold ${
+                      obj.completed
+                        ? 'bg-emerald-950/15 border-emerald-600/60 text-emerald-900'
+                        : 'pearl-subcard text-[#2b1f14]'
+                    }`}
+                  >
+                    <span
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black ${
+                        obj.completed
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-[#0b3778] text-[#fff3c2] border border-[#e5c168]'
+                      }`}
+                    >
+                      {obj.completed ? '✓' : oIdx + 1}
+                    </span>
+                    <span className="truncate max-w-[180px] sm:max-w-[260px]">{obj.title}</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-[#2b1f14] text-[#fff3c2] font-cinzel font-black text-[8px]">
+                      {obj.current}/{obj.required}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-            {!q.isLocked && !q.isCompleted && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleChangeQuestStatus(q, 'completed');
-                }}
-                className="flex-1 min-w-[140px] py-2 px-3 rounded-full bg-gradient-to-b from-[#4ade80] to-[#16a34a] border-[2.5px] border-white text-white font-black text-xs shadow-[0_4px_0_#14532d,0_6px_12px_rgba(0,0,0,0.35)] active:translate-y-1 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                style={{ textShadow: '0 1.5px 0 #14532d' }}
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>ENTREGAR & CONCLUIR (+XP)</span>
-              </button>
-            )}
-
-            {q.isCompleted && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleChangeQuestStatus(q, 'active');
-                }}
-                className="py-2 px-3 rounded-full bg-gradient-to-b from-[#38bdf8] to-[#0284c7] border-[2.5px] border-white text-white font-black text-xs shadow-[0_4px_0_#075985] active:translate-y-1 transition-all flex items-center justify-center gap-1 cursor-pointer"
-                style={{ textShadow: '0 1.5px 0 #075985' }}
-              >
-                <span>↺ REINICIAR</span>
-              </button>
-            )}
+              {/* Slots de Loot sempre visíveis na expansão */}
+              <div className="flex xs:hidden items-center gap-1.5">
+                {rewardSlots.map((slot, sIdx) => (
+                  <div
+                    key={`${q.id}-mrew-${sIdx}`}
+                    className="w-9 h-9 rounded-xl flex flex-col items-center justify-center"
+                    style={{
+                      background: slot.rarityBg,
+                      border: '1.5px solid #e5c168',
+                    }}
+                  >
+                    <span className="text-sm leading-none">{slot.icon}</span>
+                    <span className="font-cinzel font-black text-[7px] text-[#fff3c2]">
+                      {slot.badge}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1519,137 +1739,13 @@ export const QuestJourneyPopupModal: React.FC<{
       >
         <div
           className="w-full mx-auto flex flex-col gap-3"
-          style={{ maxWidth: isLandscape ? '920px' : '460px' }}
+          style={{ maxWidth: isLandscape ? '960px' : '480px' }}
         >
-          {/* Barra Superior Limpa sem Container Branco Externo */}
-          <div
-            style={{
-              padding: '5px',
-              borderRadius: '9999px',
-              background: 'rgba(7, 18, 38, 0.65)',
-              border: '1.5px solid rgba(212, 168, 75, 0.5)',
-              backdropFilter: 'blur(6px)',
-              display: 'grid',
-              gridTemplateColumns: onSwitchToBackpack ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))',
-              gap: '5px',
-              alignItems: 'center',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('jornada');
-                setSelectedQuestId(null);
-              }}
-              className={
-                activeTab === 'jornada'
-                  ? 'btn-royal-gold cursor-pointer w-full'
-                  : 'pearl-pill cursor-pointer w-full py-1.5 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase text-center'
-              }
-            >
-              <div
-                className={
-                  activeTab === 'jornada'
-                    ? 'btn-royal-inner py-1.5 px-2 flex items-center justify-center gap-1 font-cinzel font-bold text-[10px] uppercase'
-                    : 'flex items-center justify-center gap-1'
-                }
-              >
-                <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
-                <span>JORNADA ({jornada.length})</span>
-              </div>
-            </button>
+          {renderUnifiedTopSubTabs()}
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('tarefas');
-                setSelectedQuestId(null);
-              }}
-              className={
-                activeTab === 'tarefas'
-                  ? 'btn-royal-gold cursor-pointer w-full'
-                  : 'pearl-pill cursor-pointer w-full py-1.5 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase text-center'
-              }
-            >
-              <div
-                className={
-                  activeTab === 'tarefas'
-                    ? 'btn-royal-inner py-1.5 px-2 flex items-center justify-center gap-1 font-cinzel font-bold text-[10px] uppercase'
-                    : 'flex items-center justify-center gap-1'
-                }
-              >
-                <span>📋 SECUNDÁRIAS ({tarefas.length})</span>
-              </div>
-            </button>
-
-            {onSwitchToBackpack && (
-              <button
-                type="button"
-                onClick={onSwitchToBackpack}
-                className="btn-pearl-gold cursor-pointer w-full"
-              >
-                <div className="btn-pearl-inner py-1.5 px-2 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1">
-                  <span>🎒 MOCHILA</span>
-                </div>
-              </button>
-            )}
-          </div>
-
-          {/* Lista Unificada de Missões */}
-          <div className="flex flex-col gap-3">
-            {currentList.map((q) => {
-              const isSelected = selectedQuest?.id === q.id;
-              return (
-                <div
-                  key={q.id}
-                  onClick={() => setSelectedQuestId(q.id)}
-                  className={`p-3 rounded-2xl border-[2.5px] transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#fffbeb] border-[#d97706] shadow-[0_6px_18px_rgba(0,0,0,0.45)]'
-                      : q.isLocked
-                      ? 'bg-[#e2e8f0]/95 border-[#94a3b8]'
-                      : q.isCompleted
-                      ? 'bg-[#dcfce7]/95 border-[#22c55e]'
-                      : 'bg-[#fff8e7]/95 border-[#f59e0b]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="px-2 py-0.5 rounded-lg bg-[#5c2604] text-[#fef08a] font-black text-[10px] shrink-0">
-                        {q.iconEmoji} #{q.orderIndex}
-                      </span>
-                      <span
-                        className={`text-sm font-black truncate ${
-                          q.isLocked
-                            ? 'text-[#475569]'
-                            : q.isCompleted
-                            ? 'text-[#14532d] line-through'
-                            : 'text-[#451a03]'
-                        }`}
-                      >
-                        {q.title}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSelectQuestForMap(q, e)}
-                        className={`px-2.5 py-0.5 rounded-full border-2 font-black text-[10px] flex items-center gap-1 transition-all cursor-pointer ${
-                          q.isSelectedForMap
-                            ? 'bg-[#22c55e] border-[#14532d] text-white'
-                            : 'bg-[#e0f2fe] border-[#0284c7] text-[#075985]'
-                        }`}
-                      >
-                        <span>{q.isSelectedForMap ? '🎯 No Mapa ✓' : '📍 Mapa'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {isSelected && <div className="mt-3">{renderQuestDetailsBoard(q)}</div>}
-                </div>
-              );
-            })}
+          {/* Grade Visual de Cards Gamificados (2 colunas em Paisagem, 1 coluna em Retrato) */}
+          <div className={isLandscape ? 'grid grid-cols-2 gap-3' : 'flex flex-col gap-2.5'}>
+            {currentList.map((q) => renderGamifiedQuestCard(q))}
           </div>
         </div>
       </div>
@@ -1661,11 +1757,10 @@ export const QuestJourneyPopupModal: React.FC<{
       onClick={(e) => e.stopPropagation()}
       className={`${
         isInsideEmulator
-          ? 'absolute inset-0 z-80 p-2.5 flex items-center justify-center bg-black/50 backdrop-blur-[2px]'
-          : 'fixed inset-0 z-90 p-4 flex items-center justify-center bg-black/65 backdrop-blur-sm'
+          ? 'absolute inset-0 z-80 p-2.5 flex items-center justify-center bg-black/60 backdrop-blur-xs'
+          : 'fixed inset-0 z-90 p-4 flex items-center justify-center bg-black/70 backdrop-blur-sm'
       } select-none`}
     >
-      {/* MOLDURA 3D ESTILO CLASH ROYALE / BRAWL STARS (ADAPTADA PARA RETRATO OU PAISAGEM) */}
       <div
         className={`w-full ${
           isInsideEmulator
@@ -1675,264 +1770,17 @@ export const QuestJourneyPopupModal: React.FC<{
             : isLandscape
             ? 'max-w-4xl h-[82vh] max-h-[540px]'
             : 'max-w-xl h-[85vh] max-h-[680px]'
-        } pearl-surface flex flex-col overflow-hidden`}
+        } pearl-surface flex flex-col overflow-hidden p-2.5 gap-2.5`}
+        style={{
+          borderRadius: '24px',
+          border: '3px solid #c59638',
+          outline: '2px solid #4a3006',
+        }}
       >
-        {/* TOPO NOVA UI V1.2 PEARL & ROYAL SAPPHIRE COM ABAS E ACESSO À MOCHILA */}
-        <div className="px-3.5 py-2.5 bg-gradient-to-b from-[#f5efe2] to-[#e3d7c3] border-b-[2px] border-[#b88928] relative flex items-center justify-between gap-2 shrink-0">
-          <div className="pearl-pill p-0.5 flex items-center gap-1 flex-wrap">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('jornada');
-                setSelectedQuestId(null);
-              }}
-              className={
-                activeTab === 'jornada'
-                  ? 'btn-royal-gold cursor-pointer'
-                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
-              }
-            >
-              <div className={activeTab === 'jornada' ? 'btn-royal-inner px-3 py-1 flex items-center gap-1 font-cinzel font-bold text-[10px] uppercase' : 'flex items-center gap-1'}>
-                <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
-                <span>JORNADA ({jornada.length})</span>
-              </div>
-            </button>
+        {renderUnifiedTopSubTabs()}
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('tarefas');
-                setSelectedQuestId(null);
-              }}
-              className={
-                activeTab === 'tarefas'
-                  ? 'btn-royal-gold cursor-pointer'
-                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
-              }
-            >
-              <div className={activeTab === 'tarefas' ? 'btn-royal-inner px-3 py-1 flex items-center gap-1 font-cinzel font-bold text-[10px] uppercase' : 'flex items-center gap-1'}>
-                <span>📋 SECUNDÁRIAS ({tarefas.length})</span>
-              </div>
-            </button>
-
-            {onSwitchToBackpack && (
-              <button
-                type="button"
-                onClick={onSwitchToBackpack}
-                className="btn-pearl-gold cursor-pointer"
-                title="Ir direto para o Pop-up de Mochila (Equipamento & Inventário)"
-              >
-                <div className="btn-pearl-inner px-3 py-1 font-cinzel font-bold text-[10px] uppercase flex items-center gap-1">
-                  <span>🎒 MOCHILA</span>
-                </div>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden sm:flex items-center gap-1.5 pearl-pill px-2.5 py-1 font-cinzel font-bold text-[10px] text-[#3a2b1c]">
-              <span>⭐ NV {playerLevel}</span>
-              <span>•</span>
-              <span>{playerXp} EXP</span>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="close-btn-outer cursor-pointer shrink-0"
-              title="Fechar Pop-up"
-            >
-              <div className="close-btn-inner">✕</div>
-            </button>
-          </div>
-        </div>
-
-        {/* SUB-BARRA INFORMATIVA PEARL */}
-        <div className="px-4 py-1.5 bg-[#e6dac6] border-b border-[#c9b493] flex items-center justify-between text-[10px] font-cinzel font-bold text-[#3a2b1c] shrink-0">
-          <span>
-            {activeTab === 'jornada'
-              ? `🏆 JORNADA PRINCIPAL • Selecione uma missão (📍) para rastrear no Mapa`
-              : `⚡ SECUNDÁRIAS • Selecione uma missão (📍) para rastrear no Mapa`}
-          </span>
-          <span className="text-[9px] pearl-pill px-2 py-0.5 text-[#8c6518]">
-            { [...jornada, ...tarefas].filter((q) => q.isSelectedForMap).length } no Mapa 📍
-          </span>
-        </div>
-
-        {/* CORPO DO POP-UP:
-            - MODO PAISAGEM (isLandscape): Split-View 2 Colunas (Lista à esquerda + Quadro Detalhado à direita)
-            - MODO RETRATO (!isLandscape): Lista Vertical com Expansão Tátil 3D */}
-        {isLandscape ? (
-          <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 p-3 overflow-hidden bg-[#fff8e7]">
-            {/* Coluna Esquerda (5 cols): Lista de Quests em Ordem */}
-            <div className="col-span-5 overflow-y-auto pr-1 space-y-2">
-              {currentList.map((q) => {
-                const isSelected = selectedQuest?.id === q.id;
-                const doneCount = q.objectives.filter((o) => o.completed).length;
-                const totalCount = Math.max(1, q.objectives.length);
-                return (
-                  <div
-                    key={q.id}
-                    onClick={() => setSelectedQuestId(q.id)}
-                    className={`p-2.5 rounded-2xl border-[3px] transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-gradient-to-r from-[#fef08a] to-[#fde68a] border-[#d97706] shadow-[0_4px_0_#b45309] -translate-y-0.5'
-                        : q.isLocked
-                        ? 'bg-[#e2e8f0] border-[#94a3b8] shadow-[0_3px_0_#64748b] opacity-90 hover:opacity-100'
-                        : q.isCompleted
-                        ? 'bg-[#dcfce7] border-[#22c55e] shadow-[0_3px_0_#15803d]'
-                        : 'bg-white border-[#f59e0b] shadow-[0_3px_0_#d97706] hover:bg-[#fffbeb]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="px-1.5 py-0.5 rounded-lg bg-[#5c2604] text-[#fef08a] font-black text-[10px] shrink-0">
-                          {q.iconEmoji} #{q.orderIndex}
-                        </span>
-                        <span
-                          className={`text-xs font-black truncate ${
-                            q.isLocked
-                              ? 'text-[#475569]'
-                              : q.isCompleted
-                              ? 'text-[#14532d] line-through'
-                              : 'text-[#451a03]'
-                          }`}
-                        >
-                          {q.title}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleSelectQuestForMap(q, e)}
-                          className={`px-2 py-0.5 rounded-full border-2 font-black text-[9px] flex items-center gap-0.5 transition-all cursor-pointer ${
-                            q.isSelectedForMap
-                              ? 'bg-[#22c55e] border-[#14532d] text-white shadow-[0_2px_0_#14532d]'
-                              : 'bg-white border-[#d97706] text-[#78350f] hover:bg-[#fef3c7]'
-                          }`}
-                          title="Selecionar para exibir ícone no Mapa"
-                        >
-                          <span>{q.isSelectedForMap ? '🎯 Mapa ✓' : '📍 Mapa'}</span>
-                        </button>
-                        <span className="text-[10px] font-black text-[#78350f] shrink-0">
-                          {doneCount}/{totalCount}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Coluna Direita (7 cols): Quadro Detalhado da Quest Selecionada */}
-            <div className="col-span-7 overflow-y-auto pr-1">
-              {selectedQuest ? (
-                renderQuestDetailsBoard(selectedQuest)
-              ) : (
-                <div className="h-full flex items-center justify-center text-sm font-black text-[#92400e]">
-                  Selecione uma missão ao lado
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* MODO RETRATO (VERTICAL): Cards Táteis 3D Empilhados */
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#fff8e7]">
-            {currentList.map((q) => {
-              const isSelected = selectedQuest?.id === q.id;
-              return (
-                <div
-                  key={q.id}
-                  onClick={() => setSelectedQuestId(q.id)}
-                  className={`p-3 rounded-2xl border-[3px] transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#fffbeb] border-[#d97706] shadow-[0_5px_0_#b45309]'
-                      : q.isLocked
-                      ? 'bg-[#e2e8f0] border-[#94a3b8] shadow-[0_4px_0_#64748b]'
-                      : q.isCompleted
-                      ? 'bg-[#dcfce7] border-[#22c55e] shadow-[0_4px_0_#15803d]'
-                      : 'bg-white border-[#f59e0b] shadow-[0_4px_0_#d97706]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="px-2 py-0.5 rounded-lg bg-[#5c2604] text-[#fef08a] font-black text-[10px] shrink-0">
-                        {q.iconEmoji} #{q.orderIndex}
-                      </span>
-                      <span
-                        className={`text-sm font-black truncate ${
-                          q.isLocked
-                            ? 'text-[#475569]'
-                            : q.isCompleted
-                            ? 'text-[#14532d] line-through'
-                            : 'text-[#451a03]'
-                        }`}
-                      >
-                        {q.title}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSelectQuestForMap(q, e)}
-                        className={`px-2.5 py-0.5 rounded-full border-2 font-black text-[10px] flex items-center gap-1 transition-all cursor-pointer ${
-                          q.isSelectedForMap
-                            ? 'bg-[#22c55e] border-[#14532d] text-white shadow-[0_2px_0_#14532d]'
-                            : 'bg-[#e0f2fe] border-[#0284c7] text-[#075985] hover:brightness-95'
-                        }`}
-                        title="Selecionar para exibir ícone no Mapa"
-                      >
-                        <span>{q.isSelectedForMap ? '🎯 No Mapa ✓' : '📍 Mapa'}</span>
-                      </button>
-
-                      <span
-                        className={`text-[10px] font-black px-2 py-0.5 rounded-full border-2 shrink-0 ${
-                          q.isCompleted
-                            ? 'bg-[#4ade80] border-[#15803d] text-[#052e16]'
-                            : q.isLocked
-                            ? 'bg-[#cbd5e1] border-[#64748b] text-[#1e293b]'
-                            : q.status === 'active'
-                            ? 'bg-[#fef08a] border-[#d97706] text-[#78350f]'
-                            : 'bg-white border-[#d97706] text-[#78350f]'
-                        }`}
-                      >
-                        {q.isCompleted ? '✔️' : q.isLocked ? '🔒' : '✦'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {isSelected && <div className="mt-3">{renderQuestDetailsBoard(q)}</div>}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* RODAPÉ TÁTIL 3D */}
-        <div className="px-4 py-2 bg-[#fde68a] border-t-[3px] border-[#d97706] flex items-center justify-between shrink-0">
-          <span className="text-[11px] font-black text-[#78350f]">
-            📍 Selecione uma quest para destacar seu ícone no Mapa!
-          </span>
-          <div className="flex items-center gap-2">
-            {onSwitchToBackpack && (
-              <button
-                type="button"
-                onClick={onSwitchToBackpack}
-                className="px-3.5 py-1.5 rounded-full bg-gradient-to-b from-[#c084fc] to-[#7e22ce] hover:brightness-110 border-[2.5px] border-white text-white font-black text-xs shadow-[0_3px_0_#4c1d95] active:translate-y-0.5 cursor-pointer"
-              >
-                🎒 Abrir Mochila
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-1.5 rounded-full bg-gradient-to-b from-[#5da02c] to-[#3f7418] hover:brightness-110 border-[2.5px] border-white text-white font-black text-xs shadow-[0_3px_0_#1e3b14] active:translate-y-0.5 cursor-pointer"
-              style={{ textShadow: '0 1px 0 #1e3b14' }}
-            >
-              CONTINUAR JOGO
-            </button>
-          </div>
+        <div className="flex-1 overflow-y-auto nova-scroll pr-0.5 space-y-2.5">
+          {currentList.map((q) => renderGamifiedQuestCard(q))}
         </div>
       </div>
     </div>
@@ -2293,31 +2141,75 @@ const DEFAULT_SHOWCASE_ITEMS: UnifiedBackpackSlotItem[] = [
 ];
 
 /**
- * Silhueta negra com aura branca fiel à imagem enviada pelo usuário,
- * exibida automaticamente quando o jogador ainda não definiu um PNG frontal do herói
- * (ou quando o usuário alterna para visualizar a silhueta).
+ * Silhueta prateada/cinza suave do Slime Herói fiel aos 4 concepts oficiais Pearl & Gold
  */
 const HeroFrontSilhouetteSvg: React.FC<{ className?: string }> = ({ className = 'w-32 h-32' }) => (
-  <svg
-    viewBox="0 0 200 200"
-    className={className}
-    style={{
-      filter:
-        'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.95))',
-    }}
-  >
+  <svg viewBox="0 0 220 190" className={className}>
+    <defs>
+      <linearGradient id="slimeSilGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="#c5cad3" />
+        <stop offset="65%" stopColor="#b4bac5" />
+        <stop offset="100%" stopColor="#a3aab7" />
+      </linearGradient>
+    </defs>
+    {/* Sombra suave na base */}
+    <ellipse cx="110" cy="166" rx="82" ry="12" fill="rgba(160, 145, 120, 0.22)" />
+    {/* Corpo orgânico de Slime dos concepts */}
     <path
-      d="M72 34 C98 20, 145 22, 148 44 C150 56, 136 62, 132 65 C148 80, 156 102, 158 118 C164 122, 164 132, 159 138 C165 148, 167 160, 158 172 C142 184, 58 184, 42 172 C33 160, 35 148, 41 138 C36 132, 36 122, 42 118 C44 102, 50 86, 56 76 C42 74, 34 64, 42 52 C50 40, 60 38, 72 34 Z"
-      fill="#050505"
+      d="M110 32 C68 32, 46 62, 38 102 C33 125, 22 136, 24 149 C26 161, 48 164, 68 162 C86 160, 96 166, 110 166 C124 166, 134 160, 152 162 C172 164, 194 161, 196 149 C198 136, 187 125, 182 102 C174 62, 152 32, 110 32 Z"
+      fill="url(#slimeSilGrad)"
+      stroke="#d8dce3"
+      strokeWidth="2"
     />
   </svg>
 );
 
+const DEMO_SEED_ITEM_IDS = new Set([
+  'inv_item_1',
+  'inv_item_2',
+  'inv_item_3',
+  'inv_item_4',
+  'inv_item_5',
+  'def_sword_starter',
+  'def_shield_oak',
+  'def_potion_hp',
+  'def_key_gold',
+  'def_apple_fresh',
+  'item-sword-starter',
+  'item-shield-starter',
+  'item-potion-health',
+  'item-key-bronze',
+  'item-apple-mystic',
+  'item-wood-oak',
+  'item-herb-emerald',
+  'item-crystal-mana',
+]);
+
+const DEMO_SEED_PET_IDS = new Set([
+  'pet-drake-solar',
+  'pet-fox-mystic',
+  'pet-wolf-frost',
+  'pet-pixie-light',
+  'pet-tiger-thunder',
+  'pet-slime-royal',
+]);
+
+import { useBackpackScreenState } from '../../../../ui/screens/backpack_shared/useBackpackScreenState';
+import { MobileBackpackTopBar } from '../../../../ui/screens/backpack_mobile/MobileBackpackTopBar';
+import { MobileMochilaScreen } from '../../../../ui/screens/backpack_mobile/MobileMochilaScreen';
+import { MobileDeckScreen } from '../../../../ui/screens/backpack_mobile/MobileDeckScreen';
+import { MobileJornadaTarefasScreen } from '../../../../ui/screens/backpack_mobile/MobileJornadaTarefasScreen';
+import { LandscapeBackpackTopBar } from '../../../../ui/screens_landscape/backpack_landscape/LandscapeBackpackTopBar';
+import { LandscapeMochilaScreen } from '../../../../ui/screens_landscape/backpack_landscape/LandscapeMochilaScreen';
+import { LandscapeDeckScreen } from '../../../../ui/screens_landscape/backpack_landscape/LandscapeDeckScreen';
+import { LandscapeJornadaTarefasScreen } from '../../../../ui/screens_landscape/backpack_landscape/LandscapeJornadaTarefasScreen';
+
 export const GameBackpackPopupModal: React.FC<{
   project: MapProject;
+  initialFolderTab?: 'equipamento' | 'inventario_geral' | 'deck' | 'jornada' | 'tarefas';
   mapCollectedInventory?: Record<string, number>;
   onClose: () => void;
-  onSwitchToQuests?: () => void;
+  onSwitchToQuests?: (tab?: 'jornada' | 'tarefas') => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
   onDropItemToMap?: (item: UnifiedBackpackSlotItem) => void;
   isInsideEmulator?: boolean;
@@ -2325,74 +2217,194 @@ export const GameBackpackPopupModal: React.FC<{
   isHubFullScreen?: boolean;
 }> = ({
   project,
+  initialFolderTab = 'equipamento',
   mapCollectedInventory = {},
   onClose,
-  onSwitchToQuests,
   onUpdateProject,
   onDropItemToMap,
   isInsideEmulator = true,
   isLandscape = false,
   isHubFullScreen = false,
 }) => {
-  // Abas Superiores em Pasta: 'equipamento' | 'inventario_geral' | 'deck'
-  const [topFolderTab, setTopFolderTab] = useState<'equipamento' | 'inventario_geral' | 'deck'>('equipamento');
+  const state = useBackpackScreenState({
+    project,
+    initialFolderTab,
+    mapCollectedInventory,
+    onUpdateProject,
+    onDropItemToMap,
+    onClose,
+  });
 
-  // Sub-aba do carrossel horizontal deslizante
+  if (isLandscape) {
+    return (
+      <div
+        className={`${
+          isHubFullScreen
+            ? 'relative w-full h-full flex flex-col overflow-y-auto overflow-x-hidden select-none'
+            : isInsideEmulator
+              ? 'absolute inset-0 z-[80]'
+              : 'fixed inset-0 z-[260]'
+        } flex flex-col select-none animate-fade-in`}
+        style={{
+          background: isHubFullScreen
+            ? 'radial-gradient(ellipse at top, #0a2558 0%, #04122c 65%, #020a1a 100%)'
+            : 'rgba(4, 14, 34, 0.85)',
+          backdropFilter: isHubFullScreen ? 'none' : 'blur(6px)',
+          padding: isHubFullScreen ? '12px 18px' : '10px',
+          fontFamily: "'Fredoka', 'Nunito', sans-serif",
+          gap: '8px',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            borderRadius: '24px',
+            padding: '8px',
+            background: 'linear-gradient(180deg, #fffdf9 0%, #f5ebd6 100%)',
+            border: '3px solid #d4af37',
+            outline: '1.5px solid #784808',
+            boxShadow:
+              '0 0 24px rgba(212, 175, 55, 0.25), 0 12px 30px rgba(0, 6, 18, 0.65), inset 0 1px 0 #ffffff',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            flex: 1,
+            minHeight: 0,
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <LandscapeBackpackTopBar state={state} isHubFullScreen={isHubFullScreen} />
+          {state.topFolderTab === 'deck' ? (
+            <LandscapeDeckScreen state={state} />
+          ) : state.topFolderTab === 'jornada' || state.topFolderTab === 'tarefas' ? (
+            <LandscapeJornadaTarefasScreen state={state} questTab={state.topFolderTab} />
+          ) : (
+            <LandscapeMochilaScreen state={state} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`${
+        isHubFullScreen
+          ? 'relative w-full h-full flex flex-col overflow-y-auto overflow-x-hidden select-none'
+          : isInsideEmulator
+            ? 'absolute inset-0 z-[80]'
+            : 'fixed inset-0 z-[260]'
+      } flex flex-col select-none animate-fade-in`}
+      style={{
+        background: isHubFullScreen
+          ? 'radial-gradient(ellipse at top, #0a2558 0%, #04122c 65%, #020a1a 100%)'
+          : 'rgba(4, 14, 34, 0.85)',
+        backdropFilter: isHubFullScreen ? 'none' : 'blur(6px)',
+        padding: '8px 8px 20px 8px',
+        fontFamily: "'Fredoka', 'Nunito', sans-serif",
+        gap: '6px',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <MobileBackpackTopBar state={state} isHubFullScreen={isHubFullScreen} />
+      {state.topFolderTab === 'deck' ? (
+        <MobileDeckScreen state={state} />
+      ) : state.topFolderTab === 'jornada' || state.topFolderTab === 'tarefas' ? (
+        <MobileJornadaTarefasScreen state={state} questTab={state.topFolderTab} />
+      ) : (
+        <MobileMochilaScreen state={state} />
+      )}
+    </div>
+  );
+};
+
+const _LegacyUnusedBackpackModal: React.FC<{
+  project: MapProject;
+  initialFolderTab?: 'equipamento' | 'inventario_geral' | 'deck' | 'jornada' | 'tarefas';
+  mapCollectedInventory?: Record<string, number>;
+  onClose: () => void;
+  onSwitchToQuests?: (tab?: 'jornada' | 'tarefas') => void;
+  onUpdateProject?: (updates: Partial<MapProject>) => void;
+  onDropItemToMap?: (item: UnifiedBackpackSlotItem) => void;
+  isInsideEmulator?: boolean;
+  isLandscape?: boolean;
+  isHubFullScreen?: boolean;
+}> = ({
+  project,
+  initialFolderTab = 'equipamento',
+  mapCollectedInventory = {},
+  onClose,
+  onUpdateProject,
+  onDropItemToMap,
+  isInsideEmulator = true,
+  isLandscape = false,
+  isHubFullScreen = false,
+}) => {
+  // Abas Superiores Unificadas dentro da mesma moldura (nunca muda a barra do topo!)
+  const [topFolderTab, setTopFolderTab] = useState<'equipamento' | 'deck' | 'jornada' | 'tarefas'>(
+    initialFolderTab === 'inventario_geral' ? 'equipamento' : initialFolderTab
+  );
+
+  useEffect(() => {
+    if (initialFolderTab) {
+      setTopFolderTab(initialFolderTab === 'inventario_geral' ? 'equipamento' : initialFolderTab);
+    }
+  }, [initialFolderTab]);
+
   const [activeCategory, setActiveCategory] = useState<
-    'todos' | 'pets' | 'item_pet' | 'equipaveis' | 'consumiveis' | 'livros' | 'outros'
+    'todos' | 'pets' | 'item_pet' | 'equipaveis' | 'artefatos' | 'consumiveis' | 'livros' | 'outros'
   >('todos');
 
-  // Modo Selecionar / Soltar (botão circular verde à direita do carrossel)
   const [selectDropMode, setSelectDropMode] = useState(false);
-
-  // Forçar visualização da silhueta mesmo se houver PNG (para teste rápido)
-  const [forceSilhouette, setForceSilhouette] = useState(false);
+  const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [cardRarityFilter, setCardRarityFilter] = useState<string>('all');
+  const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
 
   const resolvedPetConfig = useMemo(
     () => getResolvedPlayerPetConfig(project.player),
     [project.player]
   );
 
-  // Qual dos 3 slots de Pet/Carta (0, 1 ou 2) está selecionado para equipar/trocar
-  const [targetPetSlotIdx, setTargetPetSlotIdx] = useState<number>(
-    () => resolvedPetConfig.activePetSlotIndex ?? 0
-  );
+  // Filtra apenas Pets reais criados/capturados pelo usuário (zero pets fakes simulados)
+  const realPetGallery = useMemo(() => {
+    const rawGallery = project.player?.petConfig?.petGallery || [];
+    return rawGallery.filter((p) => !DEMO_SEED_PET_IDS.has(p.id));
+  }, [project.player?.petConfig?.petGallery]);
 
-  // Estado dos slots de equipamento ao redor do personagem (3 à esquerda + 3 Slots de Pets/Slimes à direita!)
-  const [equippedBySlot, setEquippedBySlot] = useState<Record<EquipmentSlotKey, string | null>>(() => ({
-    head: 'bp-eq-boina',
-    armor: 'bp-eq-tunic',
-    boots: 'bp-eq-boots',
-    pet1: resolvedPetConfig.equippedPetIds[0] ? `bp-pet-${resolvedPetConfig.equippedPetIds[0]}` : null,
-    pet2: resolvedPetConfig.equippedPetIds[1] ? `bp-pet-${resolvedPetConfig.equippedPetIds[1]}` : null,
-    pet3: resolvedPetConfig.equippedPetIds[2] ? `bp-pet-${resolvedPetConfig.equippedPetIds[2]}` : null,
-    accessory: 'bp-eq-amulet',
-    pet: resolvedPetConfig.enabled && resolvedPetConfig.activePetId ? `bp-pet-${resolvedPetConfig.activePetId}` : null,
-    weapon: 'bp-eq-blade',
-  }));
+  const realEquippedPets = useMemo(() => {
+    const rawEq = project.player?.petConfig?.equippedPetIds || [null, null, null];
+    return [0, 1, 2].map((idx) => {
+      const pid = rawEq[idx];
+      if (!pid || DEMO_SEED_PET_IDS.has(pid)) return null;
+      return realPetGallery.find((p) => p.id === pid) || null;
+    });
+  }, [project.player?.petConfig?.equippedPetIds, realPetGallery]);
 
-  useEffect(() => {
-    const p1 = resolvedPetConfig.equippedPetIds[0] ? `bp-pet-${resolvedPetConfig.equippedPetIds[0]}` : null;
-    const p2 = resolvedPetConfig.equippedPetIds[1] ? `bp-pet-${resolvedPetConfig.equippedPetIds[1]}` : null;
-    const p3 = resolvedPetConfig.equippedPetIds[2] ? `bp-pet-${resolvedPetConfig.equippedPetIds[2]}` : null;
-    const activeP =
-      resolvedPetConfig.enabled && resolvedPetConfig.activePetId
-        ? `bp-pet-${resolvedPetConfig.activePetId}`
-        : null;
-    setEquippedBySlot((prev) => ({
-      ...prev,
-      pet1: p1,
-      pet2: p2,
-      pet3: p3,
-      pet: activeP,
-    }));
-  }, [resolvedPetConfig.enabled, resolvedPetConfig.activePetId, resolvedPetConfig.equippedPetIds]);
+  const [targetPetSlotIdx, setTargetPetSlotIdx] = useState<number>(0);
+  const [selectedCardIdx, setSelectedCardIdx] = useState<number | null>(null);
 
-  // Helper para equipar uma Carta/Pet em um dos 3 slots (0, 1 ou 2) e sincronizar com o projeto
+  // Slots de equipamento começam limpos: CABEÇA ('head'), TRAJE ('armor'), ARTEFATOS ('accessory' / 'boots')
+  const [equippedBySlot, setEquippedBySlot] = useState<Record<EquipmentSlotKey, string | null>>({
+    head: null,
+    armor: null,
+    boots: null,
+    pet1: null,
+    pet2: null,
+    pet3: null,
+    accessory: null,
+    pet: null,
+    weapon: null,
+  });
+
   const equipPetInSlot = (petId: string | null, slotIdx: number, summonImmediately = true) => {
     const clampedIdx = Math.max(0, Math.min(2, slotIdx));
-    const nextEquippedIds = [...resolvedPetConfig.equippedPetIds];
-    // Se esse pet já estava em outro slot e estamos equipando, troca de lugar para não duplicar
+    const currentRaw = project.player?.petConfig?.equippedPetIds || [null, null, null];
+    const nextEquippedIds: (string | null)[] = [
+      currentRaw[0] && !DEMO_SEED_PET_IDS.has(currentRaw[0]) ? currentRaw[0] : null,
+      currentRaw[1] && !DEMO_SEED_PET_IDS.has(currentRaw[1]) ? currentRaw[1] : null,
+      currentRaw[2] && !DEMO_SEED_PET_IDS.has(currentRaw[2]) ? currentRaw[2] : null,
+    ];
     if (petId) {
       const existingIdx = nextEquippedIds.findIndex((id, i) => id === petId && i !== clampedIdx);
       if (existingIdx >= 0) {
@@ -2401,10 +2413,10 @@ export const GameBackpackPopupModal: React.FC<{
     }
     nextEquippedIds[clampedIdx] = petId;
 
-    const nextActiveSlot = summonImmediately ? clampedIdx : resolvedPetConfig.activePetSlotIndex;
+    const nextActiveSlot = summonImmediately ? clampedIdx : targetPetSlotIdx;
     const nextActivePetId = nextEquippedIds[nextActiveSlot] || nextEquippedIds.find(Boolean) || null;
     const catalogPet = nextActivePetId
-      ? resolvedPetConfig.petGallery.find((p) => p.id === nextActivePetId)
+      ? realPetGallery.find((p) => p.id === nextActivePetId)
       : null;
 
     if (onUpdateProject && project.player) {
@@ -2428,38 +2440,24 @@ export const GameBackpackPopupModal: React.FC<{
                   level: catalogPet.level ?? 1,
                   xp: catalogPet.xp ?? 0,
                   maxXp: catalogPet.maxXp ?? 100,
-                  growthPerLevel: catalogPet.growthPerLevel ?? 0.055,
-                  locomotionType: catalogPet.locomotionType ?? 'walker',
-                  attackStyle: catalogPet.attackStyle ?? 'walker_dash',
-                  aiAggroMode: catalogPet.aiAggroMode ?? 'command_auto',
-                  projectileEmoji: catalogPet.projectileEmoji ?? '🔥',
-                  attackDamage: catalogPet.attackDamage ?? 35,
-                  attackRange: catalogPet.attackRange ?? 200,
-                  scale: catalogPet.scale ?? 0.82,
-                  followLagSteps: catalogPet.followLagSteps ?? 12,
-                  curiousRadius: catalogPet.curiousRadius ?? 48,
-                  curiousSpeed: catalogPet.curiousSpeed ?? 1.0,
-                  color: catalogPet.color || '#f59e0b',
                 }
               : {}),
-            petGallery: resolvedPetConfig.petGallery,
+            petGallery: realPetGallery,
           },
         },
       });
     }
   };
 
-  // Itens descartados/consumidos durante a sessão
   const [removedIds, setRemovedIds] = useState<Record<string, number>>({});
-
-  // Slot circular selecionado e Slot de equipamento selecionado
-  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
+  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
+  const [balloonExpandedLore, setBalloonExpandedLore] = useState<boolean>(false);
   const [activeEquipSlotFilter, setActiveEquipSlotFilter] = useState<EquipmentSlotKey | null>(null);
-
-  // Tela de Inspeção "Saber Mais" com Desfoque de Lente (Lens Blur)
-  const [lensInspectItem, setLensInspectItem] = useState<UnifiedBackpackSlotItem | null>(null);
   const [bookPageIndex, setBookPageIndex] = useState(0);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const itemsScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const cardsScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const catScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   const triggerToast = (msg: string) => {
     setStatusToast(msg);
@@ -2468,62 +2466,91 @@ export const GameBackpackPopupModal: React.FC<{
     }, 2400);
   };
 
-  // Detecta se existe um asset frontal do jogador configurado
-  const activeSavedChar = useMemo(() => {
-    if (project.activeCharacterId && project.savedCharacters?.length) {
-      return project.savedCharacters.find((c) => c.id === project.activeCharacterId) || null;
+  // Somente exibe sprite customizado se não for o SVG procedural fake do Aurelius
+  const customHeroSpritePng = useMemo(() => {
+    const raw = project.player?.avatarDownPng || project.player?.avatarPng || '';
+    if (!raw || raw.startsWith('data:image/svg+xml')) return '';
+    return raw;
+  }, [project.player?.avatarDownPng, project.player?.avatarPng]);
+
+  const heroDisplayName = useMemo(() => {
+    const rawName = project.player?.name?.trim() || '';
+    if (!rawName || rawName.toLowerCase().includes('aurelius')) {
+      return 'NOME DO HERÓI';
     }
-    return null;
-  }, [project.activeCharacterId, project.savedCharacters]);
+    return rawName.toUpperCase();
+  }, [project.player?.name]);
 
-  const frontPlayerAssetPng =
-    activeSavedChar?.avatarDownPng ||
-    activeSavedChar?.avatarPng ||
-    project.player?.avatarDownPng ||
-    project.player?.avatarPng ||
-    '';
-
-  // Unifica itens do projeto + itens coletados no mapa + itens de demonstração
+  // Apenas itens reais criados pelo usuário ou coletados em jogo (sem itens fakes/simulados)
   const allUnifiedItems = useMemo<UnifiedBackpackSlotItem[]>(() => {
     const list: UnifiedBackpackSlotItem[] = [];
 
-    // 1. Itens estruturados do project.playerInventory
     for (const pItem of project.playerInventory?.items || []) {
+      if (
+        DEMO_SEED_ITEM_IDS.has(pItem.id) ||
+        (pItem.definitionId && DEMO_SEED_ITEM_IDS.has(pItem.definitionId))
+      ) {
+        continue;
+      }
+
       const catRaw = (pItem.category || pItem.type || '').toLowerCase();
       let category: UnifiedBackpackSlotItem['category'] = 'outros';
       let equipSlot: EquipmentSlotKey | undefined = undefined;
 
       const catalogDef = (project.itemCatalog || []).find(
-        (c) => c.id === pItem.definitionId || c.id === pItem.id || c.name.toLowerCase() === pItem.name.toLowerCase()
+        (c) =>
+          c.id === pItem.definitionId ||
+          c.id === pItem.id ||
+          c.name.toLowerCase() === pItem.name.toLowerCase()
       );
-      const motionTag = pItem.motionLayerTag || catalogDef?.motionLayerTag;
+      const motionTag = pItem.motionLayerTag || catalogDef?.motionLayerTag || '';
+      const allTags = [
+        ...(pItem.stateTags || []),
+        ...(catalogDef?.stateTags || []),
+        motionTag,
+        catRaw,
+      ]
+        .join(' ')
+        .toLowerCase();
+
       const isMotionItem =
         Boolean(motionTag) ||
         (pItem.stateTags || []).includes('motion_item') ||
         (catalogDef?.stateTags || []).includes('motion_item');
 
+      const isArtifactItem =
+        allTags.includes('artefato') ||
+        allTags.includes('artifact') ||
+        allTags.includes('relic') ||
+        allTags.includes('reliquia') ||
+        allTags.includes('accessory') ||
+        allTags.includes('amulet') ||
+        allTags.includes('ring') ||
+        pItem.motionEquipSlot === 'accessory' ||
+        pItem.motionEquipSlot === 'boots' ||
+        catalogDef?.motionEquipSlot === 'accessory' ||
+        catalogDef?.motionEquipSlot === 'boots';
+
       if (catRaw.includes('item_pet') || catRaw.includes('pet')) {
         category = 'item_pet';
+      } else if (isArtifactItem) {
+        category = 'equipaveis';
+        equipSlot = 'accessory';
       } else if (
         isMotionItem ||
         catRaw.includes('equip') ||
         catRaw.includes('weapon') ||
-        catRaw.includes('armor') ||
-        catRaw.includes('accessory')
+        catRaw.includes('armor')
       ) {
         category = 'equipaveis';
         const mSlot = pItem.motionEquipSlot || catalogDef?.motionEquipSlot;
-        if (mSlot === 'head') equipSlot = 'head';
-        else if (mSlot === 'boots') equipSlot = 'boots';
-        else if (mSlot === 'weapon') equipSlot = 'weapon';
-        else if (mSlot === 'belt' || mSlot === 'accessory' || mSlot === 'cape' || mSlot === 'wings')
+        if (mSlot === 'head' || catRaw.includes('helm') || catRaw.includes('head')) {
+          equipSlot = 'head';
+        } else if (mSlot === 'skin' || mSlot === 'armor' || catRaw.includes('armor')) {
+          equipSlot = 'armor';
+        } else {
           equipSlot = 'accessory';
-        else if (mSlot === 'skin' || mSlot === 'armor') equipSlot = 'armor';
-        else if (catRaw.includes('armor')) equipSlot = 'armor';
-        else if (catRaw.includes('helm') || catRaw.includes('head')) equipSlot = 'head';
-        else if (catRaw.includes('boot')) equipSlot = 'boots';
-        else if (catRaw.includes('access') || catRaw.includes('ring')) equipSlot = 'accessory';
-        else equipSlot = 'weapon';
+        }
       } else if (catRaw.includes('consum') || catRaw.includes('potion') || catRaw.includes('food')) {
         category = 'consumiveis';
       } else if (catRaw.includes('read') || catRaw.includes('book') || catRaw.includes('scroll')) {
@@ -2537,69 +2564,57 @@ export const GameBackpackPopupModal: React.FC<{
       list.push({
         id: pItem.id,
         name: pItem.name,
-        iconEmoji:
-          pItem.iconEmoji ||
-          (isMotionItem ? '🎬' : category === 'equipaveis' ? '⚔️' : category === 'livros' ? '📕' : '🧪'),
+        iconEmoji: pItem.iconEmoji || '📦',
         iconPng: pItem.iconPng || catalogDef?.iconPng,
         quantity: finalQty,
         category,
         equipSlot,
-        rarity: pItem.rarity || catalogDef?.rarity || 'rare',
+        rarity: pItem.rarity || catalogDef?.rarity || 'common',
         shortDescription:
-          pItem.description ||
-          catalogDef?.shortDescription ||
-          (motionTag
-            ? `Motion Item Equipável (#${motionTag}). Revela camadas animadas no herói.`
-            : 'Item do inventário do aventureiro.'),
+          pItem.description || catalogDef?.shortDescription || 'Item do inventário.',
         detailedLore:
           pItem.detailedDescription ||
           catalogDef?.detailedDescription ||
           pItem.description ||
-          'Artefato catalogado na mochila do jogador durante a jornada.',
-        statsText: [
-          motionTag ? `🎬 MOTION #${motionTag}` : '',
-          pItem.stats?.attack ? `+${pItem.stats.attack} ATQ` : '',
-          pItem.stats?.defense ? `+${pItem.stats.defense} DEF` : '',
-          pItem.stats?.healthRestore ? `+${pItem.stats.healthRestore} PV` : '',
-        ]
-          .filter(Boolean)
-          .join(' • ') || undefined,
+          'Artefato catalogado na mochila.',
+        statsText:
+          [
+            motionTag ? `🎬 #${motionTag}` : '',
+            pItem.stats?.attack ? `+${pItem.stats.attack} ATQ` : '',
+            pItem.stats?.defense ? `+${pItem.stats.defense} DEF` : '',
+            pItem.stats?.healthRestore ? `+${pItem.stats.healthRestore} PV` : '',
+          ]
+            .filter(Boolean)
+            .join(' • ') || undefined,
         pages: pItem.readableContent?.pages?.map((pg) => ({
           title: pg.title,
           text: pg.text,
         })),
         sourceKind: 'project_item',
-        motionLayerTag: motionTag,
+        motionLayerTag: motionTag || undefined,
       });
     }
 
-    // 2. Recursos coletados em marcadores do mapa
     for (const [resName, qty] of Object.entries(mapCollectedInventory)) {
       const rem = removedIds[`map-${resName}`] || 0;
       const finalQty = Math.max(0, qty - rem);
       if (finalQty <= 0) continue;
-      const lower = resName.toLowerCase();
-      const isBook = lower.includes('livro') || lower.includes('grimório') || lower.includes('pergaminho');
-      const isPotion = lower.includes('poção') || lower.includes('elixir') || lower.includes('fruta');
-      const isEquip = lower.includes('espada') || lower.includes('escudo') || lower.includes('armadura') || lower.includes('arco');
-
       list.push({
         id: `map-${resName}`,
         name: resName,
-        iconEmoji: isBook ? '📜' : isPotion ? '🧪' : isEquip ? '🗡️' : '💎',
+        iconEmoji: '💎',
         quantity: finalQty,
-        category: isEquip ? 'equipaveis' : isPotion ? 'consumiveis' : isBook ? 'livros' : 'outros',
-        equipSlot: isEquip ? 'weapon' : undefined,
+        category: 'outros',
+        equipSlot: 'accessory',
         rarity: 'uncommon',
-        shortDescription: `Coletado diretamente nos marcadores da fase (${finalQty}x).`,
-        detailedLore: `Recurso autêntico recolhido pelo jogador ao explorar "${project.title || 'a fase'}". Pode ser utilizado em missões, trocas com NPCs ou estações interativas.`,
-        statsText: `Quantidade na Mochila: ×${finalQty}`,
+        shortDescription: `Coletado na fase (×${finalQty}).`,
+        detailedLore: `Recurso autêntico recolhido durante a exploração.`,
+        statsText: `Quantidade: ×${finalQty}`,
         sourceKind: 'map_resource',
       });
     }
 
-    // 0. Galeria de Pets Companheiros do Jogador (para equipar e trocar no slot de Pet da mochila!)
-    for (const pet of resolvedPetConfig.petGallery) {
+    for (const pet of realPetGallery) {
       const slotItemId = `bp-pet-${pet.id}`;
       const rem = removedIds[slotItemId] || 0;
       if (rem >= 1) continue;
@@ -2609,43 +2624,32 @@ export const GameBackpackPopupModal: React.FC<{
       list.push({
         id: slotItemId,
         petId: pet.id,
-        name: `${pet.name} (Nv.${petLv})`,
+        name: `${pet.name}`,
         iconEmoji: pet.iconEmoji || '🐾',
         iconPng: pet.avatarPng,
         quantity: 1,
         category: 'pets',
         equipSlot: 'pet',
         rarity: pet.rarity || 'epic',
-        shortDescription: pet.shortDescription || 'Pet Companheiro que refaz seu trajeto e ataca inimigos.',
-        detailedLore:
-          pet.detailedLore ||
-          'Companheiro fiel da Galeria de Pets do Jogador. Segue exatamente seus passos ao caminhar, explora curioso em volta quando você para e ataca os NPCs inimigos até atordoá-los em 50% PV.',
-        statsText: `Nv.${petLv} • ❤️ ${petHp}/${petMaxHp} PV • ⚔️ ${pet.attackDamage} ATQ`,
+        shortDescription: pet.shortDescription || 'Pet Companheiro.',
+        detailedLore: pet.detailedLore || 'Companheiro da galeria de pets.',
+        statsText: `Nv.${petLv} • PV ${petHp}/${petMaxHp} • ATQ ${pet.attackDamage}`,
         sourceKind: 'pet_gallery',
       });
     }
 
-    // 3. Adiciona o acervo completo de demonstração para garantir que todas as categorias (Equipáveis, Consumíveis, Livros e Grimórios) tenham itens ricos para teste
-    for (const demo of DEFAULT_SHOWCASE_ITEMS) {
-      if (!list.some((i) => i.id === demo.id)) {
-        const rem = removedIds[demo.id] || 0;
-        const finalQty = Math.max(0, demo.quantity - rem);
-        if (finalQty > 0) {
-          list.push({ ...demo, quantity: finalQty });
-        }
-      }
-    }
-
     return list;
-  }, [project.playerInventory?.items, mapCollectedInventory, removedIds, project.title, resolvedPetConfig.petGallery]);
+  }, [project.playerInventory?.items, project.itemCatalog, mapCollectedInventory, removedIds, realPetGallery]);
 
-  // Filtra itens de acordo com o carrossel horizontal e eventual filtro de slot
   const filteredItems = useMemo(() => {
     return allUnifiedItems.filter((item) => {
       if (activeEquipSlotFilter && item.equipSlot !== activeEquipSlotFilter) {
         return false;
       }
       if (activeCategory === 'todos') return true;
+      if (activeCategory === 'artefatos') {
+        return item.equipSlot === 'accessory' || item.equipSlot === 'boots' || item.category === 'outros';
+      }
       if (activeCategory === 'equipaveis') {
         return item.category === 'equipaveis' || item.category === 'pets';
       }
@@ -2653,16 +2657,12 @@ export const GameBackpackPopupModal: React.FC<{
     });
   }, [allUnifiedItems, activeCategory, activeEquipSlotFilter]);
 
-  // Total de slots circulares (ex: 28 no modo Equipamento, 42 no modo Inventário Geral)
-  const totalSlotsCount = topFolderTab === 'inventario_geral' ? 42 : 28;
-  const colsClass = isLandscape
-    ? topFolderTab === 'inventario_geral'
-      ? 'grid-cols-8'
-      : 'grid-cols-6'
-    : 'grid-cols-7';
+  // GRADE DE 5 ITENS POR LINHA NA MOCHILA (5 colunas exatas!)
+  const GRID_COLS = 5;
+  const totalSlotsCount = 25;
 
   const selectedItem: UnifiedBackpackSlotItem | null =
-    filteredItems[selectedSlotIndex] || null;
+    selectedSlotIndex !== null ? filteredItems[selectedSlotIndex] || null : null;
 
   const isSelectedItemEquipped = useMemo(() => {
     if (!selectedItem) return false;
@@ -2673,124 +2673,52 @@ export const GameBackpackPopupModal: React.FC<{
     return Object.values(equippedBySlot).includes(selectedItem.id);
   }, [selectedItem, equippedBySlot, project.player?.equippedMotionTags]);
 
-  // Equipar / Desequipar / Usar item selecionado (Botão Ciano Esquerdo)
-  const handlePrimaryEquipOrUse = () => {
-    if (!selectedItem) {
+  const handlePrimaryEquipOrUse = (targetOverride?: UnifiedBackpackSlotItem | null) => {
+    const item = targetOverride ?? selectedItem;
+    if (!item) {
       triggerToast('Selecione um slot com item primeiro!');
       return;
     }
 
-    if (selectedItem.category === 'pets' || selectedItem.equipSlot === 'pet') {
-      const targetPetId = selectedItem.petId || selectedItem.id.replace(/^bp-pet-/, '');
-      const existingSlotIdx = resolvedPetConfig.equippedPetIds.findIndex((id) => id === targetPetId);
-
+    if (item.category === 'pets' || item.equipSlot === 'pet') {
+      const targetPetId = item.petId || item.id.replace(/^bp-pet-/, '');
+      const existingSlotIdx = realEquippedPets.findIndex((p) => p?.id === targetPetId);
       if (existingSlotIdx === targetPetSlotIdx) {
         equipPetInSlot(null, targetPetSlotIdx, false);
-        triggerToast(`🐾 Removido do Slot ${targetPetSlotIdx + 1}: ${selectedItem.name}`);
+        triggerToast(`Removido do Slot P${targetPetSlotIdx + 1}: ${item.name}`);
       } else {
         equipPetInSlot(targetPetId, targetPetSlotIdx, true);
-        triggerToast(`🐾 Equipado no Slot ${targetPetSlotIdx + 1} e Invocado: ${selectedItem.name}!`);
+        triggerToast(`Equipado em P${targetPetSlotIdx + 1}: ${item.name}`);
       }
       return;
     }
 
-    if (selectedItem.category === 'equipaveis') {
-      const targetSlot: EquipmentSlotKey = selectedItem.equipSlot || 'weapon';
+    if (item.category === 'equipaveis' || item.equipSlot) {
+      const targetSlot: EquipmentSlotKey = item.equipSlot || 'accessory';
       const currentlyEquippedId = equippedBySlot[targetSlot];
-      const mTag = selectedItem.motionLayerTag?.trim();
-      const currentEqTags = project.player?.equippedMotionTags || [];
-      const isTagEquipped = mTag
-        ? currentEqTags.some((t) => t.toLowerCase() === mTag.toLowerCase())
-        : false;
-      const shouldUnequip = currentlyEquippedId === selectedItem.id || isTagEquipped;
-
-      if (shouldUnequip) {
-        setEquippedBySlot((prev) => ({ ...prev, [targetSlot]: null }));
-        if (onUpdateProject && project.player) {
-          const nextTags = mTag
-            ? currentEqTags.filter((t) => t.toLowerCase() !== mTag.toLowerCase())
-            : currentEqTags;
-          const nextInvItems = (project.playerInventory?.items || []).map((it) =>
-            it.id === selectedItem.id ? { ...it, equipped: false } : it
-          );
-          onUpdateProject({
-            player: { ...project.player, equippedMotionTags: nextTags },
-            playerInventory: project.playerInventory
-              ? { ...project.playerInventory, items: nextInvItems }
-              : project.playerInventory,
-          });
-        }
-        triggerToast(
-          mTag
-            ? `🙈 Roupa/Peça Motion desfeita (#${mTag}): ${selectedItem.name}`
-            : `Desequipado: ${selectedItem.name}`
-        );
-      } else {
-        setEquippedBySlot((prev) => ({ ...prev, [targetSlot]: selectedItem.id }));
-        if (onUpdateProject && project.player) {
-          const nextTags = mTag
-            ? Array.from(new Set([...currentEqTags, mTag]))
-            : currentEqTags;
-          const nextInvItems = (project.playerInventory?.items || []).map((it) =>
-            it.id === selectedItem.id ? { ...it, equipped: true } : it
-          );
-          onUpdateProject({
-            player: { ...project.player, equippedMotionTags: nextTags },
-            playerInventory: project.playerInventory
-              ? { ...project.playerInventory, items: nextInvItems }
-              : project.playerInventory,
-          });
-        }
-        triggerToast(
-          mTag
-            ? `👕 Vestido no Herói (#${mTag}): ${selectedItem.name}!`
-            : `⚔️ Equipado no slot: ${selectedItem.name}!`
-        );
-      }
+      const shouldUnequip = currentlyEquippedId === item.id;
+      setEquippedBySlot((prev) => ({
+        ...prev,
+        [targetSlot]: shouldUnequip ? null : item.id,
+      }));
+      triggerToast(shouldUnequip ? `Desequipado: ${item.name}` : `Equipado: ${item.name}`);
       return;
     }
 
-    if (selectedItem.category === 'item_pet') {
+    if (item.category === 'item_pet' || item.category === 'consumiveis') {
       setRemovedIds((prev) => ({
         ...prev,
-        [selectedItem.id]: (prev[selectedItem.id] || 0) + 1,
+        [item.id]: (prev[item.id] || 0) + 1,
       }));
-      if (onUpdateProject && project.player) {
-        const res = applyPetCareItemToPlayer(project.player, selectedItem);
-        onUpdateProject({ player: res.updatedPlayer });
-        triggerToast(
-          res.leveledUp
-            ? `⬆️ LEVEL UP! ${res.petName} subiu para Nv.${res.newLevel} e CRESCEU! (+${res.healedHp} PV)`
-            : `🍖 ${res.petName} recebeu ${selectedItem.name}! (+${res.healedHp} PV • +${res.gainedXp} EXP)`
-        );
-      } else {
-        triggerToast(`🍖 Deu ${selectedItem.name} ao Pet! (${selectedItem.statsText || 'Cura & EXP'})`);
-      }
+      triggerToast(`Usou ${item.name}!`);
       return;
     }
 
-    if (selectedItem.category === 'consumiveis') {
-      setRemovedIds((prev) => ({
-        ...prev,
-        [selectedItem.id]: (prev[selectedItem.id] || 0) + 1,
-      }));
-      triggerToast(`✨ Consumiu ${selectedItem.name}! (${selectedItem.statsText || 'Efeito aplicado'})`);
-      return;
-    }
-
-    if (selectedItem.category === 'livros') {
-      setBookPageIndex(0);
-      setLensInspectItem(selectedItem);
-      return;
-    }
-
-    setBookPageIndex(0);
-    setLensInspectItem(selectedItem);
+    setBalloonExpandedLore((v) => !v);
   };
 
-  // Soltar / Descartar 1x do item selecionado quando o modo Selecionar/Soltar está ativo
-  const handleDropSelectedItem = (itemToDrop?: UnifiedBackpackSlotItem) => {
-    const target = itemToDrop || selectedItem;
+  const handleDropSelectedItem = (itemToDrop?: UnifiedBackpackSlotItem | null) => {
+    const target = itemToDrop ?? selectedItem;
     if (!target) {
       triggerToast('Selecione um item para soltar!');
       return;
@@ -2799,7 +2727,6 @@ export const GameBackpackPopupModal: React.FC<{
       ...prev,
       [target.id]: (prev[target.id] || 0) + 1,
     }));
-    // Se estava equipado e acabou, desequipa
     if (target.quantity <= 1) {
       setEquippedBySlot((prev) => {
         const next = { ...prev };
@@ -2810,1175 +2737,2819 @@ export const GameBackpackPopupModal: React.FC<{
       });
     }
     onDropItemToMap?.(target);
-    triggerToast(`📤 Soltou 1x ${target.name} no mapa!`);
+    triggerToast(`Soltou 1x ${target.name}`);
   };
 
-  // Renderizador de cada Slot de Equipamento ao lado do Personagem (Tema Dourado/Âmbar Real alinhado ao Quest Menu)
-  const renderPurpleEquipmentSlot = (
-    slotKey: EquipmentSlotKey,
-    label: string,
-    isTallWeaponSlot = false
-  ) => {
-    const equippedId = equippedBySlot[slotKey];
-    const eqItem = allUnifiedItems.find((i) => i.id === equippedId) || null;
-    const isSlotFiltered = activeEquipSlotFilter === slotKey;
+  // Cartas filtradas na aba DECK
+  const filteredDeckCards = useMemo(() => {
+    return realPetGallery.filter((c) => {
+      if (cardRarityFilter !== 'all' && (c.rarity || 'common') !== cardRarityFilter) {
+        return false;
+      }
+      if (
+        cardSearchQuery.trim() &&
+        !c.name.toLowerCase().includes(cardSearchQuery.trim().toLowerCase())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [realPetGallery, cardRarityFilter, cardSearchQuery]);
 
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (slotKey === 'pet') {
-            setActiveCategory('pets');
-            setActiveEquipSlotFilter('pet');
-            const idx = eqItem
-              ? Math.max(
-                  0,
-                  allUnifiedItems
-                    .filter((i) => i.equipSlot === 'pet')
-                    .findIndex((i) => i.id === eqItem.id)
-                )
-              : 0;
-            setSelectedSlotIndex(idx);
-            triggerToast(
-              eqItem
-                ? `🐾 Pet Ativo: ${eqItem.name} • Escolha outro Pet ao lado para trocar!`
-                : '🐾 Escolha um Pet Companheiro na Galeria ao lado para equipar!'
-            );
-            return;
-          }
-          if (eqItem) {
-            const idx = filteredItems.findIndex((i) => i.id === eqItem.id);
-            if (idx >= 0) setSelectedSlotIndex(idx);
-            else {
-              setActiveCategory('todos');
-              setActiveEquipSlotFilter(null);
-              const allIdx = allUnifiedItems.findIndex((i) => i.id === eqItem.id);
-              if (allIdx >= 0) setSelectedSlotIndex(allIdx);
-            }
-            triggerToast(`${label}: ${eqItem.name}`);
-          } else {
-            setActiveEquipSlotFilter((prev) => (prev === slotKey ? null : slotKey));
-            setActiveCategory('equipaveis');
-            setSelectedSlotIndex(0);
-            triggerToast(`Filtrando equipamentos para: ${label}`);
-          }
-        }}
-        title={
-          slotKey === 'pet'
-            ? eqItem
-              ? `🐾 Slot de Pet: ${eqItem.name} (Clique para trocar de Pet)`
-              : '🐾 Slot de Pet Companheiro vazio (Clique para escolher um Pet)'
-            : eqItem
-            ? `${label}: ${eqItem.name} (Clique para selecionar)`
-            : `${label} vazio (Clique para filtrar)`
-        }
-        className={`relative w-full ${
-          isTallWeaponSlot
-            ? isLandscape
-              ? 'h-22 rounded-[20px]'
-              : 'h-20 rounded-[20px]'
-            : isLandscape
-            ? 'h-9.5 rounded-full'
-            : 'h-9 rounded-full'
-        } bg-gradient-to-b from-[#92400e] via-[#78350f] to-[#5c2604] border-[2.5px] ${
-          isSlotFiltered
-            ? 'border-white ring-3 ring-[#fbbf24] scale-[1.04]'
-            : eqItem
-            ? 'border-[#fbbf24] hover:border-white'
-            : 'border-[#d97706] hover:border-[#fef08a]'
-        } shadow-[0_3.5px_0_#3b1702,inset_0_2px_4px_rgba(255,255,255,0.28)] flex flex-col items-center justify-center transition-all active:translate-y-0.5 cursor-pointer group`}
-      >
-        {slotKey === 'pet' && (
-          <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-[#fbbf24] border border-[#5c2604] text-[#451a03] text-[7px] font-black uppercase tracking-wider shadow-xs">
-            🐾 Pet
-          </span>
-        )}
-        {eqItem ? (
-          <div className="flex flex-col items-center justify-center leading-none">
-            {eqItem.iconPng ? (
-              <img
-                src={eqItem.iconPng}
-                alt={eqItem.name}
-                className={`${isTallWeaponSlot ? 'w-10 h-10' : 'w-5 h-5'} object-contain drop-shadow`}
-              />
-            ) : (
-              <span className={`${isTallWeaponSlot ? 'text-2xl' : 'text-base'} drop-shadow`}>
-                {eqItem.iconEmoji}
-              </span>
-            )}
-            <span className="text-[8px] font-black text-[#fef08a] truncate max-w-[64px] mt-0.5 drop-shadow">
-              {eqItem.name.split(' ')[0]}
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center leading-none">
-            <span className="text-[#fde68a] font-black text-xl leading-none select-none group-hover:scale-110 transition-transform">
-              {slotKey === 'pet' ? '🐾' : '+'}
-            </span>
-            {slotKey === 'pet' && (
-              <span className="text-[7px] font-black text-[#fde68a]/80 mt-0.5">Equipar Pet</span>
-            )}
-          </div>
-        )}
-      </button>
-    );
-  };
+  const selectedDeckCard =
+    selectedCardIdx !== null ? filteredDeckCards[selectedCardIdx] || null : null;
 
-  // Renderizador de cada um dos 3 Slots de Pets/Slimes à Direita do Personagem
-  const renderPetEquipmentSlot = (petSlotNumber: 0 | 1 | 2) => {
-    const slotKey: EquipmentSlotKey =
-      petSlotNumber === 0 ? 'pet1' : petSlotNumber === 1 ? 'pet2' : 'pet3';
-    const equippedPetId = resolvedPetConfig.equippedPetIds[petSlotNumber];
-    const eqItem = equippedPetId
-      ? allUnifiedItems.find((i) => i.id === `bp-pet-${equippedPetId}`) || null
-      : null;
-    const isTargetSlot = targetPetSlotIdx === petSlotNumber;
-    const isSummonedActive =
-      resolvedPetConfig.enabled &&
-      resolvedPetConfig.activePetId &&
-      resolvedPetConfig.activePetId === equippedPetId;
+  // Quests para quando o usuário clicar em JORNADA ou TAREFAS (sem trocar de tela/header!)
+  const { jornada: jornadaQuests, tarefas: tarefasQuests } = useMemo(
+    () => getOrderedPhaseQuests(project, true),
+    [project]
+  );
 
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setTargetPetSlotIdx(petSlotNumber);
-          setActiveCategory('pets');
-          setActiveEquipSlotFilter('pet');
-          if (equippedPetId) {
-            equipPetInSlot(equippedPetId, petSlotNumber, true);
-            const idx = Math.max(
-              0,
-              allUnifiedItems
-                .filter((i) => i.equipSlot === 'pet')
-                .findIndex((i) => i.id === `bp-pet-${equippedPetId}`)
-            );
-            setSelectedSlotIndex(idx);
-            triggerToast(
-              `🐾 Slot Pet ${petSlotNumber + 1} Ativo no Mapa: ${eqItem?.name || 'Pet'}!`
-            );
-          } else {
-            setSelectedSlotIndex(0);
-            triggerToast(
-              `🐾 Slot Pet ${petSlotNumber + 1} selecionado • Escolha um Pet/Slime ao lado para equipar!`
-            );
-          }
-        }}
-        title={
-          eqItem
-            ? `🐾 Slot Pet ${petSlotNumber + 1}: ${eqItem.name} (Clique para invocar ou trocar)`
-            : `🐾 Slot Pet ${petSlotNumber + 1} vazio (Clique para equipar um Pet/Slime)`
-        }
-        className={`relative w-full ${
-          isLandscape ? 'h-9.5 rounded-full' : 'h-9 rounded-full'
-        } bg-gradient-to-b from-[#92400e] via-[#78350f] to-[#5c2604] border-[2.5px] ${
-          isSummonedActive
-            ? 'border-[#4ade80] ring-2 ring-[#4ade80]/80 scale-[1.03]'
-            : isTargetSlot
-            ? 'border-white ring-2 ring-[#fbbf24]'
-            : eqItem
-            ? 'border-[#fbbf24] hover:border-white'
-            : 'border-[#d97706] hover:border-[#fef08a]'
-        } shadow-[0_3.5px_0_#3b1702,inset_0_2px_4px_rgba(255,255,255,0.28)] flex flex-col items-center justify-center transition-all active:translate-y-0.5 cursor-pointer group`}
-      >
-        <span
-          className={`absolute -top-1.5 -right-1 px-1 rounded-full border text-[6.5px] font-black uppercase leading-tight shadow-xs ${
-            isSummonedActive
-              ? 'bg-[#22c55e] border-white text-white'
-              : 'bg-[#fbbf24] border-[#5c2604] text-[#451a03]'
-          }`}
-        >
-          {isSummonedActive ? `⚡P${petSlotNumber + 1}` : `P${petSlotNumber + 1}`}
-        </span>
-        {eqItem ? (
-          <div className="flex items-center justify-center gap-1 leading-none px-1">
-            {eqItem.iconPng ? (
-              <img
-                src={eqItem.iconPng}
-                alt={eqItem.name}
-                className="w-4.5 h-4.5 object-contain drop-shadow shrink-0"
-              />
-            ) : (
-              <span className="text-sm drop-shadow shrink-0">{eqItem.iconEmoji}</span>
-            )}
-            <span className="text-[7.5px] font-black text-[#fef08a] truncate max-w-[44px] drop-shadow">
-              {eqItem.name.split(' ')[0]}
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-1 leading-none">
-            <span className="text-[#fde68a] font-black text-xs leading-none select-none">🐾</span>
-            <span className="text-[7.5px] font-black text-[#fde68a]/85">Pet {petSlotNumber + 1}</span>
-          </div>
-        )}
-      </button>
-    );
-  };
-
-  // Sub-bloco: Palco do Personagem (Silhueta com aura branca ou Sprite Frente + 3 Slots Esq + 3 Slots de Pets Dir)
-  const renderEquipmentHeroStage = () => (
-    <div
-      className={`relative rounded-[24px] p-2 bg-gradient-to-b from-[#fef3c7] via-[#fde68a] to-[#f59e0b] border-[3px] border-[#d97706] shadow-[0_4px_0_#92400e] shrink-0 ${
-        isLandscape && !isHubFullScreen ? 'w-[45%] h-full flex flex-col' : 'w-full'
-      }`}
+  // Ícones SVG fiéis aos 4 Concepts
+  const ConceptStar = ({ size = 12 }: { size?: number }) => (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      style={{ flexShrink: 0, display: 'inline-block', filter: 'drop-shadow(0 1px 1px rgba(120,70,10,0.3))' }}
     >
-      {/* Borda interna tracejada fiel ao design do usuário com paleta dourada/creme */}
-      <div className="w-full h-full rounded-[18px] border-[2.5px] border-dashed border-[#78350f]/55 bg-[#fffbeb]/45 px-2.5 py-2 flex flex-col justify-between relative">
-        {/* Topo sutil dentro do palco: Nome do Herói + Alternador Silhueta/Sprite */}
-        <div className="flex items-center justify-between gap-1 z-10 mb-0.5">
-          <span className="px-2.5 py-0.5 rounded-full bg-[#5c2604] border border-[#fef08a] text-[#fef08a] text-[9px] font-black tracking-wide shadow-xs">
-            ⚔️ {project.player?.name || activeSavedChar?.name || 'Herói (Posição Frente)'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setForceSilhouette((v) => !v)}
-            className="px-2 py-0.5 rounded-full bg-[#fff8e7] hover:bg-white border border-[#b45309] text-[#5c2604] text-[9px] font-black shadow-xs cursor-pointer transition-all"
-            title="Alternar entre Silhueta com Aura Branca e Asset Frontal do Jogador"
-          >
-            {frontPlayerAssetPng && !forceSilhouette ? '👤 Ver Silhueta' : '🎨 Asset Frente'}
-          </button>
-        </div>
+      <path
+        d="M12 1 L14.8 9.2 L23 12 L14.8 14.8 L12 23 L9.2 14.8 L1 12 L9.2 9.2 Z"
+        fill="#f59e0b"
+        stroke="#92400e"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
 
-        {/* Grid Central: 3 Slots à Esquerda | Silhueta/Personagem ao Centro | 3 Slots de Pets/Slimes à Direita! */}
-        <div className="grid grid-cols-12 items-center gap-2 my-auto py-0.5">
-          {/* 3 Slots de Equipamento à Esquerda */}
-          <div className="col-span-3 flex flex-col gap-2 justify-center">
-            {renderPurpleEquipmentSlot('head', 'Cabeça / Elmo')}
-            {renderPurpleEquipmentSlot('armor', 'Armadura / Traje')}
-            {renderPurpleEquipmentSlot('boots', 'Botas / Calçado')}
-          </div>
+  const ConceptGoldCoinSvg = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 32 32" style={{ flexShrink: 0 }}>
+      <defs>
+        <radialGradient id="cGold" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#fef08a" />
+          <stop offset="55%" stopColor="#f59e0b" />
+          <stop offset="100%" stopColor="#b45309" />
+        </radialGradient>
+      </defs>
+      <circle cx="16" cy="16" r="14" fill="url(#cGold)" stroke="#78350f" strokeWidth="2" />
+      <circle cx="16" cy="16" r="10.5" fill="none" stroke="#fde68a" strokeWidth="1.2" />
+      <path d="M16 9 L16 23 M13 12 L19 12 M13 20 L19 20" stroke="#78350f" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
 
-          {/* Personagem ao Centro: Silhueta Preta com Brilho Branco OU Asset Frontal / Motion Canvas Paper-Doll */}
-          <div className="col-span-6 flex flex-col items-center justify-center relative min-h-[118px]">
-            {frontPlayerAssetPng && !forceSilhouette ? (
-              (project.player?.motionLayers && project.player.motionLayers.length > 0) ||
-              (activeSavedChar?.motionLayers && activeSavedChar.motionLayers.length > 0) ? (
-                <MotionAssetCanvas
-                  src={frontPlayerAssetPng}
-                  alt="Personagem Frente"
-                  motionLayers={resolveVisibleMotionLayersForPlayer(
-                    project.player?.motionLayers || activeSavedChar?.motionLayers,
-                    project.player || activeSavedChar || undefined,
-                    project.playerInventory,
-                    undefined,
-                    project.itemCatalog
-                  )}
-                  isNpcBounce={false}
-                  width={isLandscape ? 120 : 100}
-                  height={isLandscape ? 120 : 100}
-                  className={`${
-                    isLandscape ? 'w-30 h-30' : 'w-25 h-25'
-                  } object-contain select-none transition-transform duration-300 hover:scale-105`}
-                  style={{
-                    filter:
-                      'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.9))',
-                  }}
-                />
-              ) : (
-                <img
-                  src={frontPlayerAssetPng}
-                  alt="Personagem Frente"
-                  className={`${
-                    isLandscape ? 'w-30 h-30' : 'w-25 h-25'
-                  } object-contain select-none transition-transform duration-300 hover:scale-105`}
-                  style={{
-                    filter:
-                      'drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 16px rgba(255,255,255,0.9))',
-                  }}
-                />
-              )
-            ) : (
-              <HeroFrontSilhouetteSvg className={isLandscape ? 'w-30 h-30' : 'w-25 h-25'} />
-            )}
-          </div>
+  const ConceptBlueGemSvg = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 32 32" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="cGem" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#60a5fa" />
+          <stop offset="50%" stopColor="#2563eb" />
+          <stop offset="100%" stopColor="#1e3a8a" />
+        </linearGradient>
+      </defs>
+      <polygon
+        points="16,2 27,9 27,23 16,30 5,23 5,9"
+        fill="url(#cGem)"
+        stroke="#172554"
+        strokeWidth="1.8"
+      />
+      <polygon points="16,6 23,11 23,21 16,26 9,21 9,11" fill="#93c5fd" fillOpacity="0.35" />
+    </svg>
+  );
 
-          {/* 3 Slots de Pets / Mobbys / Slimes à Direita! */}
-          <div className="col-span-3 flex flex-col gap-2 justify-center">
-            {renderPetEquipmentSlot(0)}
-            {renderPetEquipmentSlot(1)}
-            {renderPetEquipmentSlot(2)}
-          </div>
-        </div>
-      </div>
+  const ConceptLeatherBagSvg = ({ size = 20 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 32 32" style={{ flexShrink: 0 }}>
+      <defs>
+        <radialGradient id="cBag" cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#b45309" />
+          <stop offset="65%" stopColor="#78350f" />
+          <stop offset="100%" stopColor="#451a03" />
+        </radialGradient>
+      </defs>
+      <path
+        d="M11 8 C11 5, 21 5, 21 8 L25 14 C27 19, 26 27, 20 28 L12 28 C6 27, 5 19, 7 14 Z"
+        fill="url(#cBag)"
+        stroke="#271202"
+        strokeWidth="1.8"
+      />
+      <path d="M10 11 L22 11" stroke="#f59e0b" strokeWidth="2.2" strokeLinecap="round" />
+      <rect x="14" y="15" width="4" height="5" rx="1" fill="#f59e0b" />
+    </svg>
+  );
+
+  // Cabeçalho de Seção com linhas douradas e estrelas (ex: ─── ✦ EQUIPAMENTO ✦ ───)
+  const renderSectionTitle = (title: string, compact = false) => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: compact ? '5px' : '8px',
+        width: '100%',
+        marginBottom: compact ? '4px' : '6px',
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          height: '1.5px',
+          maxWidth: compact ? '40px' : '95px',
+          background: 'linear-gradient(90deg, rgba(212,175,55,0) 0%, rgba(212,175,55,0.85) 100%)',
+        }}
+      />
+      <ConceptStar size={compact ? 10 : 12} />
+      <span
+        style={{
+          fontFamily: "'Cinzel', serif",
+          fontWeight: 900,
+          fontSize: compact ? '10.5px' : isLandscape ? '13px' : '12.5px',
+          letterSpacing: compact ? '0.05em' : '0.1em',
+          color: '#0f172a',
+          textTransform: 'uppercase',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {title}
+      </span>
+      <ConceptStar size={compact ? 10 : 12} />
+      <div
+        style={{
+          flex: 1,
+          height: '1.5px',
+          maxWidth: compact ? '40px' : '95px',
+          background: 'linear-gradient(90deg, rgba(212,175,55,0.85) 0%, rgba(212,175,55,0) 100%)',
+        }}
+      />
     </div>
   );
 
-  // Sub-bloco: Carrossel Horizontal de Categorias + Grade de Slots Circulares + Barra de Ações Inferior
-  const renderSlotsAndActionsSection = () => (
-    <div
-      className={`flex flex-col ${
-        isHubFullScreen
-          ? 'w-full gap-2.5 mt-2.5'
-          : `flex-1 min-h-0 min-w-0 justify-between ${isLandscape ? 'h-full pl-1' : 'mt-2'}`
-      }`}
-    >
-      {/* CARROSSEL HORIZONTAL DESLIZANTE DE CATEGORIAS + BOTÃO SELECIONAR/SOLTAR */}
-      <div className="flex items-center gap-2 shrink-0 mb-1.5">
-        <div className="flex-1 flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 pr-1">
-          {[
-            { id: 'pets', label: '🐾 Pets' },
-            { id: 'item_pet', label: '🍖 Item Pet' },
-            { id: 'equipaveis', label: '⚔️ Equipáveis' },
-            { id: 'consumiveis', label: '🧪 Consumíveis' },
-            { id: 'livros', label: '📕 Livros & Grimórios' },
-            { id: 'todos', label: '🎒 Todos' },
-            { id: 'outros', label: '🗝️ Relíquias' },
-          ].map((cat) => {
-            const isActive = activeCategory === cat.id && !activeEquipSlotFilter;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => {
-                  setActiveEquipSlotFilter(null);
-                  setActiveCategory(cat.id as any);
-                  setSelectedSlotIndex(0);
+  // ============================================================================
+  // BALÃO ADAPTATIVO ACIMA OU ABAIXO DO ITEM EM DESTAQUE NA GRADE DE 5 COLUNAS
+  // ============================================================================
+  const renderAdaptiveItemBalloon = (slotIndex: number) => {
+    const row = Math.floor(slotIndex / GRID_COLS);
+    const col = slotIndex % GRID_COLS;
+    const placeBelow = row < 2; // Linhas 0 e 1 abrem ABAIXO; linhas 2+ abrem ACIMA
+    const arrowLeftPercent = col * 20 + 10; // Centro da coluna (10%, 30%, 50%, 70%, 90%)
+    const item = filteredItems[slotIndex] || null;
+
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          gridColumn: '1 / -1',
+          position: 'relative',
+          zIndex: 35,
+          margin: '4px 0',
+          width: '100%',
+          minWidth: 0,
+        }}
+      >
+        {placeBelow && (
+          <div
+            style={{
+              width: '14px',
+              height: '14px',
+              transform: 'rotate(45deg)',
+              marginBottom: '-8px',
+              marginLeft: `calc(${arrowLeftPercent}% - 7px)`,
+              background: '#fdfaf3',
+              borderLeft: '2px solid #d4af37',
+              borderTop: '2px solid #d4af37',
+              position: 'relative',
+              zIndex: 10,
+            }}
+          />
+        )}
+
+        <div
+          style={{
+            borderRadius: '16px',
+            padding: '10px 12px',
+            background: 'linear-gradient(180deg, #fdfbf7 0%, #f3ead8 100%)',
+            border: '2px solid #d4af37',
+            outline: '1px solid #785212',
+            boxShadow: '0 10px 24px rgba(15, 23, 42, 0.25), inset 0 1px 0 #ffffff',
+            position: 'relative',
+            zIndex: 20,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '9999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                  border: '2px solid #d4af37',
                 }}
-                className={`px-3 py-1 rounded-full border-[2.5px] text-[10px] font-black whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-gradient-to-b from-[#fbbf24] via-[#f59e0b] to-[#d97706] border-[#5c2604] text-[#451a03] shadow-[0_3px_0_#5c2604] -translate-y-0.5'
-                    : 'bg-[#fef3c7] border-[#d97706] text-[#78350f] shadow-[0_2px_0_#b45309] hover:bg-[#fde68a]'
-                }`}
               >
-                {cat.label}
-              </button>
-            );
-          })}
+                {item ? (
+                  item.iconPng ? (
+                    <img src={item.iconPng} alt={item.name} style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
+                  ) : (
+                    <span style={{ fontSize: '18px' }}>{item.iconEmoji}</span>
+                  )
+                ) : (
+                  <span style={{ color: '#64748b', fontSize: '20px', fontWeight: 300 }}>+</span>
+                )}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 900,
+                    fontSize: '11px',
+                    color: '#0f172a',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {item ? item.name : `SLOT #${slotIndex + 1} VAZIO`}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 700,
+                    fontSize: '9px',
+                    color: '#475569',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {item
+                    ? `${item.equipSlot === 'accessory' ? 'ARTEFATO' : item.category.toUpperCase()} • QTD: ×${item.quantity}`
+                    : 'CATEGORIA: LIVRE • QTD: 0'}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedSlotIndex(null);
+                setBalloonExpandedLore(false);
+              }}
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '9999px',
+                border: '1px solid #d4af37',
+                background: '#ffffff',
+                color: '#0f172a',
+                fontSize: '11px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div
+            style={{
+              marginTop: '6px',
+              paddingTop: '6px',
+              borderTop: '1px solid rgba(212,175,55,0.4)',
+              fontSize: '10px',
+              color: '#334155',
+              lineHeight: 1.35,
+            }}
+          >
+            {item ? (
+              <>
+                <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                  {item.statsText || item.shortDescription}
+                </div>
+                {balloonExpandedLore && (
+                  <div style={{ marginTop: '4px', color: '#475569' }}>{item.detailedLore}</div>
+                )}
+              </>
+            ) : (
+              <span style={{ color: '#64748b' }}>
+                Slot disponível. Itens coletados em fases ou criados no Editor de Inventário / Motion Canvas aparecem aqui.
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: '8px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: '6px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => handlePrimaryEquipOrUse(item)}
+              style={{
+                padding: '6px 4px',
+                borderRadius: '10px',
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: '8.5px',
+                textTransform: 'uppercase',
+                color: '#ffffff',
+                background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                border: '1.5px solid #d4af37',
+                cursor: 'pointer',
+              }}
+            >
+              {isSelectedItemEquipped ? 'DESEQUIPAR' : 'EQUIPAR / USAR'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBookPageIndex(0);
+                setBalloonExpandedLore((v) => !v);
+              }}
+              style={{
+                padding: '6px 4px',
+                borderRadius: '10px',
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: '8.5px',
+                textTransform: 'uppercase',
+                color: '#0f172a',
+                background: 'linear-gradient(180deg, #fdfbf7 0%, #e9dec8 100%)',
+                border: '1.5px solid #c59638',
+                cursor: 'pointer',
+              }}
+            >
+              {balloonExpandedLore ? 'OCULTAR' : 'SABER MAIS'}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDropSelectedItem(item)}
+              style={{
+                padding: '6px 4px',
+                borderRadius: '10px',
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: '8.5px',
+                textTransform: 'uppercase',
+                color: '#0f172a',
+                background: 'linear-gradient(180deg, #fdfbf7 0%, #e9dec8 100%)',
+                border: '1.5px solid #c59638',
+                cursor: 'pointer',
+              }}
+            >
+              SOLTAR 1x
+            </button>
+          </div>
         </div>
 
-        {/* Botão Circular Verde Selecionar / Soltar */}
-        <button
-          type="button"
-          onClick={() => {
-            const next = !selectDropMode;
-            setSelectDropMode(next);
-            triggerToast(
-              next
-                ? '🟢 Modo SOLTAR ativo: toque num slot ou no botão vermelho para soltar'
-                : 'Modo Seleção normal ativo'
-            );
-          }}
-          title={
-            selectDropMode
-              ? 'Modo Selecionar/Soltar ATIVO (Clique para desativar)'
-              : 'Ativar modo Selecionar / Soltar item'
-          }
-          className={`w-7 h-7 rounded-full border-[3px] border-[#365314] flex items-center justify-center shadow-[0_3px_0_#1a2e05] transition-all cursor-pointer shrink-0 ${
-            selectDropMode
-              ? 'bg-[#84cc16] ring-3 ring-[#fbbf24] scale-110'
-              : 'bg-gradient-to-b from-[#4ade80] to-[#16a34a] hover:brightness-110'
-          }`}
-        >
-          <span className="w-2.5 h-2.5 rounded-full bg-white/80 pointer-events-none" />
-        </button>
+        {!placeBelow && (
+          <div
+            style={{
+              width: '14px',
+              height: '14px',
+              transform: 'rotate(45deg)',
+              marginTop: '-8px',
+              marginLeft: `calc(${arrowLeftPercent}% - 7px)`,
+              background: '#f3ead8',
+              borderRight: '2px solid #d4af37',
+              borderBottom: '2px solid #d4af37',
+              position: 'relative',
+              zIndex: 30,
+            }}
+          />
+        )}
       </div>
+    );
+  };
 
-      {/* GRADE DE SLOTS CIRCULARES NO TEMA DO QUEST MENU */}
+  // ============================================================================
+  // SUB-COMPONENTE COMPARTILHADO: SEÇÃO EQUIPAMENTO (CABEÇA, TRAJE, ARTEFATOS + SLIME + P1/P2/P3)
+  // ============================================================================
+  const renderEquipmentCard = (compactMobile: boolean) => {
+    const leftSlots: { key: EquipmentSlotKey; label: string }[] = [
+      { key: 'head', label: 'CABEÇA' },
+      { key: 'armor', label: 'TRAJE' },
+      { key: 'accessory', label: 'ARTEFATOS' },
+    ];
+
+    return (
       <div
-        className={`relative ${
-          isHubFullScreen ? 'w-full' : 'flex-1 min-h-0 flex items-stretch gap-2 overflow-hidden'
-        }`}
+        style={{
+          borderRadius: '18px',
+          padding: compactMobile ? '6px 8px 8px' : '10px 14px 12px',
+          background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+          border: '2px solid #d4af37',
+          outline: '1px solid #784808',
+          boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minWidth: 0,
+          width: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          flexShrink: 0,
+          height: compactMobile ? 'auto' : '100%',
+        }}
       >
-        <div
-          className={
-            isHubFullScreen ? 'w-full pb-1' : 'flex-1 overflow-y-auto pr-1 pb-2.5 scrollbar-none'
-          }
-        >
-          <div className={`grid ${colsClass} gap-2.5`}>
-            {Array.from({ length: totalSlotsCount }).map((_, idx) => {
-              const slotItem = filteredItems[idx] || null;
-              const isSelected = selectedSlotIndex === idx;
-              const isEquipped =
-                slotItem && Object.values(equippedBySlot).includes(slotItem.id);
+        {renderSectionTitle('EQUIPAMENTO', compactMobile)}
 
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: compactMobile ? '23% 41% 36%' : '24% 41% 35%',
+            alignItems: 'center',
+            gap: compactMobile ? '4px' : '8px',
+            width: '100%',
+            minWidth: 0,
+            flex: 1,
+          }}
+        >
+          {/* ESQUERDA: CABEÇA, TRAJE, ARTEFATOS */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: compactMobile ? '4px' : '7px', minWidth: 0 }}>
+            {leftSlots.map((s) => {
+              const eqId = equippedBySlot[s.key];
+              const eqItem = allUnifiedItems.find((i) => i.id === eqId) || null;
+              const isFiltered = activeEquipSlotFilter === s.key;
               return (
                 <button
-                  key={`slot-${idx}`}
+                  key={s.key}
                   type="button"
                   onClick={() => {
-                    setSelectedSlotIndex(idx);
-                    if (slotItem && selectDropMode) {
-                      handleDropSelectedItem(slotItem);
-                    }
+                    setActiveEquipSlotFilter((prev) => (prev === s.key ? null : s.key));
+                    setActiveCategory(s.key === 'accessory' ? 'artefatos' : 'equipaveis');
                   }}
-                  onDoubleClick={() => {
-                    if (slotItem) {
-                      setSelectedSlotIndex(idx);
-                      setBookPageIndex(0);
-                      setLensInspectItem(slotItem);
-                    }
+                  style={{
+                    width: '100%',
+                    borderRadius: '12px',
+                    padding: compactMobile ? '3px 2px' : '7px 4px',
+                    background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                    border: isFiltered ? '2px solid #d4af37' : '1.5px solid #e2d3b8',
+                    boxShadow: 'inset 0 1px 0 #ffffff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    minWidth: 0,
                   }}
-                  title={
-                    slotItem
-                      ? `${slotItem.name} (×${slotItem.quantity}) — Duplo clique para Saber Mais`
-                      : `Slot vazio #${idx + 1}`
-                  }
-                  className={`relative aspect-square rounded-full flex items-center justify-center transition-all cursor-pointer select-none ${
-                    isSelected
-                      ? 'bg-gradient-to-b from-[#fef08a] to-[#fbbf24] border-[3px] border-[#5c2604] shadow-[0_4px_0_#5c2604] -translate-y-0.5 scale-[1.05] z-10'
-                      : slotItem
-                      ? 'bg-gradient-to-b from-[#fffbeb] to-[#fde68a] border-[2.5px] border-[#d97706] shadow-[0_3px_0_#92400e] hover:brightness-105'
-                      : 'bg-gradient-to-b from-[#fef3c7]/90 to-[#fde68a]/75 border-[2px] border-[#e5a913] shadow-[0_3px_0_#b45309]/70 hover:brightness-105'
-                  }`}
                 >
-                  {slotItem ? (
-                    <>
-                      {slotItem.iconPng ? (
+                  <div
+                    style={{
+                      width: compactMobile ? '32px' : '46px',
+                      height: compactMobile ? '32px' : '46px',
+                      borderRadius: '9999px',
+                      background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                      border: eqItem ? '2px solid #f59e0b' : '1.5px solid #d5d9e0',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {eqItem ? (
+                      eqItem.iconPng ? (
                         <img
-                          src={slotItem.iconPng}
-                          alt={slotItem.name}
-                          className="w-3/5 h-3/5 object-contain drop-shadow-xs"
+                          src={eqItem.iconPng}
+                          alt={eqItem.name}
+                          style={{ width: compactMobile ? '20px' : '26px', height: compactMobile ? '20px' : '26px', objectFit: 'contain' }}
                         />
                       ) : (
-                        <span className="text-base sm:text-lg leading-none drop-shadow-xs">
-                          {slotItem.iconEmoji}
-                        </span>
-                      )}
-
-                      {/* Quantidade */}
-                      {slotItem.quantity > 1 && (
-                        <span className="absolute -bottom-0.5 -right-0.5 px-1 rounded-full bg-[#5c2604] text-[#fef08a] border border-white text-[8px] font-black leading-tight">
-                          {slotItem.quantity}
-                        </span>
-                      )}
-
-                      {/* Indicador de Equipado */}
-                      {isEquipped && (
-                        <span className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 rounded-full bg-[#16a34a] border border-white text-white text-[8px] font-black flex items-center justify-center shadow">
-                          E
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-[#b45309]/65 font-black text-base leading-none">+</span>
-                  )}
+                        <span style={{ fontSize: compactMobile ? '14px' : '17px' }}>{eqItem.iconEmoji}</span>
+                      )
+                    ) : (
+                      <span style={{ color: '#7c8390', fontSize: compactMobile ? '17px' : '22px', fontWeight: 300, lineHeight: 1 }}>+</span>
+                    )}
+                  </div>
+                  <span
+                    style={{
+                      marginTop: '2px',
+                      fontFamily: "'Cinzel', serif",
+                      fontWeight: 900,
+                      fontSize: compactMobile ? '7px' : '8.5px',
+                      color: '#0f172a',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.02em',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: '100%',
+                    }}
+                  >
+                    {s.label}
+                  </span>
                 </button>
               );
             })}
           </div>
-        </div>
 
-        {!isHubFullScreen && (
-          <>
-            {/* Scrollbar Vertical Dourada 3D à direita */}
-            <div className="w-3.5 rounded-full bg-[#fde68a] border-2 border-[#78350f] shadow-inner p-0.5 flex flex-col items-center shrink-0 my-0.5">
-              <div className="w-full h-9 rounded-full bg-gradient-to-b from-[#f59e0b] to-[#b45309] border border-[#fef08a] shadow-xs" />
+          {/* CENTRO: ALTAR EM ARCO COM SLIME + PLACA NOME DO HERÓI / NÍVEL */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              minWidth: 0,
+              padding: '0 2px',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: compactMobile ? '118px' : '185px',
+                borderRadius: '999px 999px 18px 18px',
+                background: 'radial-gradient(circle at 50% 42%, #fdfbf7 0%, #f4ead7 72%, #eadbc0 100%)',
+                border: '2px solid #dfbe78',
+                boxShadow: 'inset 0 4px 14px rgba(180,140,60,0.16), 0 4px 10px rgba(120,85,25,0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: compactMobile ? '6px 4px 14px' : '10px 6px 20px',
+              }}
+            >
+              {customHeroSpritePng ? (
+                <img
+                  src={customHeroSpritePng}
+                  alt={heroDisplayName}
+                  style={{ width: compactMobile ? '74px' : '112px', height: compactMobile ? '74px' : '112px', objectFit: 'contain' }}
+                />
+              ) : (
+                <HeroFrontSilhouetteSvg className={compactMobile ? 'w-18 h-16' : 'w-28 h-26'} />
+              )}
             </div>
 
-            {/* Fade suave na base dos slots */}
-            <div className="pointer-events-none absolute bottom-0 left-0 right-5 h-4 bg-gradient-to-t from-[#fff8e7] to-transparent" />
-          </>
-        )}
-      </div>
-
-      {/* FAIXA RÁPIDA DO ITEM SELECIONADO */}
-      <div className="px-2.5 py-1 my-1 rounded-full bg-[#fef3c7] border-2 border-[#d97706] flex items-center justify-between gap-2 text-[10px] font-black text-[#5c2604] shrink-0">
-        {selectedItem ? (
-          <>
-            <span className="truncate">
-              {selectedItem.iconEmoji} {selectedItem.name}{' '}
-              <span className="text-[#b45309]">
-                {isSelectedItemEquipped ? '(EQUIPADO)' : `×${selectedItem.quantity}`}
+            <div
+              style={{
+                marginTop: compactMobile ? '-14px' : '-18px',
+                zIndex: 10,
+                width: '94%',
+                padding: compactMobile ? '3px 5px' : '5px 10px',
+                borderRadius: '12px',
+                background: 'linear-gradient(180deg, #fdfbf7 0%, #f4ead6 100%)',
+                border: '1.5px solid #d4af37',
+                boxShadow: '0 3px 8px rgba(120,85,25,0.14), inset 0 1px 0 #ffffff',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontWeight: 900,
+                  fontSize: compactMobile ? '8px' : '10px',
+                  color: '#0f172a',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                }}
+              >
+                {heroDisplayName}
               </span>
-            </span>
-            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#5c2604] text-[#fef08a] shrink-0">
-              {selectedItem.statsText || selectedItem.category.toUpperCase()}
-            </span>
-          </>
-        ) : (
-          <span className="text-[#92400e]/85">
-            Slot vazio selecionado • Toque em um item para equipar ou inspecionar
-          </span>
-        )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '1px' }}>
+                <span style={{ width: '10px', height: '1px', background: '#d4af37' }} />
+                <ConceptStar size={6} />
+                <span
+                  style={{
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 800,
+                    fontSize: compactMobile ? '6.5px' : '8px',
+                    color: '#334155',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  NÍVEL
+                </span>
+                <ConceptStar size={6} />
+                <span style={{ width: '10px', height: '1px', background: '#d4af37' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* DIREITA: P1 ATIVO, P2, P3 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: compactMobile ? '2px' : '4px', minWidth: 0, paddingRight: '2px' }}>
+            {([0, 1, 2] as const).map((slotIdx) => {
+              const pet = realEquippedPets[slotIdx];
+              const isTarget = targetPetSlotIdx === slotIdx;
+              const isActiveBadge = slotIdx === 0 || (pet && resolvedPetConfig.activePetId === pet.id);
+              return (
+                <React.Fragment key={`eq-pet-${slotIdx}`}>
+                  {slotIdx > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', margin: '-3px 0', zIndex: 5 }}>
+                      <ConceptStar size={8} />
+                    </div>
+                  )}
+                  <div
+                    onClick={() => {
+                      setTargetPetSlotIdx(slotIdx);
+                      if (pet) equipPetInSlot(pet.id, slotIdx, true);
+                    }}
+                    style={{
+                      width: '100%',
+                      borderRadius: '12px',
+                      padding: compactMobile ? '3px 5px' : '6px 8px',
+                      background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                      border: isTarget ? '2px solid #d4af37' : '1.5px solid #e2d3b8',
+                      boxShadow: 'inset 0 1px 0 #ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: compactMobile ? '4px' : '7px',
+                      cursor: 'pointer',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: compactMobile ? '26px' : '38px',
+                        height: compactMobile ? '32px' : '46px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                        border: '1.5px solid #d5d9e0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {pet ? (
+                        <span style={{ fontSize: compactMobile ? '13px' : '15px' }}>{pet.iconEmoji || '🐾'}</span>
+                      ) : (
+                        <span style={{ color: '#7c8390', fontSize: compactMobile ? '15px' : '18px', fontWeight: 300 }}>+</span>
+                      )}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '2px' }}>
+                        <span
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 900,
+                            fontSize: compactMobile ? '8.5px' : '10.5px',
+                            color: '#0f172a',
+                          }}
+                        >
+                          P{slotIdx + 1}
+                        </span>
+                        {isActiveBadge && (
+                          <span
+                            style={{
+                              padding: '1px 4px',
+                              borderRadius: '9999px',
+                              fontFamily: "'Cinzel', serif",
+                              fontWeight: 900,
+                              fontSize: compactMobile ? '6px' : '7px',
+                              color: '#ffffff',
+                              background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                              border: '1px solid #d4af37',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            ATIVO
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
+                        <span
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 800,
+                            fontSize: compactMobile ? '6px' : '7.5px',
+                            color: '#1e293b',
+                            width: compactMobile ? '22px' : '28px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          NÍVEL
+                        </span>
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: '16px',
+                            height: compactMobile ? '5px' : '6px',
+                            borderRadius: '9999px',
+                            background: '#c6cbd4',
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', minWidth: 0 }}>
+                        <span
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 800,
+                            fontSize: compactMobile ? '6px' : '7.5px',
+                            color: '#1e293b',
+                            width: compactMobile ? '22px' : '28px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          PV
+                        </span>
+                        <div
+                          style={{
+                            flex: 1,
+                            minWidth: '16px',
+                            height: compactMobile ? '5px' : '6px',
+                            borderRadius: '9999px',
+                            background: '#c6cbd4',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
       </div>
+    );
+  };
 
-      {/* BARRA INFERIOR COM OS 3 BOTÕES NOVA UI V1.2 (BTN-ROYAL-GOLD & BTN-PEARL-GOLD) */}
-      <div className="flex items-center gap-2 pt-0.5 shrink-0">
-        {/* 1. Botão Royal Sapphire & Gold: Equipar / Desequipar / Usar */}
-        <button
-          type="button"
-          onClick={handlePrimaryEquipOrUse}
-          className="flex-1 btn-royal-gold cursor-pointer truncate"
-        >
-          <div className="btn-royal-inner py-1.5 px-3 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1.5 truncate">
-            <span>
-              {!selectedItem
-                ? '🐾 EQUIPAR / USAR'
-                : selectedItem.category === 'pets' || selectedItem.equipSlot === 'pet'
-                ? `🐾 EQUIPAR SLOT ${targetPetSlotIdx + 1}`
-                : selectedItem.category === 'item_pet'
-                ? '🍖 DAR AO PET'
-                : selectedItem.category === 'equipaveis'
-                ? isSelectedItemEquipped
-                  ? '🛡️ DESEQUIPAR'
-                  : '⚔️ EQUIPAR'
-                : selectedItem.category === 'consumiveis'
-                ? '🧪 CONSUMIR'
-                : '📖 ABRIR'}
-            </span>
-          </div>
-        </button>
+  // ============================================================================
+  // SUB-COMPONENTE COMPARTILHADO: SEÇÃO ITENS (5 COLUNAS + MODO SOLTAR + BALÃO ADAPTATIVO)
+  // Em Mobile: Sem caixa de rolagem interna minúscula — exibe todos os slots amplos na tela!
+  // ============================================================================
+  const renderItemsCard = (compactMobile: boolean) => {
+    const rowsCount = Math.ceil(totalSlotsCount / GRID_COLS);
+    const selectedRow =
+      selectedSlotIndex !== null ? Math.floor(selectedSlotIndex / GRID_COLS) : null;
+    const placeBalloonBelow = selectedRow !== null ? selectedRow < 2 : true;
 
-        {/* 2. Botão Pearl & Gold Central: Saber Mais (Abre tela com Desfoque de Lente) */}
-        <button
-          type="button"
-          onClick={() => {
-            if (!selectedItem) {
-              triggerToast('Selecione um slot com item para ver os detalhes!');
-              return;
-            }
-            setBookPageIndex(0);
-            setLensInspectItem(selectedItem);
+    const categories = [
+      { id: 'todos', label: 'Todos' },
+      { id: 'pets', label: 'Pets' },
+      { id: 'item_pet', label: 'Item Pet' },
+      { id: 'equipaveis', label: 'Equipáveis' },
+      { id: 'artefatos', label: 'Artefatos' },
+      { id: 'consumiveis', label: 'Consumíveis' },
+      { id: 'livros', label: 'Livros' },
+    ];
+
+    return (
+      <div
+        style={{
+          borderRadius: '18px',
+          padding: compactMobile ? '8px 8px 10px' : '10px 14px 12px',
+          background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+          border: '2px solid #d4af37',
+          outline: '1px solid #784808',
+          boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          minWidth: 0,
+          width: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          flexShrink: 0,
+          height: compactMobile ? 'auto' : '100%',
+        }}
+      >
+        {/* TOPO ITENS: Título + Carrossel de Categorias + Setinha '>' + Botão Circular MODO SOLTAR */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '6px',
+            marginBottom: '6px',
+            minWidth: 0,
+            width: '100%',
           }}
-          className="flex-[1.15] btn-pearl-gold cursor-pointer truncate"
         >
-          <div className="btn-pearl-inner py-1.5 px-3 font-cinzel font-bold text-[10px] uppercase flex items-center justify-center gap-1 truncate">
-            <span>🔍 SABER MAIS</span>
-          </div>
-        </button>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {renderSectionTitle('ITENS', compactMobile)}
 
-        {/* 3. Botão Circular Fechar / Soltar (no Hub Fullscreen só exibe quando selectDropMode está ativo) */}
-        {(!isHubFullScreen || (selectDropMode && selectedItem)) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, width: '100%' }}>
+              <div
+                ref={catScrollRef}
+                className="no-scrollbar"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  overflowX: 'auto',
+                  paddingBottom: '2px',
+                }}
+              >
+                {categories.map((cat) => {
+                  const isActive = activeCategory === cat.id && !activeEquipSlotFilter;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveEquipSlotFilter(null);
+                        setActiveCategory(cat.id as any);
+                        setSelectedSlotIndex(null);
+                      }}
+                      style={{
+                        padding: compactMobile ? '4px 9px' : '5px 11px',
+                        borderRadius: '9px',
+                        fontFamily: "'Cinzel', serif",
+                        fontWeight: 800,
+                        fontSize: compactMobile ? '8.5px' : '9.5px',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        cursor: 'pointer',
+                        ...(isActive
+                          ? {
+                              background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                              border: '1.5px solid #d4af37',
+                              color: '#ffffff',
+                              boxShadow: '0 2px 5px rgba(4, 27, 66, 0.35)',
+                            }
+                          : {
+                              background: 'linear-gradient(180deg, #fbf7ef 0%, #efe4ce 100%)',
+                              border: '1px solid #d8c39e',
+                              color: '#0f172a',
+                            }),
+                      }}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Setinha '>' para rolar categorias sem transbordar */}
+              <button
+                type="button"
+                onClick={() => catScrollRef.current?.scrollBy({ left: 110, behavior: 'smooth' })}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '9999px',
+                  background: 'linear-gradient(180deg, #fbf7ef 0%, #efe4ce 100%)',
+                  border: '1.5px solid #d4af37',
+                  color: '#0f172a',
+                  fontWeight: 900,
+                  fontSize: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  cursor: 'pointer',
+                }}
+                title="Mais categorias"
+              >
+                ❯
+              </button>
+            </div>
+          </div>
+
+          {/* Botão Circular Azul Royal & Ouro MODO SOLTAR (fiel aos Concepts 2 e 4) */}
           <button
             type="button"
             onClick={() => {
-              if (selectDropMode && selectedItem) {
-                handleDropSelectedItem(selectedItem);
+              const next = !selectDropMode;
+              setSelectDropMode(next);
+              triggerToast(next ? 'Modo Soltar Ativo' : 'Modo Soltar Desativado');
+            }}
+            style={{
+              width: compactMobile ? '48px' : '56px',
+              height: compactMobile ? '48px' : '56px',
+              minWidth: compactMobile ? '48px' : '56px',
+              borderRadius: '9999px',
+              background: selectDropMode
+                ? 'linear-gradient(180deg, #1d4ed8 0%, #0b3778 100%)'
+                : 'linear-gradient(180deg, #0b3778 0%, #031536 100%)',
+              border: '2px solid #d4af37',
+              outline: '1.5px solid #785212',
+              boxShadow: '0 4px 10px rgba(0,8,22,0.4), inset 0 1px 2px rgba(255,255,255,0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+            title="Alternar Modo Soltar"
+          >
+            <span style={{ color: '#fff3c2', fontSize: '9px', lineHeight: 1, marginBottom: '1px' }}>❂</span>
+            <span
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: compactMobile ? '6.5px' : '7px',
+                lineHeight: 1.1,
+                color: '#ffffff',
+                textAlign: 'center',
+                textTransform: 'uppercase',
+              }}
+            >
+              MODO
+              <br />
+              SOLTAR
+            </span>
+          </button>
+        </div>
+
+        {/* GRADE DE 5 COLUNAS — Em Mobile abre ampla sem ficar espremida; em Paisagem tem scroll lateralizado */}
+        <div
+          style={{
+            borderRadius: '14px',
+            padding: compactMobile ? '10px 6px' : '10px 10px',
+            background: 'linear-gradient(180deg, #f8f2e4 0%, #f2e8d5 100%)',
+            border: '1.5px solid #e4d3b5',
+            display: 'flex',
+            alignItems: 'stretch',
+            gap: '6px',
+            flex: compactMobile ? 'none' : 1,
+            minHeight: 0,
+            minWidth: 0,
+          }}
+        >
+          <div
+            ref={itemsScrollRef}
+            className="no-scrollbar"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflowY: compactMobile ? 'visible' : 'auto',
+              maxHeight: compactMobile ? 'none' : '270px',
+              paddingRight: '2px',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+                columnGap: compactMobile ? '6px' : '10px',
+                rowGap: compactMobile ? '10px' : '10px',
+                padding: '2px 0',
+              }}
+            >
+              {Array.from({ length: rowsCount }).map((_, rowIndex) => {
+                const startIdx = rowIndex * GRID_COLS;
+                const isBalloonInThisRow = selectedRow === rowIndex && selectedSlotIndex !== null;
+
+                return (
+                  <React.Fragment key={`item-row-${rowIndex}`}>
+                    {isBalloonInThisRow && !placeBalloonBelow && renderAdaptiveItemBalloon(selectedSlotIndex!)}
+
+                    {Array.from({ length: GRID_COLS }).map((__, colOffset) => {
+                      const idx = startIdx + colOffset;
+                      if (idx >= totalSlotsCount) return null;
+                      const slotItem = filteredItems[idx] || null;
+                      const isSelected = selectedSlotIndex === idx;
+                      const isEquipped =
+                        slotItem ? Object.values(equippedBySlot).includes(slotItem.id) : false;
+
+                      return (
+                        <div
+                          key={`slot-${idx}`}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            position: 'relative',
+                            minWidth: 0,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (slotItem && selectDropMode) {
+                                handleDropSelectedItem(slotItem);
+                                return;
+                              }
+                              setBalloonExpandedLore(false);
+                              setSelectedSlotIndex((prev) => (prev === idx ? null : idx));
+                            }}
+                            style={{
+                              width: compactMobile ? '48px' : '52px',
+                              height: compactMobile ? '48px' : '52px',
+                              borderRadius: '9999px',
+                              background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                              border: isSelected ? '2.5px solid #f59e0b' : '1.5px solid #d5d9e0',
+                              boxShadow: isSelected
+                                ? '0 0 12px rgba(245, 158, 11, 0.75), inset 0 2px 4px rgba(0,0,0,0.12)'
+                                : 'inset 0 2px 4px rgba(0,0,0,0.12)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              position: 'relative',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {slotItem ? (
+                              slotItem.iconPng ? (
+                                <img
+                                  src={slotItem.iconPng}
+                                  alt={slotItem.name}
+                                  style={{ width: '26px', height: '26px', objectFit: 'contain' }}
+                                />
+                              ) : (
+                                <span style={{ fontSize: '18px' }}>{slotItem.iconEmoji}</span>
+                              )
+                            ) : (
+                              <span style={{ color: '#7c8390', fontSize: '22px', fontWeight: 300, lineHeight: 1 }}>
+                                +
+                              </span>
+                            )}
+
+                            {(isEquipped || isSelected) && (
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  top: '-3px',
+                                  right: '-3px',
+                                  width: '18px',
+                                  height: '18px',
+                                  borderRadius: '9999px',
+                                  background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                                  border: '1.5px solid #d4af37',
+                                  color: '#ffffff',
+                                  fontFamily: "'Cinzel', serif",
+                                  fontWeight: 900,
+                                  fontSize: '8.5px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                E
+                              </span>
+                            )}
+                          </button>
+
+                          <span
+                            style={{
+                              marginTop: '-7px',
+                              zIndex: 5,
+                              padding: '1px 8px',
+                              borderRadius: '9999px',
+                              background: 'linear-gradient(180deg, #fdfbf7 0%, #efe4ce 100%)',
+                              border: '1px solid #d8c39e',
+                              fontFamily: "'Cinzel', serif",
+                              fontWeight: 900,
+                              fontSize: '7.5px',
+                              color: '#0f172a',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            {slotItem ? `×${slotItem.quantity}` : 'QTD'}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {isBalloonInThisRow && placeBalloonBelow && renderAdaptiveItemBalloon(selectedSlotIndex!)}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Scrollbar Vertical Dourada (apenas no modo Paisagem onde há scroll interno) */}
+          {!compactMobile && (
+            <div
+              style={{
+                width: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => itemsScrollRef.current?.scrollBy({ top: -90, behavior: 'smooth' })}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#b45309',
+                  fontSize: '9px',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ▲
+              </button>
+              <div
+                style={{
+                  width: '6px',
+                  flex: 1,
+                  margin: '3px 0',
+                  borderRadius: '9999px',
+                  background: '#e5dccb',
+                  border: '1px solid #d6c5a7',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: '38%',
+                    borderRadius: '9999px',
+                    background: 'linear-gradient(180deg, #f59e0b 0%, #b45309 100%)',
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => itemsScrollRef.current?.scrollBy({ top: 90, behavior: 'smooth' })}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#b45309',
+                  fontSize: '9px',
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ▼
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // TELA DEDICADA 1: MOBILE VERTICAL — ABA DECK (100% FIEL A 'Mochila com cartas e pets.png')
+  // ============================================================================
+  const renderDedicatedMobileDeckScreen = () => {
+    const mobileSlots = 9;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', minWidth: 0, flexShrink: 0 }}>
+        {/* CORPO 2 COLUNAS: PETS EQUIPADOS (28%) + MINHAS CARTAS (72%) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '28% 1fr',
+            gap: '6px',
+            width: '100%',
+            minWidth: 0,
+            alignItems: 'stretch',
+          }}
+        >
+          {/* ESQUERDA: PETS EQUIPADOS */}
+          <div
+            style={{
+              borderRadius: '18px',
+              padding: '8px 5px',
+              background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+              border: '2px solid #d4af37',
+              outline: '1px solid #784808',
+              boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Título em 2 linhas com estrelas nas laterais para caber 100% sem cortar */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '3px',
+                marginBottom: '6px',
+                width: '100%',
+              }}
+            >
+              <ConceptStar size={9} />
+              <div
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontWeight: 900,
+                  fontSize: '8.5px',
+                  lineHeight: 1.15,
+                  color: '#0f172a',
+                  textAlign: 'center',
+                  textTransform: 'uppercase',
+                }}
+              >
+                PETS
+                <br />
+                EQUIPADOS
+              </div>
+              <ConceptStar size={9} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, justifyContent: 'space-around' }}>
+              {[0, 1, 2].map((slotIdx) => {
+                const eqPet = realEquippedPets[slotIdx];
+                const isSelectedSlot = targetPetSlotIdx === slotIdx;
+                return (
+                  <React.Fragment key={`mob-deck-pet-${slotIdx}`}>
+                    {slotIdx > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'center', margin: '-2px 0' }}>
+                        <ConceptStar size={9} />
+                      </div>
+                    )}
+                    <div
+                      onClick={() => setTargetPetSlotIdx(slotIdx)}
+                      style={{
+                        borderRadius: '14px',
+                        padding: '6px 4px',
+                        background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                        border: isSelectedSlot ? '2px solid #f59e0b' : '1.5px solid #e2d3b8',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '3px',
+                        cursor: 'pointer',
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '9999px',
+                          background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                          border: isSelectedSlot ? '2px solid #f59e0b' : '1.5px solid #d5d9e0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {eqPet ? (
+                          <span style={{ fontSize: '18px' }}>{eqPet.iconEmoji || '🐾'}</span>
+                        ) : (
+                          <span style={{ color: '#7c8390', fontSize: '20px', fontWeight: 300 }}>+</span>
+                        )}
+                      </div>
+                      <span
+                        style={{
+                          fontFamily: "'Cinzel', serif",
+                          fontWeight: 900,
+                          fontSize: '8.5px',
+                          color: '#0f172a',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        PET {slotIdx + 1}
+                      </span>
+
+                      <div
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '7px',
+                          background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                          border: '1.5px solid #d5d9e0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <span style={{ color: '#7c8390', fontSize: '16px', fontWeight: 300 }}>+</span>
+                      </div>
+                      <span
+                        style={{
+                          fontFamily: "'Cinzel', serif",
+                          fontWeight: 900,
+                          fontSize: '6.5px',
+                          lineHeight: 1.1,
+                          color: '#0f172a',
+                          textAlign: 'center',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        CARTA
+                        <br />
+                        EQUIPADA
+                      </span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* DIREITA: MINHAS CARTAS */}
+          <div
+            style={{
+              borderRadius: '18px',
+              padding: '8px 7px',
+              background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+              border: '2px solid #d4af37',
+              outline: '1px solid #784808',
+              boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            {renderSectionTitle('MINHAS CARTAS', true)}
+
+            {/* Busca + Raridade na mesma linha sem estourar */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto',
+                gap: '5px',
+                marginBottom: '6px',
+                width: '100%',
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: '9999px',
+                  background: '#fbf7ef',
+                  border: '1px solid #d8c39e',
+                  minWidth: 0,
+                }}
+              >
+                <span style={{ fontSize: '10px', color: '#475569' }}>🔍</span>
+                <input
+                  type="text"
+                  value={cardSearchQuery}
+                  onChange={(e) => setCardSearchQuery(e.target.value)}
+                  placeholder="Buscar carta..."
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    fontSize: '9px',
+                    color: '#0f172a',
+                    width: '100%',
+                    minWidth: 0,
+                  }}
+                />
+              </div>
+
+              <select
+                value={cardRarityFilter}
+                onChange={(e) => setCardRarityFilter(e.target.value)}
+                style={{
+                  padding: '4px 6px',
+                  borderRadius: '9999px',
+                  background: '#fbf7ef',
+                  border: '1px solid #d8c39e',
+                  fontFamily: "'Cinzel', serif",
+                  fontWeight: 800,
+                  fontSize: '8px',
+                  color: '#0f172a',
+                  outline: 'none',
+                }}
+              >
+                <option value="all">Todas as raridades</option>
+                <option value="common">Comum</option>
+                <option value="rare">Rara</option>
+                <option value="epic">Épica</option>
+                <option value="legendary">Lendária</option>
+              </select>
+            </div>
+
+            {/* Grade 3x3 de Cartas Verticais */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: '5px',
+                width: '100%',
+                minWidth: 0,
+              }}
+            >
+              {Array.from({ length: mobileSlots }).map((_, idx) => {
+                const card = filteredDeckCards[idx] || null;
+                const isCardSelected = selectedCardIdx === idx;
+                return (
+                  <div
+                    key={`mob-card-${idx}`}
+                    onClick={() => setSelectedCardIdx(idx)}
+                    style={{
+                      borderRadius: '11px',
+                      padding: '5px 4px',
+                      background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                      border: isCardSelected ? '2px solid #d4af37' : '1.5px solid #e2d3b8',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '3px',
+                      cursor: 'pointer',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '62px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                        border: '1.5px solid #d5d9e0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {card ? (
+                        <span style={{ fontSize: '20px' }}>{card.iconEmoji || '🐾'}</span>
+                      ) : (
+                        <>
+                          <span style={{ color: '#7c8390', fontSize: '20px', fontWeight: 300, lineHeight: 1 }}>+</span>
+                          <span
+                            style={{
+                              fontFamily: "'Cinzel', serif",
+                              fontWeight: 800,
+                              fontSize: '7px',
+                              color: '#475569',
+                              marginTop: '2px',
+                            }}
+                          >
+                            CARTA
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    <span
+                      style={{
+                        fontFamily: "'Cinzel', serif",
+                        fontWeight: 900,
+                        fontSize: '6.5px',
+                        color: '#0f172a',
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '100%',
+                      }}
+                    >
+                      {card ? card.name : 'NOME DA CARTA'}
+                    </span>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '2px',
+                        width: '100%',
+                        fontSize: '5.5px',
+                        fontFamily: "'Cinzel', serif",
+                        fontWeight: 800,
+                        color: '#334155',
+                      }}
+                    >
+                      <span>NV</span>
+                      <span style={{ width: '8px', height: '3px', borderRadius: '99px', background: '#c6cbd4' }} />
+                      <span>PV</span>
+                      <span style={{ width: '8px', height: '3px', borderRadius: '99px', background: '#c6cbd4' }} />
+                      <span>ATK</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (card) {
+                          equipPetInSlot(card.id, targetPetSlotIdx, true);
+                          triggerToast(`Equipado em PET ${targetPetSlotIdx + 1}: ${card.name}`);
+                        } else {
+                          triggerToast('Slot de carta vazio');
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '3.5px 2px',
+                        borderRadius: '9999px',
+                        background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                        border: '1.5px solid #d4af37',
+                        color: '#ffffff',
+                        fontFamily: "'Cinzel', serif",
+                        fontWeight: 900,
+                        fontSize: '7px',
+                        textTransform: 'uppercase',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      EQUIPAR
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* RODAPÉ MOBILE DECK (Fiel a 'Mochila com cartas e pets.png') */}
+        <div
+          style={{
+            borderRadius: '16px',
+            padding: '7px 8px',
+            background: 'linear-gradient(180deg, #fcf9f2 0%, #f3e8d3 100%)',
+            border: '2px solid #d4af37',
+            outline: '1px solid #784808',
+            boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+            alignItems: 'center',
+            gap: '6px',
+            width: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                border: '1.5px solid #d5d9e0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {selectedDeckCard ? (
+                <span style={{ fontSize: '16px' }}>{selectedDeckCard.iconEmoji}</span>
+              ) : (
+                <span style={{ color: '#7c8390', fontSize: '18px', fontWeight: 300 }}>+</span>
+              )}
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontWeight: 900,
+                  fontSize: '8px',
+                  color: '#0f172a',
+                  borderBottom: '1px solid #d8c39e',
+                  paddingBottom: '2px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {selectedDeckCard ? selectedDeckCard.name : 'NOME DA CARTA'}
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontWeight: 800,
+                  fontSize: '7px',
+                  color: '#334155',
+                  paddingTop: '2px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {selectedDeckCard ? selectedDeckCard.roleLabel || 'ATAQUE' : 'ESTILO DE ATAQUE'}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedDeckCard) {
+                equipPetInSlot(selectedDeckCard.id, targetPetSlotIdx, true);
+                triggerToast(`Equipado em PET ${targetPetSlotIdx + 1}`);
               } else {
-                onClose();
+                triggerToast('Selecione uma carta primeiro');
               }
             }}
-            title={
-              selectDropMode && selectedItem
-                ? `Soltar 1x ${selectedItem.name}`
-                : 'Fechar Pop-up de Mochila'
-            }
-            className="close-btn-outer cursor-pointer shrink-0"
+            style={{
+              padding: '8px 10px',
+              borderRadius: '10px',
+              background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+              border: '1.5px solid #d4af37',
+              color: '#ffffff',
+              fontFamily: "'Cinzel', serif",
+              fontWeight: 900,
+              fontSize: '8px',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
           >
-            <div className="close-btn-inner">
-              {selectDropMode && selectedItem ? '📤' : '✕'}
-            </div>
+            EQUIPAR NO SLOT
           </button>
-        )}
+
+          <button
+            type="button"
+            onClick={() => triggerToast(selectedDeckCard?.shortDescription || 'Selecione uma carta')}
+            style={{
+              padding: '8px 10px',
+              borderRadius: '10px',
+              background: 'linear-gradient(180deg, #fdfbf7 0%, #efe3cc 100%)',
+              border: '1.5px solid #d4af37',
+              color: '#0f172a',
+              fontFamily: "'Cinzel', serif",
+              fontWeight: 900,
+              fontSize: '8px',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            SABER MAIS
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // TELA DEDICADA 2: WEB / PAISAGEM — ABA DECK (100% FIEL A 'Painel de deck com pets e cartas-2.png')
+  // ============================================================================
+  const renderDedicatedLandscapeDeckScreen = () => {
+    const landscapeSlots = 6;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, minHeight: 0, width: '100%', flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '30% 1fr',
+            gap: '10px',
+            flex: 1,
+            minHeight: 0,
+            width: '100%',
+          }}
+        >
+          {/* ESQUERDA: PETS EQUIPADOS */}
+          <div
+            style={{
+              borderRadius: '20px',
+              padding: '10px 12px',
+              background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+              border: '2px solid #d4af37',
+              outline: '1px solid #784808',
+              boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minWidth: 0,
+            }}
+          >
+            {renderSectionTitle('PETS EQUIPADOS')}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, justifyContent: 'space-around' }}>
+              {[0, 1, 2].map((slotIdx) => {
+                const eqPet = realEquippedPets[slotIdx];
+                const isSelectedSlot = targetPetSlotIdx === slotIdx;
+                return (
+                  <React.Fragment key={`ls-deck-pet-${slotIdx}`}>
+                    {slotIdx > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'center', margin: '-4px 0', zIndex: 5 }}>
+                        <ConceptStar size={10} />
+                      </div>
+                    )}
+                    <div
+                      onClick={() => setTargetPetSlotIdx(slotIdx)}
+                      style={{
+                        borderRadius: '16px',
+                        padding: '8px 12px',
+                        background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                        border: isSelectedSlot ? '2px solid #f59e0b' : '1.5px solid #e2d3b8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+                        {slotIdx === 0 && (
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '-4px',
+                              right: '-10px',
+                              zIndex: 10,
+                              padding: '1px 6px',
+                              borderRadius: '9999px',
+                              background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                              border: '1px solid #d4af37',
+                              color: '#ffffff',
+                              fontFamily: "'Cinzel', serif",
+                              fontWeight: 900,
+                              fontSize: '7px',
+                            }}
+                          >
+                            ATIVO
+                          </span>
+                        )}
+                        <div
+                          style={{
+                            width: '54px',
+                            height: '54px',
+                            borderRadius: '9999px',
+                            background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                            border: isSelectedSlot ? '2.5px solid #f59e0b' : '1.5px solid #d5d9e0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {eqPet ? (
+                            <span style={{ fontSize: '20px' }}>{eqPet.iconEmoji || '🐾'}</span>
+                          ) : (
+                            <span style={{ color: '#7c8390', fontSize: '24px', fontWeight: 300 }}>+</span>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            marginTop: '3px',
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 900,
+                            fontSize: '9px',
+                            color: '#0f172a',
+                          }}
+                        >
+                          PET {slotIdx + 1}
+                        </span>
+                      </div>
+
+                      {/* Conector —✦— */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <span style={{ width: '12px', height: '1.5px', background: '#d4af37' }} />
+                        <ConceptStar size={9} />
+                        <span style={{ width: '12px', height: '1.5px', background: '#d4af37' }} />
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '54px',
+                            borderRadius: '9px',
+                            background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                            border: '1.5px solid #d5d9e0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <span style={{ color: '#7c8390', fontSize: '20px', fontWeight: 300 }}>+</span>
+                        </div>
+                        <span
+                          style={{
+                            marginTop: '2px',
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 900,
+                            fontSize: '7px',
+                            lineHeight: 1.1,
+                            color: '#0f172a',
+                            textAlign: 'center',
+                          }}
+                        >
+                          CARTA
+                          <br />
+                          EQUIPADA
+                        </span>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* DIREITA: MINHAS CARTAS (PAISAGEM) */}
+          <div
+            style={{
+              borderRadius: '20px',
+              padding: '10px 14px',
+              background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+              border: '2px solid #d4af37',
+              outline: '1px solid #784808',
+              boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              minWidth: 0,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+              <div style={{ flex: 1 }}>{renderSectionTitle('MINHAS CARTAS')}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '9999px',
+                    background: '#fbf7ef',
+                    border: '1px solid #d8c39e',
+                    width: '170px',
+                  }}
+                >
+                  <span style={{ fontSize: '11px', color: '#475569' }}>🔍</span>
+                  <input
+                    type="text"
+                    value={cardSearchQuery}
+                    onChange={(e) => setCardSearchQuery(e.target.value)}
+                    placeholder="Buscar carta..."
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '10px',
+                      color: '#0f172a',
+                      width: '100%',
+                    }}
+                  />
+                </div>
+                <select
+                  value={cardRarityFilter}
+                  onChange={(e) => setCardRarityFilter(e.target.value)}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: '9999px',
+                    background: '#fbf7ef',
+                    border: '1px solid #d8c39e',
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 800,
+                    fontSize: '9.5px',
+                    color: '#0f172a',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="all">Todas as raridades</option>
+                  <option value="common">Comum</option>
+                  <option value="rare">Rara</option>
+                  <option value="epic">Épica</option>
+                  <option value="legendary">Lendária</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: '8px', flex: 1, minHeight: 0 }}>
+              <div
+                ref={cardsScrollRef}
+                className="no-scrollbar"
+                style={{
+                  flex: 1,
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                  gap: '10px',
+                  alignContent: 'center',
+                }}
+              >
+                {Array.from({ length: landscapeSlots }).map((_, idx) => {
+                  const card = filteredDeckCards[idx] || null;
+                  const isCardSelected = selectedCardIdx === idx;
+                  return (
+                    <div
+                      key={`ls-card-${idx}`}
+                      onClick={() => setSelectedCardIdx(idx)}
+                      style={{
+                        borderRadius: '14px',
+                        padding: '8px',
+                        background: 'linear-gradient(180deg, #fbf7ef 0%, #f3ead8 100%)',
+                        border: isCardSelected ? '2px solid #d4af37' : '1.5px solid #e2d3b8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '62px',
+                          height: '92px',
+                          borderRadius: '10px',
+                          background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                          border: '1.5px solid #d5d9e0',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {card ? (
+                          <span style={{ fontSize: '22px' }}>{card.iconEmoji || '🐾'}</span>
+                        ) : (
+                          <>
+                            <span style={{ color: '#7c8390', fontSize: '22px', fontWeight: 300, lineHeight: 1 }}>+</span>
+                            <span
+                              style={{
+                                fontFamily: "'Cinzel', serif",
+                                fontWeight: 800,
+                                fontSize: '7.5px',
+                                color: '#475569',
+                                marginTop: '3px',
+                              }}
+                            >
+                              CARTA
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '92px' }}>
+                        <div
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 900,
+                            fontSize: '8.5px',
+                            color: '#0f172a',
+                            borderBottom: '1px solid #d8c39e',
+                            paddingBottom: '2px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {card ? card.name : 'NOME DA CARTA'}
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {['NÍVEL', 'PV', 'ATK'].map((st) => (
+                            <div key={st} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                              <span style={{ fontFamily: "'Cinzel', serif", fontWeight: 800, fontSize: '7px', color: '#1e293b' }}>
+                                {st}
+                              </span>
+                              <div style={{ flex: 1, maxWidth: '48px', height: '6px', borderRadius: '9999px', background: '#c6cbd4' }} />
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (card) {
+                              equipPetInSlot(card.id, targetPetSlotIdx, true);
+                              triggerToast(`Equipado em PET ${targetPetSlotIdx + 1}: ${card.name}`);
+                            } else {
+                              triggerToast('Slot de carta vazio');
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '4px 0',
+                            borderRadius: '9999px',
+                            background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                            border: '1.5px solid #d4af37',
+                            color: '#ffffff',
+                            fontFamily: "'Cinzel', serif",
+                            fontWeight: 900,
+                            fontSize: '8px',
+                            textTransform: 'uppercase',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          EQUIPAR
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Scrollbar Vertical Dourada */}
+              <div style={{ width: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ color: '#b45309', fontSize: '9px' }}>▲</span>
+                <div style={{ width: '6px', flex: 1, margin: '3px 0', borderRadius: '9999px', background: '#e5dccb', border: '1px solid #d6c5a7' }}>
+                  <div style={{ width: '100%', height: '40%', borderRadius: '9999px', background: 'linear-gradient(180deg, #f59e0b 0%, #b45309 100%)' }} />
+                </div>
+                <span style={{ color: '#b45309', fontSize: '9px' }}>▼</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RODAPÉ PAISAGEM DECK */}
+        <div
+          style={{
+            borderRadius: '18px',
+            padding: '8px 14px',
+            background: 'linear-gradient(180deg, #fcf9f2 0%, #f3e8d3 100%)',
+            border: '2px solid #d4af37',
+            outline: '1px solid #784808',
+            boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+                border: '1.5px solid #d5d9e0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ color: '#7c8390', fontSize: '22px', fontWeight: 300 }}>+</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '16px', flex: 1, minWidth: 0 }}>
+              <div>
+                <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 900, fontSize: '10px', color: '#0f172a', borderBottom: '1px solid #d8c39e', paddingBottom: '2px' }}>
+                  {selectedDeckCard ? selectedDeckCard.name : 'NOME DA CARTA'}
+                </div>
+                <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 800, fontSize: '9px', color: '#334155', paddingTop: '2px' }}>
+                  {selectedDeckCard ? selectedDeckCard.roleLabel || 'ATAQUE' : 'ESTILO DE ATAQUE'}
+                </div>
+              </div>
+              <div style={{ borderLeft: '1.5px solid #d4af37', paddingLeft: '12px' }}>
+                <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 900, fontSize: '9.5px', color: '#0f172a' }}>ATRIBUTOS</div>
+                <div style={{ height: '1px', background: '#d8c39e', marginTop: '8px' }} />
+                <div style={{ height: '1px', background: '#d8c39e', marginTop: '6px' }} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => triggerToast('Selecione uma carta para equipar')}
+              style={{
+                padding: '9px 22px',
+                borderRadius: '12px',
+                background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                border: '2px solid #d4af37',
+                color: '#ffffff',
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: '10.5px',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              EQUIPAR NO SLOT
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerToast('Selecione uma carta para ver detalhes')}
+              style={{
+                padding: '9px 22px',
+                borderRadius: '12px',
+                background: 'linear-gradient(180deg, #fdfbf7 0%, #efe3cc 100%)',
+                border: '2px solid #d4af37',
+                color: '#0f172a',
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: '10.5px',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              SABER MAIS
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================================
+  // RODAPÉ DA MOCHILA (MOBILE VERTICAL E WEB PAISAGEM)
+  // ============================================================================
+  const renderMochilaFooter = (compactMobile: boolean) => (
+    <div
+      style={{
+        borderRadius: '18px',
+        padding: compactMobile ? '8px 10px' : '8px 14px',
+        background: 'linear-gradient(180deg, #fcf9f2 0%, #f3e8d3 100%)',
+        border: '2px solid #d4af37',
+        outline: '1px solid #784808',
+        boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+        display: 'flex',
+        flexDirection: compactMobile ? 'column' : 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: compactMobile ? '8px' : '14px',
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            width: compactMobile ? '40px' : '46px',
+            height: compactMobile ? '40px' : '46px',
+            borderRadius: '9999px',
+            background: 'linear-gradient(180deg, #c6cbd4 0%, #b5bbc6 100%)',
+            border: '1.5px solid #d5d9e0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {selectedItem ? (
+            <span style={{ fontSize: '18px' }}>{selectedItem.iconEmoji}</span>
+          ) : (
+            <span style={{ color: '#7c8390', fontSize: '22px', fontWeight: 300 }}>+</span>
+          )}
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'grid',
+            gridTemplateColumns: compactMobile ? 'minmax(0, 1fr) minmax(0, 1fr)' : '1.1fr 0.7fr 1.2fr',
+            gap: '10px',
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 900,
+                fontSize: compactMobile ? '9px' : '10px',
+                color: '#0f172a',
+                borderBottom: '1px solid #d8c39e',
+                paddingBottom: '2px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {selectedItem ? selectedItem.name : 'NOME DO ITEM'}
+            </div>
+            <div
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontWeight: 800,
+                fontSize: compactMobile ? '8px' : '9px',
+                color: '#334155',
+                paddingTop: '2px',
+              }}
+            >
+              {selectedItem
+                ? selectedItem.equipSlot === 'accessory'
+                  ? 'ARTEFATOS'
+                  : selectedItem.category.toUpperCase()
+                : 'CATEGORIA'}
+            </div>
+          </div>
+
+          {!compactMobile && (
+            <div style={{ borderLeft: '1.5px solid #d4af37', paddingLeft: '10px' }}>
+              <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 900, fontSize: '9px', color: '#0f172a' }}>
+                QUANTIDADE
+              </div>
+              <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 800, fontSize: '9px', color: '#475569', borderBottom: '1px solid #d8c39e', marginTop: '3px' }}>
+                {selectedItem ? `×${selectedItem.quantity}` : '—'}
+              </div>
+            </div>
+          )}
+
+          <div style={{ borderLeft: '1.5px solid #d4af37', paddingLeft: '10px', minWidth: 0 }}>
+            <div style={{ fontFamily: "'Cinzel', serif", fontWeight: 900, fontSize: compactMobile ? '8.5px' : '9px', color: '#0f172a' }}>
+              ATRIBUTOS
+            </div>
+            <div
+              style={{
+                fontSize: '8.5px',
+                color: '#475569',
+                borderBottom: '1px solid #d8c39e',
+                paddingBottom: '2px',
+                marginTop: '2px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {selectedItem?.statsText || selectedItem?.shortDescription || '—'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gap: '8px',
+          width: compactMobile ? '100%' : 'auto',
+          flexShrink: 0,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => handlePrimaryEquipOrUse()}
+          style={{
+            padding: compactMobile ? '8px 6px' : '8px 16px',
+            borderRadius: '11px',
+            background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+            border: '2px solid #d4af37',
+            color: '#ffffff',
+            fontFamily: "'Cinzel', serif",
+            fontWeight: 900,
+            fontSize: compactMobile ? '9.5px' : '10px',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          {compactMobile ? 'USAR' : 'EQUIPAR / USAR'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedSlotIndex === null) setSelectedSlotIndex(0);
+            setBalloonExpandedLore((v) => !v);
+          }}
+          style={{
+            padding: compactMobile ? '8px 6px' : '8px 16px',
+            borderRadius: '11px',
+            background: 'linear-gradient(180deg, #fdfbf7 0%, #efe3cc 100%)',
+            border: '2px solid #d4af37',
+            color: '#0f172a',
+            fontFamily: "'Cinzel', serif",
+            fontWeight: 900,
+            fontSize: compactMobile ? '9.5px' : '10px',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          SABER MAIS
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleDropSelectedItem()}
+          style={{
+            padding: compactMobile ? '8px 6px' : '8px 16px',
+            borderRadius: '11px',
+            background: 'linear-gradient(180deg, #fdfbf7 0%, #efe3cc 100%)',
+            border: '2px solid #d4af37',
+            color: '#0f172a',
+            fontFamily: "'Cinzel', serif",
+            fontWeight: 900,
+            fontSize: compactMobile ? '9.5px' : '10px',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+          }}
+        >
+          SOLTAR 1x
+        </button>
       </div>
     </div>
   );
 
-  const goldCount =
-    project.player?.defaultCurrencies?.gold ?? project.playerInventory?.currencies.gold ?? 150;
-  const gemsCount =
-    project.player?.defaultCurrencies?.gems ?? project.playerInventory?.currencies.gems ?? 10;
+  // ============================================================================
+  // VISÃO INTERNA DE JORNADA & TAREFAS (100% ENCAIXADA NA TELA DO CELULAR SEM TRANSBORDAR!)
+  // ============================================================================
+  const renderQuestsInsideConceptFrame = (questTab: 'jornada' | 'tarefas') => {
+    const list = questTab === 'jornada' ? jornadaQuests : tarefasQuests;
+    return (
+      <div
+        style={{
+          borderRadius: '18px',
+          padding: isLandscape ? '12px 14px' : '10px 8px',
+          background: 'linear-gradient(180deg, #fcf9f2 0%, #f5ecdc 100%)',
+          border: '2px solid #d4af37',
+          outline: '1px solid #784808',
+          boxShadow: 'inset 0 1px 0 #ffffff, 0 6px 16px rgba(0, 8, 24, 0.35)',
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        {renderSectionTitle(questTab === 'jornada' ? 'JORNADA PRINCIPAL' : 'TAREFAS & RECOMPENSAS', !isLandscape)}
 
-  const lastScrollYRef = React.useRef(0);
-  const handleHubScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (!isHubFullScreen) return;
-    const curY = e.currentTarget.scrollTop;
-    const dy = curY - lastScrollYRef.current;
-    lastScrollYRef.current = curY;
-    if (curY > 28 && dy > 3) {
-      document.body.classList.add('hub-scroll-hide-bars');
-    } else if (dy < -3 || curY <= 20) {
-      document.body.classList.remove('hub-scroll-hide-bars');
-    }
+        <div
+          style={{
+            display: isLandscape ? 'grid' : 'flex',
+            flexDirection: 'column',
+            gridTemplateColumns: isLandscape ? 'repeat(2, minmax(0, 1fr))' : undefined,
+            gap: '8px',
+            width: '100%',
+            minWidth: 0,
+          }}
+        >
+          {list.map((q) => {
+            const doneCount = q.objectives.filter((o) => o.completed).length;
+            const totalCount = Math.max(1, q.objectives.length);
+            const pct = Math.round((doneCount / totalCount) * 100);
+            const isSelected = selectedQuestId === q.id;
+            return (
+              <div
+                key={q.id}
+                onClick={() => setSelectedQuestId(isSelected ? null : q.id)}
+                style={{
+                  borderRadius: '14px',
+                  padding: isLandscape ? '10px 12px' : '8px 9px',
+                  background: 'linear-gradient(180deg, #fbf7ef 0%, #f1e6d2 100%)',
+                  border: q.isCompleted ? '2px solid #16a34a' : isSelected ? '2px solid #b45309' : '1.5px solid #d4af37',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  width: '100%',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: isLandscape ? '42px' : '38px',
+                      height: isLandscape ? '42px' : '38px',
+                      borderRadius: '11px',
+                      background: q.isCompleted
+                        ? 'linear-gradient(180deg, #065f46 0%, #022c22 100%)'
+                        : 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                      border: '1.5px solid #d4af37',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: isLandscape ? '19px' : '17px',
+                      flexShrink: 0,
+                      position: 'relative',
+                    }}
+                  >
+                    {q.isLocked ? '🔒' : q.iconEmoji || '📜'}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        fontFamily: "'Cinzel', serif",
+                        fontWeight: 900,
+                        fontSize: isLandscape ? '10.5px' : '9.5px',
+                        lineHeight: 1.2,
+                        color: '#0f172a',
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        width: '100%',
+                      }}
+                    >
+                      {q.title}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        height: '13px',
+                        width: '100%',
+                        borderRadius: '9999px',
+                        background: '#1e293b',
+                        border: '1px solid #d4af37',
+                        position: 'relative',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.max(12, pct)}%`,
+                          height: '100%',
+                          background: q.isCompleted
+                            ? 'linear-gradient(90deg, #16a34a, #4ade80)'
+                            : 'linear-gradient(90deg, #0b3778, #d4af37)',
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          bottom: 0,
+                          left: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontFamily: "'Cinzel', serif",
+                          fontWeight: 900,
+                          fontSize: '7.5px',
+                          color: '#ffffff',
+                        }}
+                      >
+                        {doneCount} / {totalCount} ETAPAS
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Indicador compacto de expandir/status à direita */}
+                  <div
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '8px',
+                      background: q.isCompleted
+                        ? 'linear-gradient(180deg, #16a34a 0%, #15803d 100%)'
+                        : 'linear-gradient(180deg, #fbf7ef 0%, #e7d8bc 100%)',
+                      border: '1px solid #d4af37',
+                      color: q.isCompleted ? '#ffffff' : '#0f172a',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {q.isCompleted ? '✓' : isSelected ? '▲' : '▼'}
+                  </div>
+                </div>
+
+                {isSelected && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      paddingTop: '6px',
+                      borderTop: '1px solid #d8c39e',
+                      width: '100%',
+                      minWidth: 0,
+                    }}
+                  >
+                    {q.objectives.map((obj, idx) => (
+                      <div
+                        key={obj.id}
+                        style={{
+                          padding: '5px 8px',
+                          borderRadius: '8px',
+                          background: '#fcf9f2',
+                          border: '1px solid #d8c39e',
+                          fontSize: '9px',
+                          color: '#0f172a',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '6px',
+                          minWidth: 0,
+                        }}
+                      >
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {idx + 1}. {obj.title}
+                        </span>
+                        <span style={{ fontWeight: 900, flexShrink: 0 }}>
+                          {obj.current}/{obj.required}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      onScroll={handleHubScroll}
-      className={
-        isHubFullScreen
-          ? 'w-full h-full overflow-y-auto overflow-x-hidden nova-scroll select-none'
-          : `${
-              isInsideEmulator
-                ? 'absolute inset-0 z-80 p-2.5 flex items-center justify-center bg-black/50 backdrop-blur-[2px]'
-                : 'fixed inset-0 z-90 p-4 flex items-center justify-center bg-black/65 backdrop-blur-sm'
-            } select-none`
-      }
+      onScroll={(e) => {
+        if (!isHubFullScreen) return;
+        const el = e.currentTarget;
+        const curY = el.scrollTop;
+        const prevY = Number(el.dataset.lastScrollY || '0');
+        const dy = curY - prevY;
+        el.dataset.lastScrollY = String(curY);
+        if (curY > 14 && dy > 2) {
+          document.body.classList.add('hub-scroll-hide-bars');
+        } else if (dy < -3 || curY <= 10) {
+          document.body.classList.remove('hub-scroll-hide-bars');
+        }
+      }}
+      className="no-scrollbar select-none"
       style={
         isHubFullScreen
           ? {
-              padding: isLandscape ? '56px 16px 112px 16px' : '64px 10px 118px 10px',
+              width: '100%',
+              height: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              /* Tela 100% liberada sem container de fundo prendendo: rola livremente e oculta a barra de navegação */
+              padding: isLandscape ? '58px 16px 84px 16px' : '54px 8px 96px 8px',
               boxSizing: 'border-box',
-              background: 'transparent',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              background:
+                'radial-gradient(ellipse at top, #0a2558 0%, #04122c 65%, #020a1a 100%)',
             }
-          : undefined
+          : {
+              position: isInsideEmulator ? 'absolute' : 'fixed',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+              zIndex: 90,
+              padding: '8px',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              background: 'rgba(2, 10, 26, 0.72)',
+              backdropFilter: 'blur(4px)',
+            }
       }
     >
-      {/* MOLDURA 3D OU CONTAINER LIVRE TRANSPARENTE NO HUB */}
-      <div
-        className={`relative w-full ${
-          isHubFullScreen
-            ? 'max-w-[960px] mx-auto flex flex-col gap-3'
-            : `${
-                isInsideEmulator
-                  ? isLandscape
-                    ? 'max-w-[760px] h-[90%] max-h-[410px]'
-                    : 'max-w-[445px] h-[85%] max-h-[620px]'
-                  : isLandscape
-                  ? 'max-w-4xl h-[82vh] max-h-[540px]'
-                  : 'max-w-xl h-[85vh] max-h-[680px]'
-              } pearl-surface flex flex-col overflow-hidden`
-        }`}
-      >
-        {/* TOPO COM ABAS DA MOCHILA DE FASE */}
+      {statusToast && (
         <div
-          className={
-            isHubFullScreen
-              ? 'p-1.5 rounded-2xl flex items-center justify-between gap-1.5 shrink-0'
-              : 'px-3.5 py-2.5 bg-gradient-to-b from-[#f5efe2] to-[#e3d7c3] border-b-[2px] border-[#b88928] relative flex items-center justify-between gap-2 shrink-0'
-          }
-          style={
-            isHubFullScreen
-              ? {
-                  background: 'rgba(7, 18, 38, 0.68)',
-                  border: '1.5px solid rgba(212, 175, 83, 0.45)',
-                  backdropFilter: 'blur(8px)',
-                }
-              : undefined
-          }
+          style={{
+            position: 'fixed',
+            top: '68px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 3000,
+            padding: '6px 16px',
+            borderRadius: '9999px',
+            background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+            border: '2px solid #d4af37',
+            color: '#fff3c2',
+            fontFamily: "'Cinzel', serif",
+            fontWeight: 900,
+            fontSize: '10px',
+            pointerEvents: 'none',
+          }}
         >
+          {statusToast}
+        </div>
+      )}
+
+      {/* TELA LIBERADA (SEM CONTAINER DE FUNDO CORTANDO): CADA SEÇÃO FLUI DIRETO NA TELA */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: isLandscape ? '1120px' : '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: isLandscape ? '8px' : '6px',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+        }}
+      >
+        {/* TOPO: ABAS FIXAS (MOCHILA | DECK | ✦ JORNADA | TAREFAS) + SALDOS (OURO · SALDO | GEMAS · SALDO | CAPACIDADE) */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isLandscape ? 'row' : 'column',
+            alignItems: isLandscape ? 'center' : 'stretch',
+            justifyContent: 'space-between',
+            gap: '6px',
+            width: '100%',
+            minWidth: 0,
+            flexShrink: 0,
+          }}
+        >
+          {/* Cápsula de Abas Superiores (4 colunas exatas em Mobile para NUNCA transbordar) */}
           <div
-            className={
-              isHubFullScreen
-                ? 'grid grid-cols-4 gap-1.5 w-full'
-                : 'pearl-pill p-0.5 flex items-center gap-1 flex-wrap'
-            }
+            style={{
+              borderRadius: '16px',
+              padding: '4px',
+              background: 'linear-gradient(180deg, #fcf9f2 0%, #f1e6d0 100%)',
+              border: '2px solid #d4af37',
+              outline: '1px solid #784808',
+              boxShadow: 'inset 0 1px 0 #ffffff, 0 4px 12px rgba(0, 8, 24, 0.35)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: '4px',
+              width: isLandscape ? 'auto' : '100%',
+              minWidth: isLandscape ? '420px' : 0,
+              boxSizing: 'border-box',
+            }}
           >
-            {/* Aba 1: Equipamento */}
-            <button
-              type="button"
-              onClick={() => setTopFolderTab('equipamento')}
-              className={
-                topFolderTab === 'equipamento'
-                  ? 'btn-royal-gold cursor-pointer w-full'
-                  : isHubFullScreen
-                  ? 'btn-pearl-gold cursor-pointer w-full'
-                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
-              }
-            >
-              <div
-                className={
-                  topFolderTab === 'equipamento'
-                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : isHubFullScreen
-                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : ''
-                }
-              >
-                🛡️ EQUIPAR
-              </div>
-            </button>
-
-            {/* Aba 2: Inventário Geral */}
-            <button
-              type="button"
-              onClick={() => setTopFolderTab('inventario_geral')}
-              className={
-                topFolderTab === 'inventario_geral'
-                  ? 'btn-royal-gold cursor-pointer w-full'
-                  : isHubFullScreen
-                  ? 'btn-pearl-gold cursor-pointer w-full'
-                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
-              }
-            >
-              <div
-                className={
-                  topFolderTab === 'inventario_geral'
-                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : isHubFullScreen
-                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : ''
-                }
-              >
-                🎒 ITENS ({allUnifiedItems.length})
-              </div>
-            </button>
-
-            {/* Aba 3: Gerenciador de Deck (3 Slots de Pets) */}
-            <button
-              type="button"
-              onClick={() => setTopFolderTab('deck')}
-              className={
-                topFolderTab === 'deck'
-                  ? 'btn-royal-gold cursor-pointer w-full'
-                  : isHubFullScreen
-                  ? 'btn-pearl-gold cursor-pointer w-full'
-                  : 'px-3 py-1 font-cinzel font-bold text-[10px] text-[#5c4b3b] uppercase cursor-pointer'
-              }
-              title="Gerenciador de Deck de Cartas de Monstros Escaneados (3 Slots de Pets)"
-            >
-              <div
-                className={
-                  topFolderTab === 'deck'
-                    ? 'btn-royal-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : isHubFullScreen
-                    ? 'btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase truncate'
-                    : ''
-                }
-              >
-                🃏 PETS ({resolvedPetConfig.petGallery.length})
-              </div>
-            </button>
-
-            {/* Aba 4: Acesso Direto ao Pop-up de Quests (Jornada / Tarefas) */}
-            {onSwitchToQuests && (
-              <button
-                type="button"
-                onClick={onSwitchToQuests}
-                className="btn-pearl-gold cursor-pointer w-full"
-                title="Alternar para Quests (Jornada & Tarefas)"
-              >
-                <div className="btn-pearl-inner px-2 py-1.5 font-cinzel font-bold text-[9.5px] uppercase flex items-center justify-center gap-1 truncate">
-                  <HudFourPointStarIcon className="w-3 h-3 shrink-0" />
-                  <span>JORNADA</span>
-                </div>
-              </button>
-            )}
+            {(
+              [
+                { id: 'equipamento', label: 'MOCHILA', star: false },
+                { id: 'deck', label: 'DECK', star: false },
+                { id: 'jornada', label: 'JORNADA', star: true },
+                { id: 'tarefas', label: 'TAREFAS', star: false },
+              ] as const
+            ).map((tab) => {
+              const isActive = topFolderTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setTopFolderTab(tab.id)}
+                  style={{
+                    padding: isLandscape ? '6px 12px' : '6px 4px',
+                    borderRadius: '11px',
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 900,
+                    fontSize: isLandscape ? '10.5px' : '9px',
+                    textTransform: 'uppercase',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    minWidth: 0,
+                    whiteSpace: 'nowrap',
+                    ...(isActive
+                      ? {
+                          background: 'linear-gradient(180deg, #0b3778 0%, #041b42 100%)',
+                          border: '1.5px solid #d4af37',
+                          color: '#ffffff',
+                          boxShadow: '0 2px 6px rgba(4, 27, 66, 0.35)',
+                        }
+                      : {
+                          background: 'linear-gradient(180deg, #fbf7ef 0%, #ebe0c9 100%)',
+                          border: '1px solid #d5be90',
+                          color: '#0f172a',
+                        }),
+                  }}
+                >
+                  {tab.star && <ConceptStar size={isLandscape ? 11 : 9} />}
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {!isHubFullScreen && (
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="hidden sm:flex items-center gap-1.5 pearl-pill px-2.5 py-1 font-cinzel font-bold text-[10px] text-[#3a2b1c]">
-                <span>🪙 {goldCount}</span>
-                <span>•</span>
-                <span>💎 {gemsCount}</span>
+          {/* Cápsula de Saldos e Capacidade (OURO · SALDO | GEMAS · SALDO | CAPACIDADE OCUPADOS / TOTAL) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, width: isLandscape ? 'auto' : '100%' }}>
+            <div
+              style={{
+                flex: 1,
+                borderRadius: '16px',
+                padding: isLandscape ? '5px 14px' : '4px 8px',
+                background: 'linear-gradient(180deg, #fcf9f2 0%, #f1e6d0 100%)',
+                border: '2px solid #d4af37',
+                outline: '1px solid #784808',
+                boxShadow: 'inset 0 1px 0 #ffffff, 0 4px 12px rgba(0, 8, 24, 0.35)',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1.25fr',
+                alignItems: 'center',
+                gap: '6px',
+                minWidth: 0,
+                boxSizing: 'border-box',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minWidth: 0 }}>
+                <ConceptGoldCoinSvg size={isLandscape ? 20 : 16} />
+                <span
+                  style={{
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 900,
+                    fontSize: isLandscape ? '9.5px' : '7.5px',
+                    color: '#0f172a',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  OURO · SALDO
+                </span>
               </div>
 
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  borderLeft: '1px solid rgba(212,175,55,0.55)',
+                  borderRight: '1px solid rgba(212,175,55,0.55)',
+                  padding: '0 4px',
+                  minWidth: 0,
+                }}
+              >
+                <ConceptBlueGemSvg size={isLandscape ? 19 : 15} />
+                <span
+                  style={{
+                    fontFamily: "'Cinzel', serif",
+                    fontWeight: 900,
+                    fontSize: isLandscape ? '9.5px' : '7.5px',
+                    color: '#0f172a',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  GEMAS · SALDO
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', minWidth: 0 }}>
+                <ConceptLeatherBagSvg size={isLandscape ? 20 : 16} />
+                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontFamily: "'Cinzel', serif",
+                      fontWeight: 900,
+                      fontSize: isLandscape ? '8px' : '6.5px',
+                      color: '#0f172a',
+                    }}
+                  >
+                    CAPACIDADE
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'Cinzel', serif",
+                      fontWeight: 800,
+                      fontSize: isLandscape ? '7.5px' : '6px',
+                      color: '#334155',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {allUnifiedItems.length > 0
+                      ? `${allUnifiedItems.length} / ${totalSlotsCount}`
+                      : 'OCUPADOS / TOTAL'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {!isHubFullScreen && (
               <button
                 type="button"
                 onClick={onClose}
-                className="close-btn-outer cursor-pointer shrink-0"
-                title="Fechar Pop-up de Mochila"
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '9999px',
+                  background: 'linear-gradient(180deg, #fdfbf7 0%, #e7d8bc 100%)',
+                  border: '2px solid #d4af37',
+                  color: '#0f172a',
+                  fontWeight: 900,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
               >
-                <div className="close-btn-inner">✕</div>
+                ✕
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* SUB-BARRA INFORMATIVA PEARL (Oculta no modo Hub Fullscreen para evitar sobreposição) */}
-        {!isHubFullScreen && (
-          <div className="px-4 py-1 bg-[#e6dac6] border-b border-[#c9b493] flex items-center justify-between text-[9px] font-cinzel font-bold text-[#3a2b1c] shrink-0">
-            <span>
-              {topFolderTab === 'equipamento'
-                ? `🛡️ EQUIPAMENTO & 3 SLOTS DE PETS • ${project.title || 'FASE ATIVA'}`
-                : topFolderTab === 'deck'
-                ? `🃏 GERENCIADOR DE DECK • EQUIPE ATÉ 3 CARTAS PARA INVOCAR COMO PETS`
-                : `🎒 MOCHILA DE FASE COMPLETA • ${allUnifiedItems.length}/${totalSlotsCount} SLOTS`}
-            </span>
-            <span className="pearl-pill px-2 py-0.5 text-[#8c6518]">
-              🪙 {goldCount} • 💎 {gemsCount}
-            </span>
+        {/* CORPO PRINCIPAL SEPARADO POR DISPOSITIVO (MOBILE VERTICAL vs WEB PAISAGEM) E ABA */}
+        {topFolderTab === 'jornada' || topFolderTab === 'tarefas' ? (
+          renderQuestsInsideConceptFrame(topFolderTab)
+        ) : topFolderTab === 'deck' ? (
+          isLandscape ? (
+            renderDedicatedLandscapeDeckScreen()
+          ) : (
+            renderDedicatedMobileDeckScreen()
+          )
+        ) : isLandscape ? (
+          /* TELA DEDICADA WEB / PAISAGEM — MOCHILA */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0, flexShrink: 0 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '46% 1fr',
+                gap: '10px',
+                alignItems: 'stretch',
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
+              {renderEquipmentCard(false)}
+              {renderItemsCard(false)}
+            </div>
+            {renderMochilaFooter(false)}
+          </div>
+        ) : (
+          /* TELA DEDICADA MOBILE VERTICAL — MOCHILA */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', flexShrink: 0 }}>
+            {renderEquipmentCard(true)}
+            {renderItemsCard(true)}
+            {renderMochilaFooter(true)}
           </div>
         )}
-
-        {/* =====================================================================
-            CORPO PRINCIPAL DA MOCHILA (SEM FUNDO BRANCO NO MODO HUB FULLSCREEN)
-           ===================================================================== */}
-        <div
-          className={
-            isHubFullScreen
-              ? 'flex flex-col gap-3 relative'
-              : 'flex-1 min-h-0 bg-[#fff8e7] p-3 flex flex-col overflow-hidden relative'
-          }
-        >
-          {/* Toast rápido de feedback */}
-          {statusToast && (
-            <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[1500] px-3.5 py-1 rounded-full bg-[#451a03] border-2 border-[#fef08a] text-[#fef08a] font-black text-[10px] shadow-lg whitespace-nowrap pointer-events-none">
-              {statusToast}
-            </div>
-          )}
-
-          {topFolderTab === 'equipamento' ? (
-            /* ABA 1: EQUIPAMENTO (Fluxo vertical unificado no Hub para rolar toda a tela de cima a baixo) */
-            isLandscape && !isHubFullScreen ? (
-              <div className="flex-1 min-h-0 flex flex-row gap-3 items-stretch">
-                {renderEquipmentHeroStage()}
-                {renderSlotsAndActionsSection()}
-              </div>
-            ) : (
-              <div className={isHubFullScreen ? 'flex flex-col gap-2.5' : 'flex-1 min-h-0 flex flex-col'}>
-                {renderEquipmentHeroStage()}
-                {renderSlotsAndActionsSection()}
-              </div>
-            )
-          ) : topFolderTab === 'deck' ? (
-            /* ABA 3: GERENCIADOR DE DECK DE CARTAS ESCANEADAS (3 SLOTS DE INVOCAÇÃO + COLEÇÃO DE CARTAS) */
-            <div className={isHubFullScreen ? 'flex flex-col gap-3' : 'flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden'}>
-              {/* Seletor Superior com os 3 Slots de Cartas Equipadas para Invocação */}
-              <div className="p-2.5 rounded-2xl bg-gradient-to-b from-[#fef3c7] via-[#fde68a] to-[#f59e0b] border-[3px] border-[#b45309] shadow-[0_4px_0_#78350f] shrink-0">
-                <div className="flex items-center justify-between mb-1.5 px-1">
-                  <span className="text-[10px] font-black text-[#451a03] uppercase tracking-wider flex items-center gap-1">
-                    <span>🃏 Deck Ativo de Invocação (3 Slots na Cápsula da UI)</span>
-                  </span>
-                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#5c2604] text-[#fef08a]">
-                    Slot Selecionado p/ Equipar: #{targetPetSlotIdx + 1}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  {[0, 1, 2].map((slotIdx) => {
-                    const equippedPet = resolvedPetConfig.equippedPets[slotIdx];
-                    const isTarget = targetPetSlotIdx === slotIdx;
-                    const isSummoned =
-                      resolvedPetConfig.enabled &&
-                      resolvedPetConfig.activePetId &&
-                      equippedPet?.id === resolvedPetConfig.activePetId;
-
-                    return (
-                      <div
-                        key={`deck-slot-${slotIdx}`}
-                        onClick={() => {
-                          setTargetPetSlotIdx(slotIdx);
-                          if (equippedPet) {
-                            equipPetInSlot(equippedPet.id, slotIdx, true);
-                            triggerToast(`⚡ ${equippedPet.name} invocado no mapa (Slot ${slotIdx + 1})!`);
-                          } else {
-                            triggerToast(`🃏 Slot ${slotIdx + 1} selecionado! Toque numa Carta abaixo para equipar.`);
-                          }
-                        }}
-                        className={`relative p-2 rounded-2xl border-[2.5px] transition-all cursor-pointer flex flex-col items-center justify-between text-center ${
-                          isSummoned
-                            ? 'bg-gradient-to-b from-[#fffbeb] via-[#fef08a] to-[#f59e0b] border-[#16a34a] ring-3 ring-[#4ade80] shadow-[0_4px_0_#14532d]'
-                            : isTarget
-                            ? 'bg-gradient-to-b from-[#fffbeb] to-[#fde68a] border-[#5c2604] ring-2 ring-white shadow-[0_3px_0_#5c2604]'
-                            : 'bg-[#78350f]/85 border-[#d97706] text-[#fef3c7] hover:brightness-105'
-                        }`}
-                      >
-                        <div className="w-full flex items-center justify-between text-[8px] font-black mb-1">
-                          <span
-                            className={`px-1.5 py-0.2 rounded-full ${
-                              isSummoned
-                                ? 'bg-[#16a34a] text-white'
-                                : isTarget
-                                ? 'bg-[#5c2604] text-[#fef08a]'
-                                : 'bg-black/35 text-[#fde68a]'
-                            }`}
-                          >
-                            {isSummoned ? `⚡ ATIVO #${slotIdx + 1}` : `SLOT #${slotIdx + 1}`}
-                          </span>
-                          {equippedPet && (
-                            <span
-                              className={
-                                isSummoned || isTarget ? 'text-[#78350f]' : 'text-[#fef08a]'
-                              }
-                            >
-                              Nv.{equippedPet.level ?? 1}
-                            </span>
-                          )}
-                        </div>
-
-                        {equippedPet ? (
-                          <>
-                            <div className="w-11 h-11 rounded-xl bg-[#451a03]/15 border border-[#b45309]/40 flex items-center justify-center overflow-hidden my-0.5">
-                              {equippedPet.avatarPng ? (
-                                <img
-                                  src={equippedPet.avatarPng}
-                                  alt={equippedPet.name}
-                                  className="w-full h-full object-contain drop-shadow"
-                                />
-                              ) : (
-                                <span className="text-2xl drop-shadow">{equippedPet.iconEmoji}</span>
-                              )}
-                            </div>
-                            <span
-                              className={`text-[9.5px] font-black truncate w-full ${
-                                isSummoned || isTarget ? 'text-[#451a03]' : 'text-[#fef08a]'
-                              }`}
-                            >
-                              {equippedPet.name}
-                            </span>
-                            <span
-                              className={`text-[8px] font-bold ${
-                                isSummoned || isTarget ? 'text-[#78350f]' : 'text-[#fde68a]/90'
-                              }`}
-                            >
-                              ❤️{equippedPet.hp ?? equippedPet.maxHp ?? 140} • ⚔️{equippedPet.attackDamage}
-                            </span>
-                          </>
-                        ) : (
-                          <div className="py-3 flex flex-col items-center justify-center opacity-80">
-                            <span className="text-xl">🃏</span>
-                            <span className="text-[8.5px] font-black mt-0.5">Slot Vazio</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Coleção de Cartas Escaneadas & Galeria de Pets */}
-              <div className={isHubFullScreen ? 'w-full' : 'flex-1 min-h-0 overflow-y-auto pr-1'}>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pb-2">
-                  {resolvedPetConfig.petGallery.map((card) => {
-                    const equippedSlotIndex = resolvedPetConfig.equippedPetIds.findIndex(
-                      (id) => id === card.id
-                    );
-                    const isCardEquipped = equippedSlotIndex >= 0;
-                    const isCardSummoned =
-                      resolvedPetConfig.enabled && resolvedPetConfig.activePetId === card.id;
-                    const lv = card.level ?? 1;
-                    const hp = card.hp ?? card.maxHp ?? 140;
-                    const maxHp = card.maxHp ?? 140;
-                    const styleLabel =
-                      card.attackStyle === 'flying_ranged'
-                        ? '🦅 Voador • Distância'
-                        : card.attackStyle === 'flying_dive'
-                        ? '🐉 Voador • Rasante'
-                        : card.attackStyle === 'walker_ranged'
-                        ? '🦊 Caminhante • Orbe'
-                        : card.attackStyle === 'berserker_spin'
-                        ? '🐯 Giro Furioso'
-                        : '🐾 Caminhante • Dash';
-
-                    return (
-                      <div
-                        key={`deck-card-${card.id}`}
-                        className={`relative rounded-2xl p-2.5 border-[3px] flex flex-col justify-between transition-all ${
-                          isCardSummoned
-                            ? 'bg-gradient-to-b from-[#fef08a] via-[#fde68a] to-[#f59e0b] border-[#16a34a] shadow-[0_4px_0_#14532d]'
-                            : isCardEquipped
-                            ? 'bg-gradient-to-b from-[#fffbeb] via-[#fef3c7] to-[#fde68a] border-[#d97706] shadow-[0_4px_0_#92400e]'
-                            : 'bg-gradient-to-b from-[#fffbeb] to-[#fef3c7] border-[#b45309]/70 shadow-[0_3px_0_#78350f]'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="px-1.5 py-0.2 rounded-full bg-[#5c2604] text-[#fef08a] text-[8px] font-black">
-                              🃏 Nv.{lv}
-                            </span>
-                            {isCardEquipped && (
-                              <span className="px-1.5 py-0.2 rounded-full bg-[#16a34a] text-white text-[8px] font-black">
-                                Slot #{equippedSlotIndex + 1}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="w-full h-14 rounded-xl bg-gradient-to-b from-[#451a03]/15 to-[#451a03]/25 border border-[#b45309]/40 flex items-center justify-center overflow-hidden my-1">
-                            {card.avatarPng ? (
-                              <img
-                                src={card.avatarPng}
-                                alt={card.name}
-                                className="w-12 h-12 object-contain drop-shadow"
-                              />
-                            ) : (
-                              <span className="text-3xl drop-shadow">{card.iconEmoji}</span>
-                            )}
-                          </div>
-
-                          <div className="text-center">
-                            <div className="text-[10.5px] font-black text-[#451a03] truncate">
-                              {card.name}
-                            </div>
-                            <div className="text-[8px] font-bold text-[#92400e] truncate">
-                              {styleLabel}
-                            </div>
-                            <div className="mt-1 flex items-center justify-center gap-1.5 text-[8.5px] font-black text-[#5c2604] bg-white/70 rounded-full py-0.5 px-2 border border-[#d97706]/50">
-                              <span>❤️ {hp}/{maxHp}</span>
-                              <span>•</span>
-                              <span>⚔️ {card.attackDamage}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 grid grid-cols-3 gap-1">
-                          {[0, 1, 2].map((sIdx) => {
-                            const isInThisSlot = equippedSlotIndex === sIdx;
-                            return (
-                              <button
-                                key={`eq-btn-${card.id}-${sIdx}`}
-                                type="button"
-                                onClick={() => {
-                                  setTargetPetSlotIdx(sIdx);
-                                  equipPetInSlot(card.id, sIdx, true);
-                                  triggerToast(
-                                    `🃏 Carta "${card.name}" equipada no Slot ${sIdx + 1} e invocada!`
-                                  );
-                                }}
-                                className={`py-1 rounded-lg border text-[8px] font-black cursor-pointer transition-all ${
-                                  isInThisSlot
-                                    ? 'bg-[#16a34a] border-[#14532d] text-white shadow-xs'
-                                    : 'bg-[#5c2604] hover:bg-[#78350f] border-[#451a03] text-[#fef08a]'
-                                }`}
-                                title={`Equipar esta carta no Slot ${sIdx + 1} do Deck`}
-                              >
-                                {isInThisSlot ? `✓ S${sIdx + 1}` : `Slot ${sIdx + 1}`}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* ABA 2: INVENTÁRIO GERAL (Resumo de Moedas, Capacidade Expandida e Todos os Slots) */
-            <div className={isHubFullScreen ? 'flex flex-col gap-2.5' : 'flex-1 min-h-0 flex flex-col'}>
-              <div className="mb-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#fef3c7] via-[#fde68a] to-[#fef3c7] border-[2.5px] border-[#d97706] flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#d97706] text-white font-black text-[10px] border border-white shadow-xs">
-                    🪙 {goldCount} Ouro
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#16a34a] text-white font-black text-[10px] border border-white shadow-xs">
-                    💎 {gemsCount} Gemas
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#5c2604] text-[#fef08a] font-black text-[10px] border border-[#fef08a] shadow-xs">
-                    📦 {allUnifiedItems.length} / {totalSlotsCount} Slots
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setTopFolderTab('equipamento')}
-                  className="px-2.5 py-0.5 rounded-full bg-[#fff8e7] text-[#5c2604] border border-[#b45309] font-black text-[10px] cursor-pointer hover:bg-white"
-                >
-                  🛡️ Ver Personagem
-                </button>
-              </div>
-
-              {renderSlotsAndActionsSection()}
-            </div>
-          )}
-
-          {/* =====================================================================
-              TELA DE INSPEÇÃO "SABER MAIS" COM DESFOQUE DE LENTE (LENS BLUR OVERLAY)
-              Exibe o item em destaque com aura e o texto detalhado/lore abaixo
-             ===================================================================== */}
-          {lensInspectItem && (
-            <div
-              onClick={() => setLensInspectItem(null)}
-              className={`${
-                isHubFullScreen ? 'fixed inset-0 z-[2000]' : 'absolute inset-0 z-50'
-              } bg-slate-950/75 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center animate-fadeIn`}
-            >
-              {/* Efeito de Lente / Bokeh luminoso */}
-              <div className="w-56 h-56 rounded-full bg-gradient-to-tr from-[#fbbf24]/35 via-[#f59e0b]/25 to-[#fef08a]/35 blur-2xl absolute pointer-events-none" />
-
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="relative z-10 w-full max-w-[380px] flex flex-col items-center space-y-3"
-              >
-                {/* Moldura Circular Flutuante do Item em Lente */}
-                <div className="w-24 h-24 rounded-full bg-gradient-to-b from-[#fef3c7]/40 to-[#f59e0b]/20 border-[3px] border-[#fef08a] shadow-[0_0_35px_rgba(251,191,36,0.65)] flex items-center justify-center relative">
-                  {lensInspectItem.iconPng ? (
-                    <img
-                      src={lensInspectItem.iconPng}
-                      alt={lensInspectItem.name}
-                      className="w-16 h-16 object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
-                    />
-                  ) : (
-                    <span className="text-5xl drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                      {lensInspectItem.iconEmoji}
-                    </span>
-                  )}
-                  <span className="absolute -bottom-2 px-2.5 py-0.5 rounded-full bg-[#fbbf24] border-2 border-[#5c2604] text-[#451a03] font-black text-[10px] uppercase shadow">
-                    {lensInspectItem.rarity}
-                  </span>
-                </div>
-
-                {/* Título e Subtítulo do Item */}
-                <div className="space-y-1 pt-1">
-                  <h3
-                    className="text-base sm:text-lg font-black text-[#fef08a] tracking-wide"
-                    style={{ textShadow: '0 2px 8px rgba(0,0,0,0.85)' }}
-                  >
-                    {lensInspectItem.name}
-                  </h3>
-                  {lensInspectItem.statsText && (
-                    <span className="inline-block px-3 py-0.5 rounded-full bg-[#22c55e] border border-white text-white font-black text-[11px] shadow">
-                      {lensInspectItem.statsText}
-                    </span>
-                  )}
-                </div>
-
-                {/* Caixa de Texto / Lore (ou Leitor de Páginas se for Livro/Grimório) */}
-                <div className="w-full rounded-2xl bg-[#3b1702]/80 border-2 border-[#fbbf24]/60 p-3.5 text-left space-y-2 backdrop-blur-md shadow-xl">
-                  {lensInspectItem.pages && lensInspectItem.pages.length > 0 ? (
-                    <>
-                      <div className="flex items-center justify-between border-b border-[#fbbf24]/30 pb-1.5">
-                        <span className="text-[11px] font-black text-[#fef08a]">
-                          {lensInspectItem.pages[bookPageIndex]?.title ||
-                            `Página ${bookPageIndex + 1}`}
-                        </span>
-                        <span className="text-[10px] font-bold text-[#fde68a]">
-                          Pág. {bookPageIndex + 1}/{lensInspectItem.pages.length}
-                        </span>
-                      </div>
-                      <p className="text-xs font-medium text-white/95 leading-relaxed">
-                        {lensInspectItem.pages[bookPageIndex]?.text}
-                      </p>
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          type="button"
-                          disabled={bookPageIndex === 0}
-                          onClick={() => setBookPageIndex((p) => Math.max(0, p - 1))}
-                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-40 text-white text-[10px] font-black cursor-pointer"
-                        >
-                          ◀ Anterior
-                        </button>
-                        <button
-                          type="button"
-                          disabled={bookPageIndex >= lensInspectItem.pages.length - 1}
-                          onClick={() =>
-                            setBookPageIndex((p) =>
-                              Math.min((lensInspectItem.pages?.length || 1) - 1, p + 1)
-                            )
-                          }
-                          className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-40 text-white text-[10px] font-black cursor-pointer"
-                        >
-                          Próxima ▶
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs font-bold text-[#fef08a]">
-                        {lensInspectItem.shortDescription}
-                      </p>
-                      <p className="text-xs font-medium text-white/90 leading-relaxed">
-                        {lensInspectItem.detailedLore}
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                {/* Botões de Ação dentro da Lente */}
-                <div className="flex items-center gap-2.5 pt-1">
-                  {(lensInspectItem.category === 'equipaveis' ||
-                    lensInspectItem.category === 'pets' ||
-                    lensInspectItem.equipSlot === 'pet') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handlePrimaryEquipOrUse();
-                        setLensInspectItem(null);
-                      }}
-                      className="px-4 py-2 rounded-full bg-gradient-to-b from-[#4ade80] to-[#16a34a] border-2 border-white text-white font-black text-xs shadow-lg cursor-pointer"
-                    >
-                      {lensInspectItem.category === 'pets' || lensInspectItem.equipSlot === 'pet'
-                        ? isSelectedItemEquipped
-                          ? '🐾 Recolher Pet'
-                          : '🐾 Equipar Pet Agora'
-                        : isSelectedItemEquipped
-                        ? '🛡️ Desequipar'
-                        : '⚔️ Equipar Agora'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setLensInspectItem(null)}
-                    className="px-5 py-2 rounded-full bg-gradient-to-b from-[#fbbf24] to-[#d97706] border-2 border-[#5c2604] text-[#451a03] font-black text-xs shadow-lg cursor-pointer"
-                  >
-                    ✕ Fechar Inspeção
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );

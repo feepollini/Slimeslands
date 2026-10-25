@@ -5,9 +5,9 @@ export class MenuScreen {
   private _onStart: () => void;
   private sideActions: SideActions;
 
-  constructor(onStart: () => void) {
+  constructor(onStart: () => void, onSideAction?: (actionId: string) => boolean | void) {
     this._onStart = onStart;
-    this.sideActions = new SideActions();
+    this.sideActions = new SideActions(undefined, onSideAction);
   }
 
   public render(): string {

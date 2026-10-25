@@ -1593,6 +1593,7 @@ export interface MapProject {
   worldMap?: WorldMapConfig; // Configuração do Mapa Panorâmico Interativo Atual
   savedWorldMaps?: WorldMapConfig[]; // Biblioteca de Múltiplos Mapas Globais Salvos no Projeto
   activeWorldMapId?: string; // ID do Mapa Global ativo no momento
+  planetGlobe?: PlanetGlobeConfig; // Configuração do Globo Planetário Interativo (Camada Primordial antes dos Mapas de Regiões)
   playerInventory?: PlayerInventoryConfig; // Sistema de Inventário Geral do Jogador (persistente em todas as fases)
   itemCatalog?: InventoryItemDefinition[]; // Biblioteca Central / Base de Dados de Itens da Engine (Reutilizável em todas as fases, quests e eventos)
   savedCharacters?: PlayerConfig[]; // Biblioteca Central de Múltiplos Personagens Salvos no Projeto
@@ -2093,6 +2094,154 @@ export interface WorldMapConfig {
   customLockIconPng?: string; // PNG do ícone geral de cadeado para locais bloqueados
   lockIconEmoji?: string; // Emoji de cadeado de fallback (ex: '🔒')
 }
+
+export interface PlanetGlobeMarker {
+  id: string;
+  name: string;
+  description?: string;
+  /** Coordenada X normalizada (-1.0 a 1.0) relativa ao centro do planeta quando rotação = 0° */
+  nx: number;
+  /** Coordenada Y normalizada (-1.0 a 1.0) relativa ao centro do planeta quando rotação = 0° */
+  ny: number;
+  iconPng?: string; // PNG ilustrado exibido quando o marcador está em foco
+  iconEmoji?: string; // Emoji de fallback
+  targetWorldMapId?: string; // ID do Mapa Regional (WorldMapConfig) que abre ao aproximar a câmera
+  targetLevelId?: string; // ID de fase salva opcional
+  status?: 'unlocked' | 'locked' | 'completed';
+  badgeText?: string;
+  scale?: number;
+}
+
+export interface PlanetMoonBody {
+  id: string;
+  name: string;
+  description?: string;
+  /** Estilo visual / preset caso não use PNG próprio */
+  presetStyle?: 'silver_moon' | 'blood_moon' | 'crystal_moon' | 'ringed_gas' | 'golden_sanctuary';
+  /** PNG próprio da Lua / Corpo Celeste (com fundo transparente) */
+  moonImagePng?: string;
+  /** Cor do halo atmosférico ao redor da lua */
+  glowColor?: string;
+  /** Se exibe anéis astrais inclinados ao redor deste corpo celeste */
+  hasRings?: boolean;
+  /** Tamanho em pixels quando vista orbitando no céu acima do planeta (padrão 84) */
+  skySizePx?: number;
+  /** Altura / Distância da órbita no céu (0.18 a 0.65, padrão 0.34) */
+  orbitHeightRatio?: number;
+  /** Velocidade orbital no céu em graus por segundo (padrão 3.8) */
+  orbitSpeed?: number;
+  /** Ângulo orbital inicial em graus (-75 a 75 para arco visível, ou 0 a 360) */
+  initialAngleDeg?: number;
+  /** Velocidade de giro da própria Lua quando visitada (padrão 1.8) */
+  autoRotateSpeed?: number;
+  /** ID de Mapa Regional direto (caso o usuário queira abrir um mapa direto ou usar os marcadores da lua) */
+  targetWorldMapId?: string;
+  /** Marcadores / Estrelas na superfície desta Lua quando o jogador viaja até ela */
+  markers: PlanetGlobeMarker[];
+}
+
+export interface SolarSystemMoon {
+  id: string;
+  name: string;
+  imagePng?: string; // PNG da própria Lua (usa o planeta padrão se não definido)
+  markerIconPng?: string; // PNG exibido acima da cápsula do marcador quando a lua está em foco
+  markerIconEmoji?: string;
+  sizePx?: number; // Diâmetro da lua em px (padrão 26)
+  orbitRadiusPx?: number; // Raio da órbita ao redor do planeta pai (padrão 54)
+  orbitSpeed?: number; // Velocidade orbital em graus/s ao redor do planeta (padrão 16)
+  initialAngleDeg?: number;
+  targetWorldMapId?: string; // Mapa Regional que abre ao clicar e dar zoom nesta Lua
+  status?: 'unlocked' | 'locked' | 'completed';
+  markers?: PlanetGlobeMarker[]; // Marcadores no globo desta Lua (Camada 2)
+}
+
+export interface SolarSystemPlanet {
+  id: string;
+  name: string;
+  description?: string;
+  planetImagePng?: string; // PNG do Planeta (usa o planeta padrão se não definido)
+  markerIconPng?: string; // PNG exibido acima da cápsula do marcador quando o planeta está em foco
+  markerIconEmoji?: string;
+  glowColor?: string;
+  hasRings?: boolean;
+  sizePx?: number; // Diâmetro do planeta no sistema solar (ex: 36 a 54px)
+  orbitRadiusRatio?: number; // Distância orbital a partir do centro (0.16 a 0.85)
+  orbitSpeed?: number; // Velocidade de translação na órbita em graus/s
+  selfRotateSpeed?: number; // Velocidade de rotação do planeta no próprio eixo
+  initialAngleDeg?: number; // Ângulo inicial na órbita (0 a 360)
+  targetWorldMapId?: string; // Mapa Regional padrão deste Planeta
+  status?: 'unlocked' | 'locked' | 'completed';
+  scale?: number; // Escala do marcador oficial
+  moons?: SolarSystemMoon[]; // Luas que orbitam ao redor deste planeta
+  markers?: PlanetGlobeMarker[]; // Marcadores na superfície do globo deste Planeta (Camada 2)
+}
+
+export type AstralStarKind =
+  | 'single'
+  | 'binary'
+  | 'trinary'
+  | 'supergiant'
+  | 'pulsar'
+  | 'nebula_star';
+
+export interface ConstellationStarPoint {
+  dx: number; // Deslocamento X relativo à estrela principal (-0.18 a 0.18 da dimensão útil)
+  dy: number; // Deslocamento Y relativo à estrela principal (-0.18 a 0.18 da dimensão útil)
+  size?: number; // Tamanho da estrela em px (padrão 5.5)
+  color?: string; // Cor própria desta estrela (ex: '#38bdf8', '#f43f5e', '#fde047', '#a855f7', '#34d399')
+  secondaryColor?: string; // Cor da estrela companheira quando for estrela dupla/tripla
+  starType?: AstralStarKind; // Tipo morfológico da estrela (simples, dupla/binária, tripla, supergigante, pulsar)
+  connectFromIndex?: number; // Índice de qual estrela do padrão esta estrela se conecta (permite ramificações reais de constelação)
+  label?: string; // Nome opcional da estrela (ex: 'Alpha', 'Beta Binária', etc.)
+}
+
+export interface ConstellationSystemNode {
+  id: string;
+  name: string;
+  subtitle?: string;
+  description?: string;
+  xRatio: number; // Posição X normalizada no firmamento (0.14 a 0.86)
+  yRatio: number; // Posição Y normalizada no firmamento (0.16 a 0.84)
+  glowColor?: string;
+  secondaryColor?: string; // Segunda cor para estrelas principais binárias/duplas ou triplas
+  starType?: AstralStarKind; // Tipo da estrela matriz da constelação ('binary', 'supergiant', 'pulsar', 'trinary', etc.)
+  markerIconPng?: string;
+  markerIconEmoji?: string;
+  sunName?: string;
+  sunImagePng?: string;
+  status?: 'unlocked' | 'locked' | 'completed';
+  scale?: number;
+  /** Estrelas que formam o desenho geométrico desta constelação (com cores variadas, estrelas duplas, gigantes, etc.) */
+  patternStars?: ConstellationStarPoint[];
+  /** Planetas específicos do Sistema Solar desta Constelação (opcional; usa os planetas padrão se omitido) */
+  planets?: SolarSystemPlanet[];
+}
+
+export interface PlanetGlobeConfig {
+  enabled?: boolean; // Se true (padrão), exibe as camadas astrais (Constelação -> Sistema Solar -> Planeta -> Região)
+  enableConstellationLayer?: boolean; // Se true (padrão), inicia na camada de Constelação antes do Sistema Solar
+  title?: string;
+  systemName?: string; // Nome do Sistema Solar / Planetário
+  planetImagePng?: string; // PNG padrão/central
+  sunName?: string; // Nome do Astro Central / Sol
+  sunImagePng?: string; // PNG opcional do Sol / Astro Central
+  sunSizePx?: number; // Tamanho do Astro Central (padrão 52)
+  showCentralSun?: boolean; // Se true (padrão), exibe o Astro Central / Sol no centro das órbitas
+  orbitTiltRatio?: number; // Perspectiva elíptica das órbitas (0.55 a 1.0, padrão 0.66)
+  glowColor?: string;
+  autoRotateSpeed?: number; // Multiplicador global de velocidade orbital (padrão 1.0)
+  planetScale?: number; // Zoom / Escala geral do Sistema Solar (padrão 1.0)
+  verticalOffsetPct?: number;
+  showMoonsInSky?: boolean;
+  markers: PlanetGlobeMarker[];
+  moons?: PlanetMoonBody[];
+  /** Lista de Planetas (com suas respectivas Luas) que compõem o Sistema Solar */
+  planets?: SolarSystemPlanet[];
+  /** Lista de Constelações da Camada 1 (antes do Sistema Planetário) */
+  constellations?: ConstellationSystemNode[];
+}
+
+
 
 export type TabId =
   | 'editor'

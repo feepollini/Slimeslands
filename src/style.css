@@ -23,8 +23,6 @@
 @layer base {
     * {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
         -webkit-tap-highlight-color: transparent;
         user-select: none;
     }
@@ -61,8 +59,8 @@ body {
 
 #app,
 #battle-root {
-    width: 100% !important;
-    max-width: min(430px, 55dvh) !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
     margin: 0 auto !important;
     height: 100dvh !important;
     max-height: 100dvh !important;
@@ -71,6 +69,14 @@ body {
     flex-direction: column;
     overflow: hidden;
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+body.hub-in-active-phase #app {
+    padding: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
 }
 
 /* HIGH FIDELITY 2-TIER DUEL HEADER */

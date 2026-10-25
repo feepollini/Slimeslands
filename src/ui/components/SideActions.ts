@@ -14,20 +14,20 @@ export interface SideActionDef {
 // Módulo isolado: botões de acesso rápido laterais do Hub (Vertical e Paisagem) — Nova UI v1.2 (Pearl & Gold + Royal Sapphire)
 export class SideActions {
   private actions: SideActionDef[];
-  private onAction?: (id: string) => void;
+  private onAction?: (id: string) => boolean | void;
 
-  constructor(actions?: SideActionDef[], onAction?: (id: string) => void) {
+  constructor(actions?: SideActionDef[], onAction?: (id: string) => boolean | void) {
     this.actions = actions || [
-      { id: 'missoes', icon: '/icons/lobby/missoes.png', label: t('side.missoes'), side: 'left' },
-      { id: 'correio', icon: '/icons/lobby/correio.png', label: t('side.correio'), side: 'left', hasNotification: true },
-      { id: 'ranking', icon: '/icons/lobby/ranking.png', label: t('side.ranking'), side: 'left' },
-      { id: 'wallet',  icon: '/icons/lobby/wallet.png',  label: t('side.wallet'),  side: 'left' },
-      { id: 'forja',   icon: '/assets/aistudio/Bigorna_dourada_com_martelo-2_-_Copia_3ced0e91.png', label: t('side.forja'), side: 'left' },
-      { id: 'eventos', icon: '/icons/lobby/eventos.png', label: t('side.eventos'), side: 'right' },
-      { id: 'amigos',  icon: '/icons/lobby/amigos.png',  label: t('side.amigos'),  side: 'right' },
-      { id: 'ajuda',   icon: '/icons/lobby/ajuda.png',   label: t('side.ajuda'),   side: 'right' },
-      { id: 'mapa',    icon: '/assets/aistudio/Mapa_dobrado_com_marcador_dourado-6_-_Copia_ddac5081.png', label: t('side.mapa'), side: 'right' },
-      { id: 'mobile',  icon: '/assets/aistudio/Celular_dourado_de_fantasia-3_-_Copia_8a9ea189.png', label: t('side.mobile'), side: 'right' }
+      { id: 'inventario', icon: '/assets/hud/mochila.png', label: t('side.inventario'), side: 'left', hasNotification: true },
+      { id: 'mapa',       icon: '/assets/aistudio/Mapa_dobrado_com_marcador_dourado-6_-_Copia_ddac5081.png', label: t('side.mapa'), side: 'left' },
+      { id: 'missoes',    icon: '/icons/lobby/missoes.png', label: t('side.missoes'), side: 'left' },
+      { id: 'correio',    icon: '/icons/lobby/correio.png', label: t('side.correio'), side: 'left' },
+      { id: 'forja',      icon: '/assets/aistudio/Bigorna_dourada_com_martelo-2_-_Copia_3ced0e91.png', label: t('side.forja'), side: 'left' },
+      { id: 'tarefas',    icon: '/icons/lobby/eventos.png', label: t('side.tarefas'), side: 'right', hasNotification: true },
+      { id: 'ranking',    icon: '/icons/lobby/ranking.png', label: t('side.ranking'), side: 'right' },
+      { id: 'amigos',     icon: '/icons/lobby/amigos.png',  label: t('side.amigos'),  side: 'right' },
+      { id: 'wallet',     icon: '/icons/lobby/wallet.png',  label: t('side.wallet'),  side: 'right' },
+      { id: 'ajuda',      icon: '/icons/lobby/ajuda.png',   label: t('side.ajuda'),   side: 'right' }
     ];
     this.onAction = onAction;
   }
@@ -80,8 +80,14 @@ export class SideActions {
         try { SoundManager.playAction('clique_geral', 0.5); } catch (e) { console.warn('Som indisponivel', e); }
         gsap.fromTo(btn, { scale: 0.88 }, { scale: 1, duration: 0.45, ease: 'elastic.out(1, 0.5)' });
         const def = this.actions.find(a => a.id === id);
-        if (this.onAction) this.onAction(id);
-        else showToast(`${def ? def.label : id} ${t('side.soon')}`);
+        if (this.onAction) {
+          const handled = this.onAction(id);
+          if (handled === false) {
+            showToast(`${def ? def.label : id} ${t('side.soon')}`);
+          }
+        } else {
+          showToast(`${def ? def.label : id} ${t('side.soon')}`);
+        }
       });
     });
   }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import type { MapProject, SavedLevel, WorldMapPOI, WorldMapConfig } from '../../types/map';
 import { getOrCreateWorldMapConfig, DEFAULT_WORLD_MAP_BACKGROUNDS, POI_ICONS_PRESETS } from './WorldMapCanvasEditor';
 import {
@@ -23,6 +23,20 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { DEFAULT_CLOUD_SVG, DEFAULT_FOG_SVG } from '../../data/defaultAtmosphereAssets';
+import {
+  OrnateMapMarkerPin,
+  playConstellationStarNote,
+  playMarkersUnfurlChime,
+  type MarkerRevealStage,
+} from './OrnateMapMarkerPin';
+import {
+  ConstellationLayerView,
+  SolarSystemLayerView,
+  PlanetGlobeEmulatorView,
+  getOrCreatePlanetGlobeConfig,
+  buildDefaultMarkersForPlanet,
+} from './PlanetGlobeView';
+import type { SolarSystemPlanet, ConstellationSystemNode } from '../../types/map';
 
 interface WorldMapEmulatorViewProps {
   project: MapProject;
@@ -32,6 +46,9 @@ interface WorldMapEmulatorViewProps {
   screenHeight: number;
   isPlayMode?: boolean;
   onOpenEditorTab?: () => void;
+  availableMaps?: WorldMapConfig[];
+  currentMapId?: string;
+  onSelectWorldMap?: (wm: WorldMapConfig) => void;
 }
 
 export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
@@ -42,8 +59,48 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
   screenHeight,
   isPlayMode = false,
   onOpenEditorTab,
+  availableMaps = [],
+  currentMapId,
+  onSelectWorldMap,
 }) => {
-  const worldMap = getOrCreateWorldMapConfig(project);
+  const planetGlobe = getOrCreatePlanetGlobeConfig(project);
+  const isPlanetEnabled = planetGlobe.enabled !== false;
+  const constellations = planetGlobe.constellations || [];
+  const [activeConstellation, setActiveConstellation] = useState<ConstellationSystemNode | null>(
+    () => constellations[0] || null
+  );
+  const [pausedConstellationId, setPausedConstellationId] = useState<string | null>(null);
+
+  const solarPlanets =
+    activeConstellation?.planets && activeConstellation.planets.length > 0
+      ? activeConstellation.planets
+      : planetGlobe.planets || [];
+
+  // =========================================================================
+  // 4 CAMADAS DO MESMO MAPA:
+  // 1. 'constellation' -> Camada 1: Constelações (estrelas coloridas, estrelas duplas, gigantes, pulsares e Hyper-Salto p/ Sistema Solar)
+  // 2. 'solar'         -> Camada 2: Sistema Planetário (planetas e luas em órbitas circulares, 1º clique exibe estrela+cápsula sem asset, 2º clique faz Hyper-Zoom)
+  // 3. 'planet'        -> Camada 3: Close no Planeta/Lua Girando (metade do globo girando com estrelas pulsantes e continente em foco)
+  // 4. 'region'        -> Camada 4: Mapa Regional Final (locais da região e viagem para a fase)
+  // =========================================================================
+  const [mapLayerMode, setMapLayerMode] = useState<
+    'constellation' | 'solar' | 'planet' | 'region'
+  >(() =>
+    !isPlanetEnabled
+      ? 'region'
+      : planetGlobe.enableConstellationLayer !== false
+      ? 'constellation'
+      : 'solar'
+  );
+  const [pausedSolarPlanetId, setPausedSolarPlanetId] = useState<string | null>(null);
+  const [activeSolarPlanet, setActiveSolarPlanet] = useState<SolarSystemPlanet | null>(
+    () => solarPlanets[0] || null
+  );
+  const [externalGlobeMarkerId, setExternalGlobeMarkerId] = useState<string | null>(null);
+  const [regionalMapOverride, setRegionalMapOverride] = useState<WorldMapConfig | null>(null);
+
+  const baseWorldMap = getOrCreateWorldMapConfig(project);
+  const worldMap = regionalMapOverride || baseWorldMap;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [selectedPoi, setSelectedPoi] = useState<WorldMapPOI | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -73,25 +130,152 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     isRevealed: boolean;
   } | null>(null);
 
-  // Event Listener para a Roda do Mouse (Wheel) Simular Zoom de Pinça no Emulador (Mínimo 1.0x = 100% da Altura Vertical)
+  // Estados da UI Sobreposta ao Mapa (Lugares, Sublugares, Regiões, Legenda)
+  const visiblePois = React.useMemo(
+    () =>
+      (worldMap.pointsOfInterest || []).filter(
+        (p) => !p.isInvisible && p.iconType !== 'invisible_node'
+      ),
+    [worldMap.pointsOfInterest]
+  );
+  const [isLugaresExpanded, setIsLugaresExpanded] = useState<boolean>(true);
+  const [expandedPlaceId, setExpandedPlaceId] = useState<string | null>(
+    () => visiblePois[0]?.id || null
+  );
+  const [isRegionsOpen, setIsRegionsOpen] = useState<boolean>(false);
+  const [isLegendOpen, setIsLegendOpen] = useState<boolean>(false);
+
+  // =========================================================================
+  // EXPERIÊNCIA CINEMATOGRÁFICA DE ABERTURA DA CAMADA 3 (MAPA REGIONAL)
+  // =========================================================================
+  const [introPhase, setIntroPhase] = useState<
+    'stars_igniting' | 'dissolving_darkness' | 'markers_unfurling' | 'zooming_to_first' | 'complete'
+  >('complete');
+  const [litStarCount, setLitStarCount] = useState<number>(0);
+  const [flaringStarIdx, setFlaringStarIdx] = useState<number | null>(null);
+  const [introRunKey, setIntroRunKey] = useState<number>(0);
+
+  const [cameraTargetPoi, setCameraTargetPoi] = useState<WorldMapPOI | null>(null);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const orderedIntroPois = React.useMemo(() => {
+    return [...visiblePois].sort((a, b) => a.x - b.x || a.y - b.y);
+  }, [visiblePois]);
+
+  useEffect(() => {
+    if (mapLayerMode !== 'region') {
+      setIntroPhase('complete');
+      return;
+    }
+    const totalStars = orderedIntroPois.length;
+    if (totalStars === 0) {
+      setIntroPhase('complete');
+      return;
+    }
+
+    setIntroPhase('stars_igniting');
+    setLitStarCount(0);
+    setFlaringStarIdx(null);
+    setIsCameraZoomed(false);
+    setFocusedPoiId(null);
+    setCameraTargetPoi(null);
+    setUserZoom(1.0);
+    setPanOffset({ x: 0, y: 0 });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = 0;
+      scrollContainerRef.current.scrollTop = 0;
+    }
+
+    const timers: number[] = [];
+    const starStepMs = 1050;
+    const initialDelayMs = 650;
+
+    orderedIntroPois.forEach((_poi, idx) => {
+      const t = window.setTimeout(() => {
+        const isLast = idx === totalStars - 1;
+        setLitStarCount(idx + 1);
+        setFlaringStarIdx(idx);
+        playConstellationStarNote(idx, isLast);
+
+        if (isLast) {
+          const tDissolve = window.setTimeout(() => {
+            setFlaringStarIdx(null);
+            setIntroPhase('dissolving_darkness');
+          }, 950);
+          timers.push(tDissolve);
+
+          const tUnfurl = window.setTimeout(() => {
+            setIntroPhase('markers_unfurling');
+            playMarkersUnfurlChime();
+          }, 3150);
+          timers.push(tUnfurl);
+
+          const tZoomFirst = window.setTimeout(() => {
+            const firstLocation = visiblePois[0] || orderedIntroPois[0] || null;
+            setIntroPhase('zooming_to_first');
+            if (firstLocation) {
+              setCameraTargetPoi(firstLocation);
+              setExpandedPlaceId(firstLocation.id);
+              setUserZoom(1.32);
+              setPanOffset({ x: 0, y: 0 });
+            }
+          }, 4250);
+          timers.push(tZoomFirst);
+
+          const tComplete = window.setTimeout(() => {
+            setIntroPhase('complete');
+          }, 5750);
+          timers.push(tComplete);
+        }
+      }, initialDelayMs + idx * starStepMs);
+      timers.push(t);
+    });
+
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [worldMap.id, introRunKey, orderedIntroPois.length, mapLayerMode]);
+
+  // Oculta SEMPRE o Header e a Barra de Navegação Inferior do Hub enquanto o Mapa estiver aberto!
+  // O Mapa utiliza exclusivamente a sua própria UI de Sobreposição nas 3 camadas.
+  useEffect(() => {
+    if (!isPlayMode) return;
+    const topHeader = document.getElementById('top-header-component');
+    document.body.classList.add('hub-in-active-phase');
+    document.body.classList.add('hub-scroll-hide-bars');
+    if (topHeader) topHeader.style.display = 'none';
+
+    return () => {
+      document.body.classList.remove('hub-in-active-phase');
+      document.body.classList.remove('hub-scroll-hide-bars');
+      if (topHeader) topHeader.style.display = 'flex';
+    };
+  }, [isPlayMode]);
+
+  // Event Listener para a Roda do Mouse (Wheel) Simular Zoom de Pinça nas 3 Camadas
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
+      if (mapLayerMode === 'region' && introPhase !== 'complete') return;
       e.preventDefault();
       const delta = e.deltaY < 0 ? 0.08 : -0.08;
-      setUserZoom((prev) => Math.min(2.5, Math.max(1.0, parseFloat((prev + delta).toFixed(2)))));
+      setUserZoom((prev) => {
+        const next = Math.min(2.4, Math.max(0.78, parseFloat((prev + delta).toFixed(2))));
+        if (next <= 1.02) setPanOffset({ x: 0, y: 0 });
+        return next;
+      });
     };
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, []);
+  }, [introPhase, mapLayerMode]);
 
-  // Handlers para Gesto de Pinça em Telas Sensíveis ao Toque (Multi-touch)
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (mapLayerMode === 'region' && introPhase !== 'complete') return;
     if (e.touches.length === 2) {
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -102,6 +286,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (mapLayerMode === 'region' && introPhase !== 'complete') return;
     if (e.touches.length === 2 && touchDistRef.current !== null) {
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -109,7 +294,11 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
       );
       const delta = (dist - touchDistRef.current) * 0.006;
       touchDistRef.current = dist;
-      setUserZoom((prev) => Math.min(2.5, Math.max(1.0, parseFloat((prev + delta).toFixed(2)))));
+      setUserZoom((prev) => {
+        const next = Math.min(2.4, Math.max(0.78, parseFloat((prev + delta).toFixed(2))));
+        if (next <= 1.02) setPanOffset({ x: 0, y: 0 });
+        return next;
+      });
     }
   };
 
@@ -117,34 +306,51 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     touchDistRef.current = null;
   };
 
-  // Dimensões do Mapa Panorâmico & Escala Dinâmica com Zoom
   const baseMapHeight = worldMap.mapHeight || 667;
   const baseMapWidth = worldMap.mapWidth || 1600;
 
-  // Fator de escala vertical para preencher a altura da tela do emulador
-  const verticalScale = screenHeight / baseMapHeight;
-  const renderedMapWidth = Math.max(screenWidth, Math.round(baseMapWidth * verticalScale));
+  const renderedMapWidth = screenWidth;
   const renderedMapHeight = screenHeight;
 
-  // Dimensões dinâmicas do plano com zoom aplicado (Permite Scroll em X e Y quando Zoom > 1.0)
-  const effectiveZoom = userZoom * (isCameraZoomed ? 1.25 : 1.0);
-  const planeWidth = Math.round(renderedMapWidth * effectiveZoom);
-  const planeHeight = Math.round(renderedMapHeight * effectiveZoom);
+  const activeCameraZoom =
+    introPhase === 'stars_igniting' ||
+    introPhase === 'dissolving_darkness' ||
+    introPhase === 'markers_unfurling'
+      ? 1.0
+      : userZoom * (isCameraZoomed ? 1.18 : 1.0);
 
-  // Camadas e Atmosfera
+  const targetPoiForCamera =
+    (focusedPoiId ? visiblePois.find((p) => p.id === focusedPoiId) : null) ||
+    cameraTargetPoi ||
+    visiblePois[0] ||
+    null;
+
+  const targetCanvasX = targetPoiForCamera
+    ? (targetPoiForCamera.x / baseMapWidth) * renderedMapWidth
+    : renderedMapWidth * 0.5;
+  const targetCanvasY = targetPoiForCamera
+    ? (targetPoiForCamera.y / baseMapHeight) * renderedMapHeight
+    : renderedMapHeight * 0.5;
+
+  const minTx = renderedMapWidth * (1 - activeCameraZoom);
+  const minTy = renderedMapHeight * (1 - activeCameraZoom);
+  const idealTx = renderedMapWidth * 0.5 - targetCanvasX * activeCameraZoom + panOffset.x;
+  const idealTy = renderedMapHeight * 0.5 - targetCanvasY * activeCameraZoom + panOffset.y;
+  const clampedCameraTx =
+    activeCameraZoom <= 1.001 ? 0 : Math.min(0, Math.max(minTx, idealTx));
+  const clampedCameraTy =
+    activeCameraZoom <= 1.001 ? 0 : Math.min(0, Math.max(minTy, idealTy));
+
   const layers = worldMap.layers || [];
   const atmosphere = worldMap.atmosphere || {};
 
   const isBgVisible = layers.find((l) => l.id === 'background')?.visible !== false;
   const bgOpacity = layers.find((l) => l.id === 'background')?.opacity ?? 1.0;
-  const isRoutesVisible = layers.find((l) => l.id === 'routes')?.visible !== false;
-  const routesOpacity = layers.find((l) => l.id === 'routes')?.opacity ?? 1.0;
   const isPoisVisible = layers.find((l) => l.id === 'pois')?.visible !== false;
   const poisOpacity = layers.find((l) => l.id === 'pois')?.opacity ?? 1.0;
   const isAtmoVisible = layers.find((l) => l.id === 'atmosphere')?.visible !== false;
   const atmoOpacity = layers.find((l) => l.id === 'atmosphere')?.opacity ?? 0.85;
 
-  // Monitora a rolagem do mapa
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
     const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
@@ -158,67 +364,46 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     handleScroll();
   }, [renderedMapWidth, screenWidth]);
 
-  // Navegação suave com setas
-  const handleScrollStep = (dir: 'left' | 'right') => {
-    if (!scrollContainerRef.current) return;
-    const step = screenWidth * 0.7;
-    scrollContainerRef.current.scrollBy({
-      left: dir === 'left' ? -step : step,
-      behavior: 'smooth',
-    });
-  };
-
-  // Drag horizontal e vertical (Pan em 2D quando houver Zoom)
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (mapLayerMode !== 'region' || introPhase !== 'complete') return;
     if ((e.target as HTMLElement).closest('[data-poi-interactive]')) return;
     setIsDragging(true);
-    setStartX(e.pageX - (scrollContainerRef.current?.offsetLeft || 0));
-    setStartY(e.pageY - (scrollContainerRef.current?.offsetTop || 0));
-    setScrollLeftState(scrollContainerRef.current?.scrollLeft || 0);
-    setScrollTopState(scrollContainerRef.current?.scrollTop || 0);
+    setStartX(e.clientX);
+    setStartY(e.clientY);
+    setScrollLeftState(panOffset.x);
+    setScrollTopState(panOffset.y);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging || !scrollContainerRef.current) return;
+    if (!isDragging || mapLayerMode !== 'region' || introPhase !== 'complete') return;
     e.preventDefault();
-    const x = e.pageX - (scrollContainerRef.current.offsetLeft || 0);
-    const y = e.pageY - (scrollContainerRef.current.offsetTop || 0);
-    const walkX = (x - startX) * 1.3;
-    const walkY = (y - startY) * 1.3;
-    scrollContainerRef.current.scrollLeft = scrollLeftState - walkX;
-    scrollContainerRef.current.scrollTop = scrollTopState - walkY;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    setPanOffset({
+      x: scrollLeftState + dx,
+      y: scrollTopState + dy,
+    });
   };
 
   const handlePointerUp = () => {
     setIsDragging(false);
   };
 
-  // Clique no Marcador do Mapa: Mergulho de Câmera sem outros marcadores + Pop-up Clash Style
   const handlePoiClick = (poi: WorldMapPOI, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (introPhase !== 'complete') return;
     if (poi.isInvisible || poi.iconType === 'invisible_node') return;
 
-    // 1. Ativa o foco do marcador e mergulho de câmera
     setFocusedPoiId(poi.id);
+    setCameraTargetPoi(poi);
+    setPanOffset({ x: 0, y: 0 });
     setIsCameraZoomed(true);
 
-    // 2. Centraliza a câmera no marcador clicado
-    if (scrollContainerRef.current) {
-      const poiCanvasX = (poi.x / baseMapWidth) * renderedMapWidth;
-      const targetScrollLeft = poiCanvasX - screenWidth / 2;
-      scrollContainerRef.current.scrollTo({
-        left: Math.max(0, targetScrollLeft),
-        behavior: 'smooth',
-      });
-    }
-
-    // 3. Exibe a janela Pop-up Estilo Clash of Clans/Clash Royale após breve animação de aproximação
     setTimeout(() => {
       setSelectedPoi(poi);
-    }, 280);
+    }, 340);
   };
 
-  // Fechar Modal do POI e restaurar visualização padrão da câmera
   const handleCloseModal = () => {
     setSelectedPoi(null);
     setFocusedPoiId(null);
@@ -233,443 +418,1440 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
     (p) => !p.isInvisible && p.iconType !== 'invisible_node'
   ).length;
 
+  const focusPoiOnMap = (poi: WorldMapPOI, openPopup = false) => {
+    setFocusedPoiId(poi.id);
+    setCameraTargetPoi(poi);
+    setPanOffset({ x: 0, y: 0 });
+    if (userZoom < 1.25) {
+      setUserZoom(1.32);
+    }
+    if (openPopup) {
+      setIsCameraZoomed(true);
+      setTimeout(() => {
+        setSelectedPoi(poi);
+      }, 280);
+    }
+  };
+
+  const handleRecenterMap = () => {
+    const firstPoi = visiblePois[0] || null;
+    setIsCameraZoomed(false);
+    setFocusedPoiId(null);
+    setPausedConstellationId(null);
+    setPausedSolarPlanetId(null);
+    setExternalGlobeMarkerId(null);
+    setCameraTargetPoi(firstPoi);
+    setPanOffset({ x: 0, y: 0 });
+    setUserZoom(1.0);
+  };
+
+  const isLandscapeLayout = screenWidth > screenHeight * 1.15;
+  // Como ocultamos o Header e a Barra de Navegação do Hub no Mapa, a UI de Sobreposição usa toda a tela limpa!
+  const topOverlayOffset = 12;
+  const bottomOverlayOffset = 14;
+
+  const allMaps =
+    availableMaps.length > 0
+      ? availableMaps
+      : project.savedWorldMaps && project.savedWorldMaps.length > 0
+      ? project.savedWorldMaps
+      : [baseWorldMap];
+
+  const currentPlanetForLayer2 = activeSolarPlanet || solarPlanets[0] || null;
+  const currentGlobeMarkers = useMemo(() => {
+    if (currentPlanetForLayer2?.markers && currentPlanetForLayer2.markers.length > 0) {
+      return currentPlanetForLayer2.markers;
+    }
+    if (planetGlobe.markers && planetGlobe.markers.length > 0) {
+      return planetGlobe.markers;
+    }
+    return buildDefaultMarkersForPlanet(
+      currentPlanetForLayer2?.id || 'solar-planet-1',
+      currentPlanetForLayer2?.name || 'Planeta Gaia',
+      project
+    );
+  }, [currentPlanetForLayer2, planetGlobe.markers, project]);
+
+  const showMapOverlayUi =
+    !selectedPoi && (mapLayerMode !== 'region' || introPhase === 'complete');
+
   return (
     <div
-      className="relative w-full h-full bg-slate-950 select-none overflow-hidden flex flex-col"
+      className={`relative w-full h-full bg-black select-none overflow-hidden flex flex-col ${
+        mapLayerMode === 'region' && introPhase !== 'complete' ? 'z-[5000]' : ''
+      }`}
       style={{ width: screenWidth, height: screenHeight }}
     >
-      {/* Barra de Título Superior do Mapa no Emulador */}
-      <div className="absolute top-0 left-0 right-0 z-30 px-3.5 py-2.5 bg-gradient-to-b from-black/90 via-black/60 to-transparent flex items-center justify-between pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-sm">
-            <Compass className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <h3 className="text-xs font-bold text-white tracking-tight drop-shadow-md">
-              {worldMap.title || 'Mapa Interativo do Reino'}
-            </h3>
-            <span className="text-[9px] font-mono text-amber-300/80 block leading-tight">
-              {unlockedCount}/{totalCount} Locais Abertos
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Controles de Zoom Flutuantes (Pinça / Mouse Scroll Wheel) */}
-          <div className="flex items-center gap-1 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-full border border-amber-500/40 text-[9px] font-mono text-amber-300 shadow-md">
-            <button
-              type="button"
-              onClick={() => setUserZoom((z) => Math.max(0.8, parseFloat((z - 0.15).toFixed(2))))}
-              className="px-1 hover:text-white transition-colors cursor-pointer font-extrabold text-xs"
-              title="Diminuir Zoom (-)"
-            >
-              -
-            </button>
-            <span className="font-extrabold px-0.5">{Math.round(userZoom * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setUserZoom((z) => Math.min(2.5, parseFloat((z + 0.15).toFixed(2))))}
-              className="px-1 hover:text-white transition-colors cursor-pointer font-extrabold text-xs"
-              title="Aumentar Zoom (+)"
-            >
-              +
-            </button>
-            {userZoom !== 1.0 && (
-              <button
-                type="button"
-                onClick={() => setUserZoom(1.0)}
-                className="text-[8px] font-sans underline text-amber-400 hover:text-white ml-0.5 cursor-pointer"
-                title="Resetar Zoom para 100%"
-              >
-                Reset
-              </button>
-            )}
-          </div>
-
-          <span className="text-[9px] font-medium text-white/70 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1">
-            <MoveHorizontal className="w-2.5 h-2.5 text-amber-400" />
-            <span>Rolagem & Pinça</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Contêiner de Rolagem Horizontal e Zoom por Wheel / Pinça */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`w-full h-full overflow-x-auto overflow-y-hidden scrollbar-none overscroll-none relative ${
-          isDragging ? 'cursor-grabbing' : 'cursor-grab'
-        }`}
-        style={{
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}
-      >
-        <div
-          className="relative h-full overflow-hidden transition-transform duration-200 ease-out origin-center"
-          style={{
-            width: renderedMapWidth,
-            height: renderedMapHeight,
-            transform: `scale(${userZoom * (isCameraZoomed ? 1.2 : 1.0)})`,
-            transformOrigin: '50% 50%',
+      {/* =========================================================================
+          RENDERIZAÇÃO DAS 4 CAMADAS DO MESMO MAPA:
+          1. 'constellation' -> Camada 1: Constelações
+          2. 'solar'         -> Camada 2: Sistema Planetário
+          3. 'planet'        -> Camada 3: Close no Planeta/Lua Girando (Continentes)
+          4. 'region'        -> Camada 4: Mapa Regional Final
+         ========================================================================= */}
+      {mapLayerMode === 'constellation' ? (
+        <ConstellationLayerView
+          project={project}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          userZoom={userZoom}
+          pausedConstellationId={pausedConstellationId}
+          onSelectPausedConstellation={(cid) => {
+            setPausedConstellationId(cid);
+            if (cid) setExpandedPlaceId(cid);
           }}
+          onEnterSolarSystem={(constellation) => {
+            setActiveConstellation(constellation);
+            if (constellation.planets && constellation.planets.length > 0) {
+              setActiveSolarPlanet(constellation.planets[0]);
+            }
+            setPausedConstellationId(null);
+            setPausedSolarPlanetId(null);
+            setUserZoom(1.0);
+            setMapLayerMode('solar');
+          }}
+        />
+      ) : mapLayerMode === 'solar' ? (
+        <SolarSystemLayerView
+          project={project}
+          activeConstellation={activeConstellation}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          userZoom={userZoom}
+          pausedPlanetId={pausedSolarPlanetId}
+          onSelectPausedPlanet={(pid) => {
+            setPausedSolarPlanetId(pid);
+            if (pid) setExpandedPlaceId(pid);
+          }}
+          onEnterPlanetGlobe={(planet) => {
+            setActiveSolarPlanet(planet);
+            setPausedSolarPlanetId(null);
+            setUserZoom(1.0);
+            setMapLayerMode('planet');
+          }}
+        />
+      ) : mapLayerMode === 'planet' ? (
+        <PlanetGlobeEmulatorView
+          project={project}
+          activePlanet={currentPlanetForLayer2}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}
+          userZoom={userZoom}
+          externalFocusedMarkerId={externalGlobeMarkerId}
+          availableMaps={allMaps}
+          onOpenEditorTab={onOpenEditorTab}
+          onSelectRegionMarker={(_marker, targetMap) => {
+            if (targetMap) {
+              setRegionalMapOverride(targetMap);
+              onSelectWorldMap?.(targetMap);
+            }
+            setUserZoom(1.0);
+            setIntroRunKey((k) => k + 1);
+            setMapLayerMode('region');
+          }}
+        />
+      ) : (
+        /* CAMADA 3: MAPA REGIONAL FINAL */
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className={`w-full h-full overflow-hidden overscroll-none relative bg-black ${
+            introPhase !== 'complete'
+              ? 'cursor-default'
+              : isDragging
+              ? 'cursor-grabbing'
+              : 'cursor-grab'
+          }`}
         >
-          {/* Camada 1: Imagem de Fundo Panorâmica */}
-          {isBgVisible && (
-            <img
-              src={bgImage}
-              alt="Fundo do Mapa"
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none filter contrast-[1.03] brightness-[0.97]"
-              style={{ opacity: bgOpacity }}
-              draggable={false}
-            />
-          )}
+          <div
+            className="relative overflow-hidden"
+            style={{
+              width: renderedMapWidth,
+              height: renderedMapHeight,
+              transformOrigin: '0 0',
+              transform: `translate3d(${clampedCameraTx}px, ${clampedCameraTy}px, 0) scale(${activeCameraZoom})`,
+              transition: isDragging
+                ? 'none'
+                : introPhase === 'zooming_to_first'
+                ? 'transform 1.5s cubic-bezier(0.22, 1, 0.36, 1)'
+                : 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
+            }}
+          >
+            {/* Camada 1: Imagem de Fundo Panorâmica em Full Screen */}
+            {isBgVisible && (
+              <img
+                src={bgImage}
+                alt="Fundo do Mapa"
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none filter contrast-[1.03] brightness-[0.97]"
+                style={{ opacity: bgOpacity }}
+                draggable={false}
+              />
+            )}
 
-          {/* Camada 2: Conexões de Rotas (Desenha linhas unindo pontos, incluindo pontos invisíveis) */}
-          {isRoutesVisible && (
-            <svg
-              className="absolute inset-0 w-full h-full pointer-events-none z-10"
-              style={{ width: renderedMapWidth, height: renderedMapHeight, opacity: routesOpacity }}
-            >
-              <defs>
-                <linearGradient id="routeGradGame" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9" />
-                  <stop offset="50%" stopColor="#fbbf24" stopOpacity="1" />
-                  <stop offset="100%" stopColor="#34d399" stopOpacity="0.9" />
-                </linearGradient>
-              </defs>
-              {/* Conexões Explícitas e Encadeadas em Estilo Trilha de Aventura RPG */}
-              {(() => {
-                const pairs: Array<{ from: WorldMapPOI; to: WorldMapPOI; id: string }> = [];
+            {/* Cortina de Escuridão da Abertura */}
+            {introPhase !== 'complete' && (
+              <svg
+                className="absolute inset-0 pointer-events-none z-20"
+                style={{
+                  width: renderedMapWidth,
+                  height: renderedMapHeight,
+                  opacity:
+                    introPhase === 'markers_unfurling' || introPhase === 'zooming_to_first' ? 0 : 1,
+                  transition: 'opacity 1.2s ease-out',
+                }}
+              >
+                <defs>
+                  <radialGradient id="starPortalFeather">
+                    <stop offset="0%" stopColor="black" />
+                    <stop offset="55%" stopColor="black" />
+                    <stop offset="100%" stopColor="white" />
+                  </radialGradient>
+                  <radialGradient id="starGoldenAura">
+                    <stop offset="0%" stopColor="rgba(255, 245, 200, 0.26)" />
+                    <stop offset="48%" stopColor="rgba(245, 192, 52, 0.09)" />
+                    <stop offset="100%" stopColor="rgba(0, 0, 0, 0)" />
+                  </radialGradient>
+                  <mask id="constellationDarknessMask">
+                    <rect x="0" y="0" width={renderedMapWidth} height={renderedMapHeight} fill="white" />
+                    {orderedIntroPois.map((poi) => {
+                      const sx = (poi.x / baseMapWidth) * renderedMapWidth;
+                      const sy = (poi.y / baseMapHeight) * renderedMapHeight;
+                      const isDissolving =
+                        introPhase === 'dissolving_darkness' ||
+                        introPhase === 'markers_unfurling' ||
+                        introPhase === 'zooming_to_first';
+                      const holeRadius = isDissolving
+                        ? Math.hypot(renderedMapWidth, renderedMapHeight) * 1.05
+                        : 0;
+                      return (
+                        <circle
+                          key={`mask-hole-${poi.id}`}
+                          cx={sx}
+                          cy={sy}
+                          r={holeRadius}
+                          fill="url(#starPortalFeather)"
+                          style={{
+                            transition: isDissolving
+                              ? 'r 2.35s cubic-bezier(0.22, 1, 0.36, 1)'
+                              : 'none',
+                          }}
+                        />
+                      );
+                    })}
+                  </mask>
+                </defs>
 
-                if (worldMap.routeConnections && worldMap.routeConnections.length > 0) {
-                  worldMap.routeConnections.forEach((rc) => {
-                    const f = worldMap.pointsOfInterest.find((p) => p.id === rc.fromId);
-                    const t = worldMap.pointsOfInterest.find((p) => p.id === rc.toId);
-                    if (f && t) pairs.push({ from: f, to: t, id: rc.id });
-                  });
-                }
+                <rect
+                  x="0"
+                  y="0"
+                  width={renderedMapWidth}
+                  height={renderedMapHeight}
+                  fill="#000000"
+                  mask="url(#constellationDarknessMask)"
+                />
 
-                worldMap.pointsOfInterest.forEach((poi) => {
-                  if (poi.parentId) {
-                    const parent = worldMap.pointsOfInterest.find((p) => p.id === poi.parentId);
-                    if (parent && !pairs.some((p) => p.from.id === parent.id && p.to.id === poi.id)) {
-                      pairs.push({ from: parent, to: poi, id: `parent-${parent.id}-${poi.id}` });
-                    }
-                  }
-                });
-
-                if (pairs.length === 0) {
-                  worldMap.pointsOfInterest.forEach((poi, idx) => {
-                    const nextPoi = worldMap.pointsOfInterest[idx + 1];
-                    if (nextPoi) pairs.push({ from: poi, to: nextPoi, id: `seq-${poi.id}-${nextPoi.id}` });
-                  });
-                }
-
-                return pairs.map((pair) => {
-                  const x1 = (pair.from.x / baseMapWidth) * renderedMapWidth;
-                  const y1 = (pair.from.y / baseMapHeight) * renderedMapHeight;
-                  const x2 = (pair.to.x / baseMapWidth) * renderedMapWidth;
-                  const y2 = (pair.to.y / baseMapHeight) * renderedMapHeight;
-                  const mx = (x1 + x2) / 2;
-                  const my = (y1 + y2) / 2 - 20;
-
+                {orderedIntroPois.slice(0, litStarCount).map((poi) => {
+                  const sx = (poi.x / baseMapWidth) * renderedMapWidth;
+                  const sy = (poi.y / baseMapHeight) * renderedMapHeight;
+                  const isDissolving =
+                    introPhase === 'dissolving_darkness' ||
+                    introPhase === 'markers_unfurling' ||
+                    introPhase === 'zooming_to_first';
                   return (
-                    <g key={`game-route-path-${pair.id}`}>
-                      {/* Valeta / Sombra profunda de caminho RPG */}
-                      <path
-                        d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-                        fill="none"
-                        stroke="#180e06"
-                        strokeWidth={8}
-                        strokeLinecap="round"
-                        opacity={0.8}
-                      />
-                      {/* Borda de pedra / estrada dourada */}
-                      <path
-                        d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-                        fill="none"
-                        stroke="#b45309"
-                        strokeWidth={5}
-                        strokeLinecap="round"
-                        opacity={0.9}
-                      />
-                      {/* Trilha pontilhada luminosa com cara de jogo */}
-                      <path
-                        d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-                        fill="none"
-                        stroke="url(#routeGradGame)"
-                        strokeWidth={2.8}
-                        strokeDasharray="8,6"
-                        strokeLinecap="round"
-                        className="animate-pulse"
-                      />
-                      {/* Marcador de Waypoint no meio da curva */}
+                    <g key={`star-aura-ring-${poi.id}`}>
                       <circle
-                        cx={mx}
-                        cy={my}
-                        r={4}
-                        fill="#f59e0b"
-                        stroke="#78350f"
-                        strokeWidth={1.5}
+                        cx={sx}
+                        cy={sy}
+                        r={isDissolving ? 260 : 44}
+                        fill="url(#starGoldenAura)"
+                        style={{
+                          opacity: isDissolving ? 0 : 0.75,
+                          transition: 'r 2.1s ease-out, opacity 1.8s ease-out',
+                        }}
                       />
-                      <circle cx={mx} cy={my} r={1.8} fill="#fef08a" />
                     </g>
                   );
-                });
-              })()}
-            </svg>
-          )}
+                })}
+              </svg>
+            )}
 
-          {/* Camada 3: Pontos de Interesse (POIs no Mapa) */}
-          {isPoisVisible && (
+            {/* Pontos de Interesse (POIs no Mapa Regional) */}
+            {isPoisVisible && (
+              <div
+                className="absolute inset-0 pointer-events-auto z-30 transition-opacity duration-500"
+                style={{ opacity: poisOpacity }}
+              >
+                {worldMap.pointsOfInterest.map((poi) => {
+                  if (poi.isInvisible || poi.iconType === 'invisible_node') return null;
+
+                  const poiCanvasX = (poi.x / baseMapWidth) * renderedMapWidth;
+                  const poiCanvasY = (poi.y / baseMapHeight) * renderedMapHeight;
+                  const scale = poi.scale || 1.0;
+                  const isFocused = focusedPoiId === poi.id;
+                  const isHiddenByFocus = focusedPoiId !== null && !isFocused;
+
+                  const orderIdx = orderedIntroPois.findIndex((p) => p.id === poi.id);
+                  let markerRevealStage: MarkerRevealStage = 'full';
+                  if (introPhase === 'stars_igniting') {
+                    if (orderIdx === -1 || orderIdx >= litStarCount) {
+                      markerRevealStage = 'hidden';
+                    } else if (orderIdx === flaringStarIdx) {
+                      markerRevealStage = 'star_flare';
+                    } else {
+                      markerRevealStage = 'star_only';
+                    }
+                  } else if (introPhase === 'dissolving_darkness') {
+                    markerRevealStage = 'star_only';
+                  } else {
+                    markerRevealStage = 'full';
+                  }
+
+                  return (
+                    <div
+                      key={poi.id}
+                      data-poi-interactive="true"
+                      onClick={(e) => {
+                        if (introPhase !== 'complete') return;
+                        handlePoiClick(poi, e);
+                      }}
+                      className={`absolute transition-all duration-500 group ${
+                        introPhase !== 'complete' ? 'pointer-events-none' : 'cursor-pointer'
+                      } ${
+                        isHiddenByFocus ? 'opacity-0 pointer-events-none scale-75' : 'opacity-100 scale-100'
+                      }`}
+                      style={{
+                        left: poiCanvasX,
+                        top: poiCanvasY,
+                        transform: 'translate(-20%, -84%)',
+                      }}
+                    >
+                      <OrnateMapMarkerPin
+                        name={poi.name}
+                        iconPng={poi.iconPng}
+                        iconEmoji={poi.iconEmoji || '🏰'}
+                        status={poi.status}
+                        customLockIconPng={worldMap.customLockIconPng}
+                        isFocused={isFocused}
+                        scale={scale}
+                        sizeVariant="md"
+                        revealStage={markerRevealStage}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Atmosfera & Nuvens em Parallax */}
+            {isAtmoVisible && (
+              <div
+                className="absolute inset-0 pointer-events-none z-15 overflow-hidden"
+                style={{ opacity: atmoOpacity }}
+              >
+                {atmosphere.cloudsEnabled !== false && atmosphere.weather !== 'clear' && (
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <div
+                      className="absolute inset-0 flex"
+                      style={{
+                        animation: `worldMapCloudsDrift ${atmosphere.cloudsSpeed || 30}s linear infinite`,
+                        width: '200%',
+                      }}
+                    >
+                      <div className="w-1/2 h-full relative" style={{ opacity: atmosphere.cloudsOpacity ?? 0.7 }}>
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-6 left-[10%] w-[380px] object-contain filter drop-shadow opacity-80" />
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-36 left-[50%] w-[420px] object-contain filter drop-shadow opacity-80" />
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute bottom-8 left-[20%] w-[340px] object-contain filter drop-shadow opacity-80" />
+                      </div>
+                      <div className="w-1/2 h-full relative" style={{ opacity: atmosphere.cloudsOpacity ?? 0.7 }}>
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-6 left-[10%] w-[380px] object-contain filter drop-shadow opacity-80" />
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-36 left-[50%] w-[420px] object-contain filter drop-shadow opacity-80" />
+                        <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute bottom-8 left-[20%] w-[340px] object-contain filter drop-shadow opacity-80" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          UI DE SOBREPOSIÇÃO DO MAPA (COMPARTILHADA PELAS 3 CAMADAS DO MESMO MAPA:
+          CAMADA 1: SISTEMA SOLAR • CAMADA 2: GLOBO DO PLANETA • CAMADA 3: REGIONAL)
+         ========================================================================= */}
+      {showMapOverlayUi && (
+        <>
+          {/* 1. PAINEL ESQUERDO EXPANSÍVEL: ✦ LUGARES ✦ COM ÁRVORE DOURADA */}
+          <div
+            className="absolute left-2.5 z-35 pointer-events-auto select-none flex flex-col transition-all duration-300 animate-in fade-in"
+            style={{
+              top: `${topOverlayOffset}px`,
+              width: isLandscapeLayout ? '196px' : '168px',
+              maxHeight: `${Math.max(200, screenHeight - topOverlayOffset - bottomOverlayOffset - 48)}px`,
+            }}
+          >
             <div
-              className="absolute inset-0 pointer-events-auto z-20 transition-opacity duration-300"
-              style={{ opacity: poisOpacity }}
+              className="pearl-surface flex flex-col overflow-hidden"
+              style={{
+                borderRadius: '18px',
+                border: '2px solid #c59638',
+                outline: '1.5px solid #4a3006',
+                boxShadow:
+                  '0 10px 26px rgba(0, 8, 22, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.92)',
+              }}
             >
-              {worldMap.pointsOfInterest.map((poi) => {
-                // POIs invisíveis usados como ponto de curva/traçado NÃO aparecem no jogo!
-                if (poi.isInvisible || poi.iconType === 'invisible_node') return null;
+              {/* Cabeçalho Ornamental: ✦ LUGARES ✦ */}
+              <button
+                type="button"
+                onClick={() => setIsLugaresExpanded((prev) => !prev)}
+                className="w-full px-2.5 py-2 flex items-center justify-center gap-1.5 border-b border-[#c59638]/70 bg-gradient-to-b from-[#faf6ed] via-[#efe5d2] to-[#dfd0b5] cursor-pointer active:scale-[0.99] transition-all"
+                title={isLugaresExpanded ? 'Recolher lista de Lugares' : 'Expandir lista de Lugares'}
+              >
+                <span className="text-[#9b6c15] text-[10px]">✦</span>
+                <span className="font-cinzel font-black text-[11px] sm:text-xs text-[#2b1f14] tracking-[0.14em] uppercase">
+                  LUGARES
+                </span>
+                <span className="text-[#9b6c15] text-[10px]">✦</span>
+              </button>
 
-                const poiCanvasX = (poi.x / baseMapWidth) * renderedMapWidth;
-                const poiCanvasY = (poi.y / baseMapHeight) * renderedMapHeight;
-                const scale = poi.scale || 1.0;
-                const isFocused = focusedPoiId === poi.id;
-                const isHiddenByFocus = focusedPoiId !== null && !isFocused;
-
-                const effectiveMapZoom = Math.max(0.1, userZoom * (isCameraZoomed ? 1.2 : 1.0));
-
-                return (
-                  <div
-                    key={poi.id}
-                    data-poi-interactive="true"
-                    onClick={(e) => handlePoiClick(poi, e)}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 group ${
-                      isHiddenByFocus ? 'opacity-0 pointer-events-none scale-75' : 'opacity-100 scale-100'
-                    }`}
-                    style={{
-                      left: poiCanvasX,
-                      top: poiCanvasY,
-                      transform: 'translate(-50%, -50%)',
-                    }}
-                  >
-                    {/* Anel Pulsante de Destaque no Hover */}
-                    <div className="absolute -inset-3 rounded-full bg-amber-400/20 blur-md group-hover:bg-amber-400/40 animate-pulse transition-all pointer-events-none" />
-
-                    {/* Ícone PNG Puro do Marcador (Sem Container Box) */}
-                    <div className="relative z-10 flex flex-col items-center">
-                      <div
-                        style={{
-                          transform: `scale(${scale * (isFocused ? 1.25 : 1.0)})`,
-                          transformOrigin: 'bottom center',
-                        }}
-                        className="relative group-hover:brightness-110 transition-transform"
-                      >
-                        {poi.iconPng ? (
-                          <img
-                            src={poi.iconPng}
-                            alt={poi.name}
-                            className={`w-14 h-14 object-contain select-none pointer-events-none transition-all ${
-                              poi.status === 'locked'
-                                ? 'filter grayscale(100%) contrast(110%) brightness(80%) drop-shadow-[0_6px_12px_rgba(0,0,0,0.9)]'
-                                : 'filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)]'
-                            }`}
-                          />
-                        ) : (
-                          <div
-                            className={`text-4xl select-none transition-all ${
-                              poi.status === 'locked'
-                                ? 'filter grayscale(100%) brightness(80%) drop-shadow-[0_6px_12px_rgba(0,0,0,0.9)]'
-                                : 'filter drop-shadow-[0_8px_16px_rgba(0,0,0,0.85)]'
+              {isLugaresExpanded && (
+                <div className="px-2 py-2 space-y-2 overflow-y-auto nova-scroll max-h-[250px] sm:max-h-[300px]">
+                  {mapLayerMode === 'constellation' ? (
+                    /* CAMADA 1: Lista as Constelações do Firmamento */
+                    constellations.map((c, idx) => {
+                      const isExpanded =
+                        expandedPlaceId === c.id || pausedConstellationId === c.id;
+                      const cPlanets = c.planets || solarPlanets;
+                      return (
+                        <div key={c.id} className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedPlaceId((prev) => (prev === c.id ? null : c.id));
+                              setPausedConstellationId(c.id);
+                            }}
+                            onDoubleClick={() => {
+                              setActiveConstellation(c);
+                              setPausedConstellationId(null);
+                              setUserZoom(1.0);
+                              setMapLayerMode('solar');
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-full flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                              isExpanded
+                                ? 'bg-gradient-to-b from-[#0b3778] via-[#062356] to-[#04183b] border-[1.5px] border-[#e5c168] text-[#fff3c2] shadow-[0_3px_8px_rgba(0,8,22,0.55)]'
+                                : 'pearl-pill hover:brightness-95 text-[#2b1f14]'
                             }`}
                           >
-                            {poi.iconEmoji || '🏰'}
-                          </div>
-                        )}
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs leading-none shrink-0">
+                                {c.markerIconEmoji || `0${idx + 1}`}
+                              </span>
+                              <span
+                                className={`font-cinzel font-black text-[9.5px] uppercase tracking-wider truncate ${
+                                  isExpanded ? 'text-[#fff3c2]' : 'text-[#2b1f14]'
+                                }`}
+                              >
+                                {c.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold shrink-0 transition-transform ${
+                                isExpanded ? 'rotate-90 text-[#e5c168]' : 'text-[#8c6518]'
+                              }`}
+                            >
+                              ▸
+                            </span>
+                          </button>
 
-                        {/* Sobreposição do Ícone Geral de Cadeado se Bloqueado */}
-                        {poi.status === 'locked' && (
-                          <div className="absolute inset-0 flex items-center justify-center z-20">
-                            {worldMap.customLockIconPng ? (
-                              <img
-                                src={worldMap.customLockIconPng}
-                                alt="Bloqueado"
-                                className="w-8 h-8 object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.9)] animate-pulse"
+                          {isExpanded && (
+                            <div className="relative pl-4 pr-0.5 pt-2 pb-1 space-y-1.5">
+                              <div
+                                className="absolute left-2.5 top-0 bottom-3 w-[1.5px]"
+                                style={{
+                                  background:
+                                    'linear-gradient(180deg, #c59638 0%, #e5c168 65%, #9b6c15 100%)',
+                                }}
                               />
-                            ) : (
-                              <div className="w-7 h-7 rounded-full bg-black/90 border border-rose-500/80 text-rose-400 flex items-center justify-center shadow-xl">
-                                <Lock className="w-4 h-4 stroke-[2.5]" />
+                              <div className="relative flex items-center">
+                                <span
+                                  className="absolute -left-[9.5px] w-2 h-2 rounded-full"
+                                  style={{
+                                    background:
+                                      'radial-gradient(circle, #fff3c2 0%, #d4a84b 70%, #7d5610 100%)',
+                                    border: '1px solid #4a3006',
+                                  }}
+                                />
+                                <span
+                                  className="w-2 h-[1.5px] mr-1 shrink-0"
+                                  style={{ background: '#c59638' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveConstellation(c);
+                                    setPausedConstellationId(null);
+                                    setUserZoom(1.0);
+                                    setMapLayerMode('solar');
+                                  }}
+                                  className="flex-1 px-2.5 py-1 rounded-full pearl-subcard hover:brightness-95 active:scale-95 transition-all flex items-center justify-between gap-1 cursor-pointer"
+                                  style={{
+                                    borderRadius: '999px',
+                                    border: '1.5px solid #c59638',
+                                  }}
+                                >
+                                  <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
+                                    🚀 HYPER-SALTO ({cPlanets.length} PLANETAS)
+                                  </span>
+                                  <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
+                                </button>
                               </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : mapLayerMode === 'solar' ? (
+                    /* CAMADA 2: Lista os Planetas do Sistema Solar e suas Regiões/Luas na árvore */
+                    solarPlanets.map((pl, idx) => {
+                      const isExpanded = expandedPlaceId === pl.id || pausedSolarPlanetId === pl.id;
+                      const planetRegs = pl.markers || [];
+                      return (
+                        <div key={pl.id} className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedPlaceId((prev) => (prev === pl.id ? null : pl.id));
+                              setPausedSolarPlanetId(pl.id);
+                            }}
+                            onDoubleClick={() => {
+                              setActiveSolarPlanet(pl);
+                              setPausedSolarPlanetId(null);
+                              setUserZoom(1.0);
+                              setMapLayerMode('planet');
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-full flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                              isExpanded
+                                ? 'bg-gradient-to-b from-[#0b3778] via-[#062356] to-[#04183b] border-[1.5px] border-[#e5c168] text-[#fff3c2] shadow-[0_3px_8px_rgba(0,8,22,0.55)]'
+                                : 'pearl-pill hover:brightness-95 text-[#2b1f14]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs leading-none shrink-0">
+                                {pl.markerIconEmoji || `0${idx + 1}`}
+                              </span>
+                              <span
+                                className={`font-cinzel font-black text-[9.5px] uppercase tracking-wider truncate ${
+                                  isExpanded ? 'text-[#fff3c2]' : 'text-[#2b1f14]'
+                                }`}
+                              >
+                                {pl.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold shrink-0 transition-transform ${
+                                isExpanded ? 'rotate-90 text-[#e5c168]' : 'text-[#8c6518]'
+                              }`}
+                            >
+                              ▸
+                            </span>
+                          </button>
 
-                      {/* Cápsula com Apenas o Nome na Parte Inferior (Tamanho fixo no zoom) */}
-                      <div
-                        style={{
-                          transform: `scale(${1 / effectiveMapZoom})`,
-                          transformOrigin: 'top center',
-                        }}
-                        className="mt-1 px-3 py-0.5 rounded-full bg-black/90 backdrop-blur-md border border-amber-400/60 text-[10px] font-black text-amber-300 shadow-[0_4px_10px_rgba(0,0,0,0.8)] whitespace-nowrap group-hover:bg-amber-500 group-hover:text-black transition-colors"
-                      >
-                        {poi.name}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                          {isExpanded && (
+                            <div className="relative pl-4 pr-0.5 pt-2 pb-1 space-y-1.5">
+                              <div
+                                className="absolute left-2.5 top-0 bottom-3 w-[1.5px]"
+                                style={{
+                                  background:
+                                    'linear-gradient(180deg, #c59638 0%, #e5c168 65%, #9b6c15 100%)',
+                                }}
+                              />
+                              <div className="relative flex items-center">
+                                <span
+                                  className="absolute -left-[9.5px] w-2 h-2 rounded-full"
+                                  style={{
+                                    background:
+                                      'radial-gradient(circle, #fff3c2 0%, #d4a84b 70%, #7d5610 100%)',
+                                    border: '1px solid #4a3006',
+                                  }}
+                                />
+                                <span
+                                  className="w-2 h-[1.5px] mr-1 shrink-0"
+                                  style={{ background: '#c59638' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveSolarPlanet(pl);
+                                    setPausedSolarPlanetId(null);
+                                    setUserZoom(1.0);
+                                    setMapLayerMode('planet');
+                                  }}
+                                  className="flex-1 px-2.5 py-1 rounded-full pearl-subcard hover:brightness-95 active:scale-95 transition-all flex items-center justify-between gap-1 cursor-pointer"
+                                  style={{
+                                    borderRadius: '999px',
+                                    border: '1.5px solid #c59638',
+                                  }}
+                                >
+                                  <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
+                                    🌍 VER GLOBO ({planetRegs.length || 4} CONTINENTES)
+                                  </span>
+                                  <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
+                                </button>
+                              </div>
 
-          {/* Camada 4: Atmosfera & Efeitos Vivos (Nuvens em Parallax) */}
-          {isAtmoVisible && (
-            <div
-              className="absolute inset-0 pointer-events-none z-25 overflow-hidden"
-              style={{ opacity: atmoOpacity }}
-            >
-              {atmosphere.cloudsEnabled !== false && atmosphere.weather !== 'clear' && (
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <div
-                    className="absolute inset-0 flex"
-                    style={{
-                      animation: `worldMapCloudsDrift ${atmosphere.cloudsSpeed || 30}s linear infinite`,
-                      width: '200%',
-                    }}
-                  >
-                    <div className="w-1/2 h-full relative" style={{ opacity: atmosphere.cloudsOpacity ?? 0.7 }}>
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-6 left-[10%] w-[380px] object-contain filter drop-shadow opacity-80" />
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-36 left-[50%] w-[420px] object-contain filter drop-shadow opacity-80" />
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute bottom-8 left-[20%] w-[340px] object-contain filter drop-shadow opacity-80" />
-                    </div>
-                    <div className="w-1/2 h-full relative" style={{ opacity: atmosphere.cloudsOpacity ?? 0.7 }}>
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-6 left-[10%] w-[380px] object-contain filter drop-shadow opacity-80" />
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute top-36 left-[50%] w-[420px] object-contain filter drop-shadow opacity-80" />
-                      <img src={DEFAULT_CLOUD_SVG} alt="" className="absolute bottom-8 left-[20%] w-[340px] object-contain filter drop-shadow opacity-80" />
-                    </div>
-                  </div>
+                              {(pl.moons || []).map((moon) => (
+                                <div key={moon.id} className="relative flex items-center">
+                                  <span
+                                    className="absolute -left-[9.5px] w-2 h-2 rounded-full"
+                                    style={{
+                                      background:
+                                        'radial-gradient(circle, #fff3c2 0%, #d4a84b 70%, #7d5610 100%)',
+                                      border: '1px solid #4a3006',
+                                    }}
+                                  />
+                                  <span
+                                    className="w-2 h-[1.5px] mr-1 shrink-0"
+                                    style={{ background: '#c59638' }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (pausedSolarPlanetId === moon.id) {
+                                        const moonGlobe: SolarSystemPlanet = {
+                                          id: moon.id,
+                                          name: moon.name,
+                                          description: `Satélite natural de ${pl.name}`,
+                                          planetImagePng:
+                                            moon.imagePng || pl.planetImagePng,
+                                          markerIconPng:
+                                            moon.markerIconPng || pl.markerIconPng,
+                                          markerIconEmoji: moon.markerIconEmoji || '🌙',
+                                          glowColor: '#94a3b8',
+                                          hasRings: false,
+                                          sizePx: 40,
+                                          targetWorldMapId:
+                                            moon.targetWorldMapId || pl.targetWorldMapId,
+                                          status: moon.status || 'unlocked',
+                                          markers:
+                                            moon.markers && moon.markers.length > 0
+                                              ? moon.markers
+                                              : buildDefaultMarkersForPlanet(
+                                                  moon.id,
+                                                  moon.name,
+                                                  project
+                                                ),
+                                          moons: [],
+                                        };
+                                        setActiveSolarPlanet(moonGlobe);
+                                        setPausedSolarPlanetId(null);
+                                        setUserZoom(1.0);
+                                        setMapLayerMode('planet');
+                                      } else {
+                                        setPausedSolarPlanetId(moon.id);
+                                      }
+                                    }}
+                                    className="flex-1 px-2.5 py-1 rounded-full pearl-subcard hover:brightness-95 active:scale-95 transition-all flex items-center justify-between gap-1 cursor-pointer"
+                                    style={{
+                                      borderRadius: '999px',
+                                      border: '1.5px solid #c59638',
+                                    }}
+                                  >
+                                    <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
+                                      {moon.markerIconEmoji || '🌙'} {moon.name}
+                                    </span>
+                                    <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : mapLayerMode === 'planet' ? (
+                    /* CAMADA 2: Lista os Continentes / Marcadores no Globo do Planeta atual */
+                    currentGlobeMarkers.map((gm, idx) => {
+                      const isExpanded =
+                        expandedPlaceId === gm.id || externalGlobeMarkerId === gm.id;
+                      return (
+                        <div key={gm.id} className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedPlaceId((prev) => (prev === gm.id ? null : gm.id));
+                              setExternalGlobeMarkerId(gm.id);
+                            }}
+                            onDoubleClick={() => {
+                              const matchedMap =
+                                allMaps.find((m) => m.id === gm.targetWorldMapId) ||
+                                allMaps[0] ||
+                                baseWorldMap;
+                              setRegionalMapOverride(matchedMap);
+                              onSelectWorldMap?.(matchedMap);
+                              setUserZoom(1.0);
+                              setIntroRunKey((k) => k + 1);
+                              setMapLayerMode('region');
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-full flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                              isExpanded
+                                ? 'bg-gradient-to-b from-[#0b3778] via-[#062356] to-[#04183b] border-[1.5px] border-[#e5c168] text-[#fff3c2] shadow-[0_3px_8px_rgba(0,8,22,0.55)]'
+                                : 'pearl-pill hover:brightness-95 text-[#2b1f14]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-xs leading-none shrink-0">
+                                {gm.iconEmoji || `0${idx + 1}`}
+                              </span>
+                              <span
+                                className={`font-cinzel font-black text-[9.5px] uppercase tracking-wider truncate ${
+                                  isExpanded ? 'text-[#fff3c2]' : 'text-[#2b1f14]'
+                                }`}
+                              >
+                                {gm.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold shrink-0 transition-transform ${
+                                isExpanded ? 'rotate-90 text-[#e5c168]' : 'text-[#8c6518]'
+                              }`}
+                            >
+                              ▸
+                            </span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="relative pl-4 pr-0.5 pt-2 pb-1 space-y-1.5">
+                              <div
+                                className="absolute left-2.5 top-0 bottom-3 w-[1.5px]"
+                                style={{
+                                  background:
+                                    'linear-gradient(180deg, #c59638 0%, #e5c168 65%, #9b6c15 100%)',
+                                }}
+                              />
+                              <div className="relative flex items-center">
+                                <span
+                                  className="absolute -left-[9.5px] w-2 h-2 rounded-full"
+                                  style={{
+                                    background:
+                                      'radial-gradient(circle, #fff3c2 0%, #d4a84b 70%, #7d5610 100%)',
+                                    border: '1px solid #4a3006',
+                                  }}
+                                />
+                                <span
+                                  className="w-2 h-[1.5px] mr-1 shrink-0"
+                                  style={{ background: '#c59638' }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const matchedMap =
+                                      allMaps.find((m) => m.id === gm.targetWorldMapId) ||
+                                      allMaps[0] ||
+                                      baseWorldMap;
+                                    setRegionalMapOverride(matchedMap);
+                                    onSelectWorldMap?.(matchedMap);
+                                    setUserZoom(1.0);
+                                    setIntroRunKey((k) => k + 1);
+                                    setMapLayerMode('region');
+                                  }}
+                                  className="flex-1 px-2.5 py-1 rounded-full pearl-subcard hover:brightness-95 active:scale-95 transition-all flex items-center justify-between gap-1 cursor-pointer"
+                                  style={{
+                                    borderRadius: '999px',
+                                    border: '1.5px solid #c59638',
+                                  }}
+                                >
+                                  <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
+                                    🗺️ ABRIR MAPA REGIONAL
+                                  </span>
+                                  <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    /* CAMADA 3: Lista os Lugares (POIs) da Região e seus Sublugares */
+                    visiblePois.map((poi, idx) => {
+                      const isExpanded = expandedPlaceId === poi.id;
+                      const isFocused = focusedPoiId === poi.id;
+                      const connectedPois = (poi.connectedToIds || [])
+                        .map((cid) => visiblePois.find((p) => p.id === cid))
+                        .filter((p): p is WorldMapPOI => Boolean(p));
+
+                      const subPlaces: {
+                        id: string;
+                        label: string;
+                        targetPoi: WorldMapPOI;
+                        action: 'focus' | 'open';
+                      }[] =
+                        connectedPois.length > 0
+                          ? connectedPois.map((cp, sIdx) => ({
+                              id: `${poi.id}-sub-${cp.id}`,
+                              label: cp.name || `SUBLUGAR 0${sIdx + 1}`,
+                              targetPoi: cp,
+                              action: 'open',
+                            }))
+                          : [
+                              {
+                                id: `${poi.id}-sub-1`,
+                                label: poi.badgeText || `ENTRADA • NV.${poi.recommendedLevel || 1}`,
+                                targetPoi: poi,
+                                action: 'focus',
+                              },
+                              {
+                                id: `${poi.id}-sub-2`,
+                                label: `EXPLORAR LOCAL`,
+                                targetPoi: poi,
+                                action: 'open',
+                              },
+                            ];
+
+                      return (
+                        <div key={poi.id} className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedPlaceId((prev) => (prev === poi.id ? null : poi.id));
+                              focusPoiOnMap(poi, false);
+                            }}
+                            onDoubleClick={() => focusPoiOnMap(poi, true)}
+                            className={`w-full px-2.5 py-1.5 rounded-full flex items-center justify-between gap-1.5 transition-all cursor-pointer ${
+                              isExpanded || isFocused
+                                ? 'bg-gradient-to-b from-[#0b3778] via-[#062356] to-[#04183b] border-[1.5px] border-[#e5c168] text-[#fff3c2] shadow-[0_3px_8px_rgba(0,8,22,0.55)]'
+                                : 'pearl-pill hover:brightness-95 text-[#2b1f14]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {poi.iconPng ? (
+                                <img
+                                  src={poi.iconPng}
+                                  alt={poi.name}
+                                  className="w-4 h-4 object-contain shrink-0 drop-shadow"
+                                />
+                              ) : (
+                                <span className="text-xs leading-none shrink-0">
+                                  {poi.iconEmoji || `0${idx + 1}`}
+                                </span>
+                              )}
+                              <span
+                                className={`font-cinzel font-black text-[9.5px] uppercase tracking-wider truncate ${
+                                  isExpanded || isFocused ? 'text-[#fff3c2]' : 'text-[#2b1f14]'
+                                }`}
+                              >
+                                {poi.name || `LUGAR 0${idx + 1}`}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold shrink-0 transition-transform ${
+                                isExpanded ? 'rotate-90 text-[#e5c168]' : 'text-[#8c6518]'
+                              }`}
+                            >
+                              ▸
+                            </span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="relative pl-4 pr-0.5 pt-2 pb-1 space-y-2">
+                              <div
+                                className="absolute left-2.5 top-0 bottom-3 w-[1.5px]"
+                                style={{
+                                  background:
+                                    'linear-gradient(180deg, #c59638 0%, #e5c168 65%, #9b6c15 100%)',
+                                }}
+                              />
+
+                              {subPlaces.map((sub) => (
+                                <div key={sub.id} className="relative flex items-center">
+                                  <span
+                                    className="absolute -left-[9.5px] w-2 h-2 rounded-full"
+                                    style={{
+                                      background:
+                                        'radial-gradient(circle, #fff3c2 0%, #d4a84b 70%, #7d5610 100%)',
+                                      border: '1px solid #4a3006',
+                                    }}
+                                  />
+                                  <span
+                                    className="w-2 h-[1.5px] mr-1 shrink-0"
+                                    style={{ background: '#c59638' }}
+                                  />
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      focusPoiOnMap(sub.targetPoi, true);
+                                    }}
+                                    className="flex-1 px-2.5 py-1 rounded-full pearl-subcard hover:brightness-95 active:scale-95 transition-all flex items-center justify-between gap-1 cursor-pointer"
+                                    style={{
+                                      borderRadius: '999px',
+                                      border: '1.5px solid #c59638',
+                                    }}
+                                  >
+                                    <span className="font-cinzel font-bold text-[8.5px] text-[#3a2b1c] uppercase tracking-wider truncate">
+                                      {sub.label}
+                                    </span>
+                                    <span className="text-[8px] text-[#8c6518] shrink-0">✦</span>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
+
+              {/* Rodapé com Duplo Chevron Dourado (︾) */}
+              <button
+                type="button"
+                onClick={() => setIsLugaresExpanded((prev) => !prev)}
+                className="w-full py-1 bg-gradient-to-b from-[#ebe0cc] to-[#dac9ae] border-t border-[#c59638]/60 flex items-center justify-center text-[#8c6518] hover:text-[#2b1f14] cursor-pointer transition-colors"
+                title={isLugaresExpanded ? 'Recolher Lugares' : 'Expandir Lugares'}
+              >
+                <span
+                  className={`font-cinzel font-black text-[11px] leading-none transition-transform duration-200 ${
+                    isLugaresExpanded ? 'rotate-180' : ''
+                  }`}
+                >
+                  ︾
+                </span>
+              </button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Setas Flutuantes de Navegação Lateral */}
-      {canScrollLeft && !selectedPoi && (
-        <button
-          type="button"
-          onClick={() => handleScrollStep('left')}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/75 hover:bg-black border border-white/20 text-white flex items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-transform hover:scale-110 active:scale-95"
-          title="Rolar Mapa para Esquerda"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
+          {/* 2. COLUNA DIREITA FLUTUANTE: NAVEGAÇÃO ENTRE AS 3 CAMADAS + REGIÕES ⌄ + HASTE COM +, − E RECENTRALIZAR */}
+          <div
+            className="absolute right-2.5 z-35 pointer-events-auto select-none flex flex-col items-end"
+            style={{ top: `${topOverlayOffset}px` }}
+          >
+            <div className="flex items-center gap-1.5">
+              {/* Botão de Retorno de Camada (Região -> Planeta -> Sistema Solar -> Constelação) */}
+              {isPlanetEnabled && mapLayerMode === 'region' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPoi(null);
+                    setIsRegionsOpen(false);
+                    setUserZoom(1.0);
+                    setMapLayerMode('planet');
+                  }}
+                  className="btn-royal-gold cursor-pointer active:scale-95 transition-transform shadow-md"
+                  title="Voltar para a Camada 3 (Close no Planeta Girando)"
+                >
+                  <div className="btn-royal-inner px-3 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] sm:text-[11px] text-[#fff3c2] uppercase tracking-wider">
+                    <span>🌍</span>
+                    <span>PLANETA</span>
+                  </div>
+                </button>
+              )}
+
+              {isPlanetEnabled && mapLayerMode === 'planet' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPoi(null);
+                    setIsRegionsOpen(false);
+                    setUserZoom(1.0);
+                    setMapLayerMode('solar');
+                  }}
+                  className="btn-royal-gold cursor-pointer active:scale-95 transition-transform shadow-md"
+                  title="Voltar para a Camada 2 (Sistema Planetário)"
+                >
+                  <div className="btn-royal-inner px-3 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] sm:text-[11px] text-[#fff3c2] uppercase tracking-wider">
+                    <span>🪐</span>
+                    <span>SISTEMA</span>
+                  </div>
+                </button>
+              )}
+
+              {isPlanetEnabled && mapLayerMode === 'solar' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPoi(null);
+                    setPausedSolarPlanetId(null);
+                    setIsRegionsOpen(false);
+                    setUserZoom(1.0);
+                    setMapLayerMode('constellation');
+                  }}
+                  className="btn-royal-gold cursor-pointer active:scale-95 transition-transform shadow-md"
+                  title="Voltar para a Camada 1 (Constelações)"
+                >
+                  <div className="btn-royal-inner px-3 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] sm:text-[11px] text-[#fff3c2] uppercase tracking-wider">
+                    <span>✨</span>
+                    <span>CONSTELAÇÃO</span>
+                  </div>
+                </button>
+              )}
+
+              {/* Cápsula Pearl & Gold: REGIÕES ⌄ */}
+              <button
+                type="button"
+                onClick={() => setIsRegionsOpen((prev) => !prev)}
+                className="btn-pearl-gold cursor-pointer active:scale-95 transition-transform"
+                title="Alternar Camada ou Região do Mapa"
+              >
+                <div className="btn-pearl-inner px-3.5 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] sm:text-[11px] text-[#2b1f14] uppercase tracking-wider">
+                  <span>REGIÕES</span>
+                  <span
+                    className={`text-[#8c6518] text-[10px] transition-transform ${
+                      isRegionsOpen ? 'rotate-180' : ''
+                    }`}
+                  >
+                    ⌄
+                  </span>
+                </div>
+              </button>
+
+              {/* Botão Discreto Fechar Mapa para voltar ao Lobby quando o Header/Nav do Hub estão ocultos */}
+              {isPlayMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const battleBtn = document.querySelector<HTMLElement>('[data-tab="battle"]');
+                    if (battleBtn) battleBtn.click();
+                  }}
+                  className="close-btn-outer cursor-pointer"
+                  title="Sair do Mapa e voltar ao Hub"
+                >
+                  <div className="close-btn-inner w-7 h-7 flex items-center justify-center text-xs font-black text-[#2b1f14]">
+                    ✕
+                  </div>
+                </button>
+              )}
+            </div>
+
+            {/* Popover de Camadas & Regiões quando aberto */}
+            {isRegionsOpen && (
+              <div
+                className="mt-2 w-64 pearl-surface p-2.5 space-y-1.5 z-45"
+                style={{
+                  borderRadius: '18px',
+                  border: '2px solid #c59638',
+                  outline: '1.5px solid #4a3006',
+                }}
+              >
+                <div className="flex items-center justify-between border-b border-[#c59638]/50 pb-1 px-1">
+                  <span className="font-cinzel font-black text-[10px] text-[#2b1f14] uppercase tracking-wider">
+                    ✦ 4 Camadas do Mapa
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsRegionsOpen(false)}
+                    className="text-[#8c6518] hover:text-[#2b1f14] font-bold text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Atalhos das Camadas Astrais */}
+                {isPlanetEnabled && (
+                  <div className="grid grid-cols-3 gap-1 pb-1 border-b border-[#c59638]/40">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapLayerMode('constellation');
+                        setUserZoom(1.0);
+                        setIsRegionsOpen(false);
+                      }}
+                      className={`px-1.5 py-1 rounded-lg font-cinzel font-black text-[8px] uppercase cursor-pointer ${
+                        mapLayerMode === 'constellation'
+                          ? 'bg-[#0b3778] text-[#fff3c2] border border-[#e5c168]'
+                          : 'pearl-subcard text-[#2b1f14]'
+                      }`}
+                    >
+                      ✨ 1. Constel.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapLayerMode('solar');
+                        setUserZoom(1.0);
+                        setIsRegionsOpen(false);
+                      }}
+                      className={`px-1.5 py-1 rounded-lg font-cinzel font-black text-[8px] uppercase cursor-pointer ${
+                        mapLayerMode === 'solar'
+                          ? 'bg-[#0b3778] text-[#fff3c2] border border-[#e5c168]'
+                          : 'pearl-subcard text-[#2b1f14]'
+                      }`}
+                    >
+                      🪐 2. Sistema
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapLayerMode('planet');
+                        setUserZoom(1.0);
+                        setIsRegionsOpen(false);
+                      }}
+                      className={`px-1.5 py-1 rounded-lg font-cinzel font-black text-[8px] uppercase cursor-pointer ${
+                        mapLayerMode === 'planet'
+                          ? 'bg-[#0b3778] text-[#fff3c2] border border-[#e5c168]'
+                          : 'pearl-subcard text-[#2b1f14]'
+                      }`}
+                    >
+                      🌍 3. Planeta
+                    </button>
+                  </div>
+                )}
+
+                {allMaps.map((wm, idx) => {
+                  const isSelected =
+                    mapLayerMode === 'region' && (currentMapId || worldMap.id) === wm.id;
+                  const poiCount = (wm.pointsOfInterest || []).filter(
+                    (p) => !p.isInvisible && p.iconType !== 'invisible_node'
+                  ).length;
+                  return (
+                    <button
+                      key={wm.id || `wm-reg-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setRegionalMapOverride(wm);
+                        onSelectWorldMap?.(wm);
+                        setMapLayerMode('region');
+                        setIsRegionsOpen(false);
+                      }}
+                      className={`w-full p-1.5 text-left transition-all flex items-center gap-2 cursor-pointer ${
+                        isSelected
+                          ? 'pearl-subcard border-[#b88928] ring-2 ring-[#d4a84b]'
+                          : 'pearl-subcard hover:brightness-95'
+                      }`}
+                    >
+                      <div className="wire-slot w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                        {wm.backgroundPng ? (
+                          <img
+                            src={wm.backgroundPng}
+                            alt={wm.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs">🗺️</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-cinzel font-black text-[9.5px] text-[#2b1f14] truncate uppercase">
+                          {wm.title || `Região ${idx + 1}`}
+                        </div>
+                        <div className="font-cinzel text-[8px] text-[#8c6518]">
+                          📍 {poiCount} locais (Camada 3)
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Haste Vertical Dourada Ornamental com Estrelas ✦ + Botões +, − e RECENTRALIZAR */}
+            <div className="relative flex flex-col items-center mr-3 mt-1">
+              {/* Linha Vertical Dourada */}
+              <div
+                className="w-[2px] h-4"
+                style={{
+                  background: 'linear-gradient(180deg, #fff3c2 0%, #c59638 100%)',
+                  boxShadow: '0 0 6px rgba(229, 193, 104, 0.7)',
+                }}
+              />
+              <span className="text-[#fff3c2] text-[10px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
+                ✦
+              </span>
+              <div
+                className="w-[2px] h-3"
+                style={{
+                  background: 'linear-gradient(180deg, #c59638 0%, #fff3c2 100%)',
+                }}
+              />
+
+              {/* Botão Circular + (Aumentar Zoom) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setUserZoom((z) => Math.min(2.5, parseFloat((z + 0.18).toFixed(2))))
+                }
+                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                style={{
+                  background:
+                    'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
+                  border: '2px solid #c59638',
+                  outline: '1.5px solid #4a3006',
+                  boxShadow:
+                    '0 6px 14px rgba(0, 8, 22, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.95)',
+                }}
+                title="Aumentar Zoom (+)"
+              >
+                <span className="font-cinzel font-black text-lg text-[#3a2b1c] leading-none">
+                  +
+                </span>
+              </button>
+
+              {/* Conector Dourado entre + e − */}
+              <div
+                className="w-[2px] h-2.5"
+                style={{ background: '#c59638' }}
+              />
+
+              {/* Botão Circular − (Diminuir Zoom ou Subir Camada: Região -> Planeta -> Sistema Solar -> Constelação) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (userZoom > 1.05) {
+                    setUserZoom((z) => Math.max(1.0, parseFloat((z - 0.18).toFixed(2))));
+                  } else if (isPlanetEnabled && mapLayerMode === 'region') {
+                    setSelectedPoi(null);
+                    setUserZoom(1.0);
+                    setMapLayerMode('planet');
+                  } else if (isPlanetEnabled && mapLayerMode === 'planet') {
+                    setUserZoom(1.0);
+                    setMapLayerMode('solar');
+                  } else if (isPlanetEnabled && mapLayerMode === 'solar') {
+                    setPausedSolarPlanetId(null);
+                    setUserZoom(1.0);
+                    setMapLayerMode('constellation');
+                  } else {
+                    setUserZoom((z) => Math.max(0.85, parseFloat((z - 0.18).toFixed(2))));
+                  }
+                }}
+                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                style={{
+                  background:
+                    'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
+                  border: '2px solid #c59638',
+                  outline: '1.5px solid #4a3006',
+                  boxShadow:
+                    '0 6px 14px rgba(0, 8, 22, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.95)',
+                }}
+                title="Diminuir Zoom / Voltar Camada Anterior (−)"
+              >
+                <span className="font-cinzel font-black text-lg text-[#3a2b1c] leading-none">
+                  −
+                </span>
+              </button>
+
+              {/* Conector Dourado com Estrela ✦ para RECENTRALIZAR */}
+              <div
+                className="w-[2px] h-3"
+                style={{ background: '#c59638' }}
+              />
+              <span className="text-[#fff3c2] text-[9px] leading-none -my-1 drop-shadow-[0_0_6px_rgba(229,193,104,0.95)]">
+                ✦
+              </span>
+              <div
+                className="w-[2px] h-3"
+                style={{ background: '#c59638' }}
+              />
+
+              {/* Botão Circular 🎯 RECENTRALIZAR */}
+              <button
+                type="button"
+                onClick={handleRecenterMap}
+                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer active:scale-90 transition-transform hover:scale-105"
+                style={{
+                  background:
+                    'radial-gradient(circle at 50% 25%, #fcfaf5 0%, #ebe1ce 68%, #d4c09e 100%)',
+                  border: '2px solid #c59638',
+                  outline: '1.5px solid #4a3006',
+                  boxShadow:
+                    '0 6px 14px rgba(0, 8, 22, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.95)',
+                }}
+                title="Recentralizar Câmera e Resetar Zoom (100%)"
+              >
+                <span className="text-sm leading-none text-[#5c3d08] font-black">🎯</span>
+              </button>
+              <span className="mt-1 px-1.5 py-0.5 rounded bg-black/65 border border-[#c59638]/50 font-cinzel font-black text-[7px] text-[#fff3c2] tracking-wider uppercase shadow">
+                RECENTRALIZAR
+              </span>
+            </div>
+          </div>
+
+          {/* 3. BARRA INFERIOR DO MAPA: LEGENDA ^ (ESQUERDA) & 🧭 EXPLORAR (DIREITA) */}
+          <div
+            className="absolute left-3 z-35 pointer-events-auto select-none flex flex-col items-start"
+            style={{ bottom: `${bottomOverlayOffset}px` }}
+          >
+            {isLegendOpen && (
+              <div
+                className="mb-2 w-56 pearl-surface p-3 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-150"
+                style={{
+                  borderRadius: '16px',
+                  border: '2px solid #c59638',
+                  outline: '1.5px solid #4a3006',
+                }}
+              >
+                <div className="flex items-center justify-between border-b border-[#c59638]/50 pb-1">
+                  <span className="font-cinzel font-black text-[10px] text-[#2b1f14] uppercase tracking-wider">
+                    🗺️ Legenda do Mapa
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsLegendOpen(false)}
+                    className="text-[#8c6518] hover:text-[#2b1f14] text-xs font-bold cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="space-y-1.5 text-[9.5px] font-cinzel font-bold text-[#3a2b1c]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-[#0b3778] border border-[#e5c168] text-[#fff3c2] flex items-center justify-center text-[8px]">
+                      ✦
+                    </span>
+                    <span>Local Desbloqueado ({unlockedCount})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-emerald-700 border border-emerald-300 text-white flex items-center justify-center text-[8px]">
+                      ✓
+                    </span>
+                    <span>Fase Concluída</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-rose-900 border border-rose-400 text-rose-200 flex items-center justify-center text-[8px]">
+                      🔒
+                    </span>
+                    <span>Região Bloqueada</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-1 rounded-full bg-[#e5c168] border border-[#523707]" />
+                    <span>Trilha / Rota Imperial</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsLegendOpen((prev) => !prev)}
+              className="btn-pearl-gold cursor-pointer active:scale-95 transition-transform"
+              title="Mostrar / Ocultar Legenda do Mapa"
+            >
+              <div className="btn-pearl-inner px-3.5 py-1.5 flex items-center gap-1.5 font-cinzel font-black text-[10px] text-[#2b1f14] uppercase tracking-wider">
+                <span>🗺️ LEGENDA</span>
+                <span
+                  className={`text-[#8c6518] text-[10px] transition-transform ${
+                    isLegendOpen ? 'rotate-180' : ''
+                  }`}
+                >
+                  ^
+                </span>
+              </div>
+            </button>
+          </div>
+        </>
       )}
 
-      {canScrollRight && !selectedPoi && (
-        <button
-          type="button"
-          onClick={() => handleScrollStep('right')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/75 hover:bg-black border border-white/20 text-white flex items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-transform hover:scale-110 active:scale-95"
-          title="Rolar Mapa para Direita"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
-      )}
-
-      {/* Mini Barra Inferior de Progresso da Rolagem */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-32 h-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10 overflow-hidden">
-        <div
-          className="h-full bg-amber-400 rounded-full transition-all duration-75"
-          style={{ width: `${Math.max(10, scrollProgress * 100)}%` }}
-        />
-      </div>
-
-      {/* MODAL / POP-UP AUTÊNTICO COM CORES VIVAS (VERDE, MARROM, AMARELO E AZUL) */}
+      {/* =========================================================================
+          POP-UP DE MARCADOR DO MAPA / LOCAL — NOVA UI v1.2 (PEARL & GOLD + ROYAL SAPPHIRE)
+          Ao abrir, oculta automaticamente o Header e a Barra de Navegação do Hub
+         ========================================================================= */}
       {selectedPoi && (
         <div
           data-poi-interactive="true"
-          className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 animate-in fade-in zoom-in-95 duration-200 pointer-events-auto select-none overflow-y-auto"
+          className="absolute inset-0 z-50 bg-[#020816]/82 backdrop-blur-md flex items-center justify-center p-3 animate-in fade-in zoom-in-95 duration-200 pointer-events-auto select-none overflow-y-auto"
           onClick={handleCloseModal}
         >
-          {/* Contêiner Geral que Agrupa o Elemento Externo Superior e o Pop-up Card */}
           <div
-            className="w-full max-w-[430px] sm:max-w-[450px] flex flex-col items-center relative my-auto px-2"
+            className="w-full max-w-[420px] sm:max-w-[445px] flex flex-col items-center relative my-auto px-2 py-3"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* ELEMENTO EXTERNO ACIMA DO POP-UP: PNG Muito Maior do Marcador (+40% maior) + Cápsula de Nome */}
-            <div className="relative -mb-6 z-20 flex flex-col items-center">
+            {/* ELEMENTO EXTERNO ACIMA DO POP-UP: Asset PNG/Emoji em Destaque + Faixa Royal Sapphire & Gold */}
+            <div className="relative -mb-5 z-20 flex flex-col items-center">
               <div className="relative group flex flex-col items-center">
-                {/* Glow de Destaque Traseiro Ampliado */}
-                <div className="absolute inset-0 rounded-full bg-amber-400/40 blur-3xl animate-pulse scale-125" />
+                <div className="absolute inset-0 rounded-full bg-[#e5c168]/35 blur-3xl animate-pulse scale-115" />
 
-                {/* PNG Grande do Marcador / Local Externo (+40% de Aumento) */}
                 {selectedPoi.iconPng ? (
                   <img
                     src={selectedPoi.iconPng}
                     alt={selectedPoi.name}
-                    className="w-64 h-64 sm:w-72 sm:h-72 object-contain filter drop-shadow-[0_20px_45px_rgba(0,0,0,0.98)] relative z-10 select-none pointer-events-none transform group-hover:scale-105 transition-all duration-300"
+                    className="w-44 h-44 sm:w-52 sm:h-52 object-contain filter drop-shadow-[0_16px_32px_rgba(0,0,0,0.92)] relative z-10 select-none pointer-events-none transform group-hover:scale-105 transition-all duration-300"
                   />
                 ) : (
-                  <div className="text-9xl sm:text-[140px] filter drop-shadow-[0_20px_40px_rgba(0,0,0,0.95)] relative z-10 select-none my-2">
+                  <div className="text-8xl sm:text-9xl filter drop-shadow-[0_16px_32px_rgba(0,0,0,0.9)] relative z-10 select-none my-2">
                     {selectedPoi.iconEmoji || '🏰'}
                   </div>
                 )}
 
-                {/* CÁPSULA COM O NOME DO LOCAL (Na Base Inferior do PNG Externo) */}
-                <div className="px-7 py-2 rounded-full bg-black/95 backdrop-blur-md border-2 border-amber-400 text-sm sm:text-base font-black text-amber-300 shadow-[0_8px_24px_rgba(0,0,0,0.95)] uppercase tracking-wider whitespace-nowrap z-20 -mt-7">
-                  {selectedPoi.name}
+                {/* Faixa Royal Sapphire & Gold com o Nome do Local */}
+                <div
+                  className="px-6 py-1.5 rounded-full font-cinzel font-black text-xs sm:text-sm text-[#fff3c2] uppercase tracking-[0.14em] whitespace-nowrap z-20 -mt-5"
+                  style={{
+                    background:
+                      'linear-gradient(180deg, #0b3778 0%, #062356 58%, #031536 100%)',
+                    border: '2px solid #e5c168',
+                    outline: '1.5px solid #4a3006',
+                    boxShadow:
+                      '0 8px 22px rgba(0, 8, 22, 0.9), inset 0 1px 1px rgba(255, 243, 194, 0.5)',
+                  }}
+                >
+                  ✦ {selectedPoi.name} ✦
                 </div>
               </div>
             </div>
 
-            {/* Card Principal do Pop-up (Moldura Marrom Madeira/Verde Folha com Bordas Douradas) */}
-            <div className="w-full bg-gradient-to-b from-amber-950 via-stone-900 to-emerald-950 border-[3.5px] border-amber-400 rounded-3xl overflow-visible shadow-[0_0_50px_rgba(34,197,94,0.4)] flex flex-col relative text-white pt-9 pb-4 px-4 sm:px-5">
-              {/* Botão Fechar em Forma de X Vermelho Dourado */}
+            {/* MOLDURA PRINCIPAL PEARL & GOLD (Nova UI v1.2) */}
+            <div
+              className="w-full pearl-surface flex flex-col relative pt-8 pb-4 px-4 sm:px-5"
+              style={{
+                borderRadius: '26px',
+                border: '3px solid #c59638',
+                outline: '2px solid #4a3006',
+                boxShadow:
+                  '0 24px 60px rgba(0, 8, 22, 0.92), 0 0 32px rgba(212, 175, 83, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.95)',
+              }}
+            >
+              {/* Botão Fechar Nova UI v1.2 */}
               <button
                 type="button"
                 onClick={handleCloseModal}
-                className="absolute -top-3 -right-3 z-40 w-9 h-9 rounded-full bg-gradient-to-b from-rose-600 to-rose-800 border-2 border-amber-300 text-amber-200 flex items-center justify-center transition-transform hover:scale-110 active:scale-95 cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.8)]"
-                title="Fechar Janela"
+                className="close-btn-outer absolute -top-3 -right-3 z-40 cursor-pointer"
+                title="Fechar Local"
               >
-                <X className="w-5 h-5 stroke-[3]" />
+                <div className="close-btn-inner">✕</div>
               </button>
 
-              {/* Badges de Nível Recomendado e Estado em Azul e Dourado */}
-              <div className="flex items-center justify-center gap-2 text-[11px] font-extrabold mb-2.5 z-10">
-                <span className="px-3 py-1 rounded-full bg-sky-950/90 border border-sky-400/60 text-sky-200 shadow-md flex items-center gap-1">
-                  ⭐ Nv. Recomendado: {selectedPoi.recommendedLevel || 1}
+              {/* Badges de Nível Recomendado e Estado */}
+              <div className="flex items-center justify-center gap-2 text-[10px] font-cinzel font-black mb-2.5 z-10">
+                <span
+                  className="px-3 py-1 rounded-full text-[#fff3c2] shadow-sm flex items-center gap-1"
+                  style={{
+                    background: 'linear-gradient(180deg, #0b3778 0%, #041f4a 100%)',
+                    border: '1.5px solid #d4a84b',
+                  }}
+                >
+                  ⭐ NV. RECOMENDADO: {selectedPoi.recommendedLevel || 1}
                 </span>
 
                 {selectedPoi.badgeText && (
-                  <span className="px-3 py-1 rounded-full bg-amber-400 text-amber-950 font-black uppercase tracking-wider shadow-md">
+                  <span className="pearl-pill px-3 py-1 text-[#5c3d08] font-cinzel font-black uppercase tracking-wider">
                     {selectedPoi.badgeText}
                   </span>
                 )}
               </div>
 
-              {/* PAINEL INTERNO: Descrição, Slimes dessa Área e Botão */}
+              {/* Conteúdo Interno: Descrição Concisa + Grade Visual de Slimes/Assets + Botão Viajar */}
               <div className="space-y-3 z-10">
-                {/* Painel de Descrição do Local em Tom de Madeira/Pergaminho Marrom */}
-                <div className="p-3 bg-amber-950/80 border border-amber-800/80 text-xs font-medium text-amber-100 leading-relaxed text-center rounded-2xl shadow-inner">
+                <div className="p-2.5 pearl-subcard text-[11px] font-semibold text-[#3a2b1c] leading-snug text-center">
                   {selectedPoi.description ||
-                    'Região mágica e perigosa repleta de segredos, tesouros e combates intensos do reino.'}
+                    'Território místico repleto de relíquias ancestrais, criaturas elementais e desafios do reino.'}
                 </div>
 
-                {/* SLIMES DESSA ÁREA (Modo Silhueta até Escanear o Monstro) */}
+                {/* SLIMES E CRIATURAS DESSA ÁREA (Foco nos Assets e Silhuetas) */}
                 {(() => {
-                  const effectiveCount = selectedPoi.rewardSlotCount || selectedPoi.rewardSlots?.length || 10;
+                  const effectiveCount =
+                    selectedPoi.rewardSlotCount || selectedPoi.rewardSlots?.length || 10;
                   const slots = Array.from({ length: effectiveCount }).map((_, idx) => {
                     const slotValue = selectedPoi.rewardSlots?.[idx] ?? '';
-                    const slotConfig = selectedPoi.rewardSlotConfigs?.find((s) => s.slotIndex === idx);
+                    const slotConfig = selectedPoi.rewardSlotConfigs?.find(
+                      (s) => s.slotIndex === idx
+                    );
                     const isRevealed = slotConfig?.isRevealed ?? false;
                     return { idx, slotValue, slotConfig, isRevealed };
                   });
@@ -678,25 +1860,25 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
 
                   return (
                     <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[11px] font-black text-amber-300 uppercase tracking-wider px-1">
+                      <div className="flex items-center justify-between text-[10px] font-cinzel font-black text-[#2b1f14] uppercase tracking-wider px-1">
                         <span className="flex items-center gap-1.5">
-                          <span>👾 Slimes dessa Área</span>
-                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">
-                            {revealedCount}/{filledCount || effectiveCount} Descobertos
+                          <span>👾 Criaturas &amp; Drops da Região</span>
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#062356] text-[#f5d98b] border border-[#d4a84b]">
+                            {revealedCount}/{filledCount || effectiveCount}
                           </span>
                         </span>
-                        <span className="text-[10px] text-amber-400 font-mono font-bold">
+                        <span className="text-[9px] text-[#8c6518] font-bold">
                           {effectiveCount} Slots
                         </span>
                       </div>
 
-                      {/* Grade de Slots de Slimes */}
-                      <div className="grid grid-cols-5 gap-2 p-2.5 rounded-2xl bg-amber-950/90 border-2 border-amber-500/50 shadow-inner max-h-[190px] overflow-y-auto">
+                      <div className="grid grid-cols-5 gap-2 p-2.5 pearl-subcard max-h-[168px] overflow-y-auto nova-scroll">
                         {slots.map(({ idx, slotValue, slotConfig, isRevealed }) => {
                           const eventLink =
                             slotConfig?.encounterEventLink ||
                             `https://meujogo.com/evento-encontro-local-${selectedPoi.id}-slot-${idx + 1}`;
-                          const isImage = slotValue.startsWith('data:image') || slotValue.startsWith('http');
+                          const isImage =
+                            slotValue.startsWith('data:image') || slotValue.startsWith('http');
 
                           return (
                             <div
@@ -709,19 +1891,19 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                                   isRevealed,
                                 });
                               }}
-                              className={`w-11 h-11 mx-auto rounded-full bg-gradient-to-b from-amber-900 via-stone-900 to-emerald-950 border-2 shadow-[0_3px_8px_rgba(0,0,0,0.8)] flex items-center justify-center text-[10px] font-black font-mono transition-all cursor-pointer relative group overflow-hidden ${
+                              className={`w-11 h-11 mx-auto rounded-full border-2 flex items-center justify-center text-[10px] font-black transition-all cursor-pointer relative group overflow-hidden ${
                                 slotValue
                                   ? isRevealed
-                                    ? 'border-emerald-400 bg-emerald-950/80 shadow-[0_0_12px_rgba(16,185,129,0.5)] hover:scale-110'
-                                    : 'border-amber-400/80 bg-black/90 hover:border-amber-300 hover:scale-110 ring-1 ring-amber-400/30'
-                                  : 'border-dashed border-amber-400/40 bg-black/40 hover:border-amber-300 hover:scale-105 opacity-60'
+                                    ? 'bg-gradient-to-b from-[#0b3778] to-[#041f4a] border-[#e5c168] shadow-[0_3px_8px_rgba(0,8,22,0.5)] hover:scale-108'
+                                    : 'bg-[#1a1410] border-[#c59638] hover:scale-108'
+                                  : 'bg-[#e6dac6]/80 border-dashed border-[#b88928]/70 hover:border-[#8c6518] hover:scale-105'
                               }`}
                               title={
                                 slotValue
                                   ? isRevealed
-                                    ? `Slot #${idx + 1}: Slime Revelado!`
-                                    : `Slot #${idx + 1}: Silhueta de Slime Oculto (Clique para Escanear)`
-                                  : `Slot #${idx + 1}: Vazio (Clique para Escanear Área)`
+                                    ? `Slot #${idx + 1}: Criatura Revelada!`
+                                    : `Slot #${idx + 1}: Criatura Oculta (Toque para Escanear)`
+                                  : `Slot #${idx + 1}: Slot de Descoberta`
                               }
                             >
                               {slotValue ? (
@@ -733,20 +1915,22 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                                       className={`w-full h-full object-contain p-1 transition-all ${
                                         !isRevealed
                                           ? 'filter brightness-0 contrast-200 opacity-85'
-                                          : 'filter drop-shadow-[0_2px_8px_rgba(255,255,255,0.4)]'
+                                          : 'filter drop-shadow-[0_2px_6px_rgba(255,243,194,0.45)]'
                                       }`}
                                     />
                                     {!isRevealed && (
-                                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                                        <Lock className="w-3.5 h-3.5 text-amber-300 drop-shadow-md" />
+                                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                        <Lock className="w-3.5 h-3.5 text-[#f5d98b] drop-shadow" />
                                       </div>
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="truncate max-w-[34px] text-center text-amber-200">{slotValue}</span>
+                                  <span className="truncate max-w-[34px] text-center text-[#fff3c2] text-sm">
+                                    {slotValue}
+                                  </span>
                                 )
                               ) : (
-                                <span className="text-[11px] opacity-40 font-mono">👾</span>
+                                <span className="text-xs text-[#8c6518]/65">👾</span>
                               )}
                             </div>
                           );
@@ -756,7 +1940,7 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                   );
                 })()}
 
-                {/* BOTÃO VIAJAR / BATALHAR (3D Verde/Dourado) */}
+                {/* BOTÃO PRINCIPAL ROYAL SAPPHIRE & GOLD: VIAJAR AGORA */}
                 <button
                   type="button"
                   onClick={() => {
@@ -789,10 +1973,12 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                       handleCloseModal();
                     }
                   }}
-                  className="w-full py-3 px-4 rounded-2xl bg-gradient-to-b from-emerald-400 via-emerald-600 to-emerald-800 border-2 border-emerald-300 font-black text-white text-base tracking-wider shadow-[0_6px_0_#065f46] hover:brightness-110 active:translate-y-1 active:shadow-none transition-all cursor-pointer flex items-center justify-center gap-2 uppercase"
+                  className="w-full btn-royal-gold cursor-pointer active:scale-98 transition-transform"
                 >
-                  <Zap className="w-5 h-5 text-amber-300 fill-amber-300 animate-pulse" />
-                  <span>{selectedPoi.travelButtonText || 'VIAJAR AGORA'}</span>
+                  <div className="btn-royal-inner py-3 px-4 flex items-center justify-center gap-2 font-cinzel font-black text-sm sm:text-base text-[#fff3c2] uppercase tracking-[0.14em]">
+                    <Zap className="w-4 h-4 text-[#f5d98b] fill-[#f5d98b]" />
+                    <span>{selectedPoi.travelButtonText || 'VIAJAR AGORA'}</span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -800,68 +1986,78 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
         </div>
       )}
 
-      {/* MODAL DE EVENTO DE ENCONTRO / SCANNER DE SLIMES E MONSTROS */}
+      {/* MODAL DE EVENTO DE ENCONTRO / SCANNER DE SLIMES (NOVA UI v1.2) */}
       {activeEncounterSlot && selectedPoi && (
         <div
-          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-60 bg-[#020816]/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setActiveEncounterSlot(null)}
         >
           <div
-            className="w-full max-w-[340px] bg-gradient-to-b from-stone-900 via-amber-950 to-stone-950 border-2 border-amber-400 rounded-3xl p-5 text-white shadow-[0_0_40px_rgba(245,158,11,0.4)] relative flex flex-col items-center text-center space-y-4 select-none"
+            className="w-full max-w-[340px] pearl-surface p-5 relative flex flex-col items-center text-center space-y-4 select-none"
+            style={{
+              borderRadius: '24px',
+              border: '3px solid #c59638',
+              outline: '2px solid #4a3006',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={() => setActiveEncounterSlot(null)}
-              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-rose-600 border border-rose-400 text-white flex items-center justify-center text-xs font-bold transition-transform hover:scale-110 cursor-pointer"
+              className="close-btn-outer absolute -top-2.5 -right-2.5 cursor-pointer"
             >
-              <X className="w-4 h-4 stroke-[3]" />
+              <div className="close-btn-inner">✕</div>
             </button>
 
-            {/* Ícone ou Silhueta do Slime/Monstro */}
-            <div className="w-24 h-24 rounded-3xl bg-amber-950/90 border-2 border-amber-400 flex items-center justify-center p-2.5 relative shadow-[0_6px_16px_rgba(0,0,0,0.8)] overflow-hidden">
-              {activeEncounterSlot.val.startsWith('data:image') || activeEncounterSlot.val.startsWith('http') ? (
+            <div className="w-24 h-24 rounded-3xl bg-[#062356] border-2 border-[#e5c168] flex items-center justify-center p-2.5 relative shadow-lg overflow-hidden">
+              {activeEncounterSlot.val.startsWith('data:image') ||
+              activeEncounterSlot.val.startsWith('http') ? (
                 <img
                   src={activeEncounterSlot.val}
                   alt=""
                   className={`w-full h-full object-contain ${
-                    !activeEncounterSlot.isRevealed ? 'filter brightness-0 contrast-200 opacity-85' : 'filter drop-shadow-[0_0_12px_rgba(16,185,129,0.8)]'
+                    !activeEncounterSlot.isRevealed
+                      ? 'filter brightness-0 contrast-200 opacity-85'
+                      : 'filter drop-shadow-[0_0_12px_rgba(229,193,104,0.8)]'
                   }`}
                 />
               ) : (
                 <span className="text-4xl">{activeEncounterSlot.val}</span>
               )}
               {!activeEncounterSlot.isRevealed && (
-                <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-1">
-                  <Lock className="w-6 h-6 text-amber-400 drop-shadow-md animate-pulse" />
-                  <span className="text-[9px] font-black text-amber-300 uppercase tracking-widest">Silhueta</span>
+                <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center gap-1">
+                  <Lock className="w-6 h-6 text-[#f5d98b] drop-shadow-md animate-pulse" />
+                  <span className="text-[9px] font-cinzel font-black text-[#fff3c2] uppercase tracking-widest">
+                    Silhueta
+                  </span>
                 </div>
               )}
             </div>
 
             <div>
-              <h4 className="text-sm font-black text-amber-300 uppercase tracking-wider flex items-center justify-center gap-1.5">
+              <h4 className="text-xs font-cinzel font-black text-[#2b1f14] uppercase tracking-wider flex items-center justify-center gap-1.5">
                 <span>👾</span>
                 <span>
                   {activeEncounterSlot.isRevealed
-                    ? 'Slime Descoberto & Revelado!'
-                    : `Monstro Oculto (Slot #${activeEncounterSlot.idx + 1})`}
+                    ? 'Criatura Descoberta!'
+                    : `Criatura Oculta (Slot #${activeEncounterSlot.idx + 1})`}
                 </span>
               </h4>
-              <p className="text-xs text-amber-100/80 mt-1 leading-snug">
+              <p className="text-[11px] font-semibold text-[#5c4b3b] mt-1 leading-snug">
                 {activeEncounterSlot.isRevealed
-                  ? 'Este monstro foi escaneado e catalogado com sucesso nesta área do mapa!'
-                  : 'Criatura misteriosa detectada nesta coordenada. Escaneie para decifrar a silhueta e revelar o monstro!'}
+                  ? 'Registrada no seu bestiário desta região.'
+                  : 'Escaneie para decifrar a silhueta e revelar o asset da criatura!'}
               </p>
             </div>
 
-            {/* Ações do Evento de Encontro / Scanner */}
             <div className="w-full space-y-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
                   const currentConfigs = [...(selectedPoi.rewardSlotConfigs || [])];
-                  const existingIdx = currentConfigs.findIndex((s) => s.slotIndex === activeEncounterSlot.idx);
+                  const existingIdx = currentConfigs.findIndex(
+                    (s) => s.slotIndex === activeEncounterSlot.idx
+                  );
                   const nextState = !activeEncounterSlot.isRevealed;
 
                   const newConfig = {
@@ -877,29 +2073,20 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                     currentConfigs.push(newConfig);
                   }
 
-                  // Atualiza o estado local do POI selecionado
                   setSelectedPoi({ ...selectedPoi, rewardSlotConfigs: currentConfigs });
                   setActiveEncounterSlot({ ...activeEncounterSlot, isRevealed: nextState });
                 }}
-                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-600 to-emerald-600 hover:brightness-110 border-2 border-amber-300 font-black text-xs text-white shadow-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                className="w-full btn-royal-gold cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-amber-200 animate-spin" />
-                <span>
-                  {activeEncounterSlot.isRevealed ? 'Ocultar como Silhueta' : '🔍 Escanear Monstro (Revelar)'}
-                </span>
+                <div className="btn-royal-inner py-2.5 px-3 font-cinzel font-black text-[11px] text-[#fff3c2] uppercase flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#f5d98b]" />
+                  <span>
+                    {activeEncounterSlot.isRevealed
+                      ? 'Ocultar Silhueta'
+                      : '🔍 Escanear & Revelar'}
+                  </span>
+                </div>
               </button>
-
-              {activeEncounterSlot.link && (
-                <a
-                  href={activeEncounterSlot.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-2 px-3 rounded-xl bg-sky-950/80 hover:bg-sky-900/90 border border-sky-400/60 font-bold text-[11px] text-sky-200 flex items-center justify-center gap-1.5 transition-all"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Acessar Evento de Encontro 🚀</span>
-                </a>
-              )}
             </div>
           </div>
         </div>

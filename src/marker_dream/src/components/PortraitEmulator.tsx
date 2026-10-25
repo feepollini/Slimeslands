@@ -170,6 +170,8 @@ interface Props {
   onExitToWorldMap?: () => void;
   setProject?: React.Dispatch<React.SetStateAction<MapProject>>;
   selectedMarkerId?: string | null;
+  playWidth?: number;
+  playHeight?: number;
 }
 
 // Tamanho fixo do preview (seletor de presets removido)
@@ -486,7 +488,26 @@ export const PortraitEmulator: React.FC<Props> = ({
   isPlayMode = false,
   isWorldMapSolo = false,
   onExitToWorldMap,
+  setProject,
+  selectedMarkerId,
+  playWidth,
+  playHeight,
 }) => {
+  const effectiveActiveMarkerId = activeMarkerId ?? selectedMarkerId ?? null;
+  void effectiveActiveMarkerId;
+  const propOnUpdateProject = onUpdateProject;
+  const effectiveOnUpdateProject = React.useCallback(
+    (updates: Partial<import('../types/map').MapProject>) => {
+      if (propOnUpdateProject) {
+        propOnUpdateProject(updates);
+      } else if (setProject) {
+        setProject((prev) => ({ ...prev, ...updates }));
+      }
+    },
+    [propOnUpdateProject, setProject]
+  );
+  onUpdateProject = effectiveOnUpdateProject;
+
   const isLandscape = orientation === 'landscape';
   const [internalWebMode, setInternalWebMode] = useState<boolean>(false);
   const effectiveWebMode = isLandscape && (isWebMode !== undefined ? isWebMode : internalWebMode);
@@ -494,8 +515,18 @@ export const PortraitEmulator: React.FC<Props> = ({
     setInternalWebMode(next);
     onToggleWebMode?.(next);
   };
-  const screenWidth = isLandscape ? 780 : SCREEN_WIDTH;
-  const screenHeight = isLandscape ? 440 : SCREEN_HEIGHT;
+  const screenWidth =
+    isPlayMode && playWidth && playWidth > 120
+      ? playWidth
+      : isLandscape
+      ? 780
+      : SCREEN_WIDTH;
+  const screenHeight =
+    isPlayMode && playHeight && playHeight > 120
+      ? playHeight
+      : isLandscape
+      ? 440
+      : SCREEN_HEIGHT;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const containerSizeRef = useRef<{ w: number; h: number }>({ w: screenWidth, h: screenHeight });
@@ -4312,11 +4343,18 @@ export const PortraitEmulator: React.FC<Props> = ({
   // Proporção matemática preservada: no modo Extended o mundo se expande e a câmera navega em 2D;
   // no modo Paisagem garante preenchimento horizontal sem faixas vazias.
   const baseWorldScale = (project.mapWidth && project.mapWidth > 0) ? (screenWidth / project.mapWidth) : (screenWidth / 768);
-  const scale = isExtended
+  const rawScale = isExtended
     ? (isLandscape
         ? Math.max(baseWorldScale, screenWidth / Math.max(100, totalMapWidth), screenHeight / Math.max(100, totalMapHeight))
         : baseWorldScale)
     : (totalMapWidth > 0 ? screenWidth / totalMapWidth : 1);
+  const scale = isPlayMode
+    ? Math.max(
+        rawScale,
+        screenWidth / Math.max(100, totalMapWidth),
+        screenHeight / Math.max(100, totalMapHeight)
+      )
+    : rawScale;
   const scaledMapWidth = Math.round(totalMapWidth * scale);
   const scaledMapHeight = Math.round(totalMapHeight * scale);
 
@@ -6803,7 +6841,7 @@ export const PortraitEmulator: React.FC<Props> = ({
     return out.length > 0 ? out : [{ x: gx, y: gy }];
   };
 
-  const isWebFrameless = isPlayMode && effectiveWebMode;
+  const isWebFrameless = isPlayMode || (isPlayMode && effectiveWebMode);
   const frameWidth = isWebFrameless ? screenWidth : screenWidth + 24;
   const frameHeight = isWebFrameless ? screenHeight : screenHeight + 36;
   const effectiveEvent = getActiveBiomeEvent();
@@ -6828,10 +6866,14 @@ export const PortraitEmulator: React.FC<Props> = ({
   };
 
   const webConfigEnabled = hudConfig?.webConfig?.enabled !== false;
-  const viewportInsetClass = isWebFrameless ? 'inset-0 rounded-xl' : 'inset-3 rounded-[34px]';
+  const viewportInsetClass = isPlayMode
+    ? 'inset-0 rounded-none'
+    : isWebFrameless
+    ? 'inset-0 rounded-xl'
+    : 'inset-3 rounded-[34px]';
 
   return (
-    <div className="flex flex-col items-center w-full">
+    <div className={`flex flex-col items-center w-full ${isPlayMode ? 'h-full overflow-hidden' : ''}`}>
       {/* Device Header Bar (título + Seletor Retrato / Paisagem / WEB) — oculto no Modo Play pois já existe na barra superior */}
       {!isPlayMode && (
         <div className="flex items-center justify-between gap-3 w-full max-w-[840px] px-3 py-1 mb-2">
@@ -6901,7 +6943,9 @@ export const PortraitEmulator: React.FC<Props> = ({
           height: frameHeight,
         }}
         className={
-          isWebFrameless
+          isPlayMode
+            ? 'relative bg-black p-0 rounded-none flex flex-col justify-between shrink-0 overflow-hidden w-full h-full'
+            : isWebFrameless
             ? 'relative bg-black p-0 rounded-xl shadow-[0_25px_80px_rgba(0,0,0,0.95)] border border-cyan-500/30 ring-1 ring-cyan-400/15 flex flex-col justify-between shrink-0 transition-all duration-200 overflow-hidden'
             : 'relative bg-slate-900 p-3 rounded-[44px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.95)] border-[5px] border-slate-700/90 flex flex-col justify-between ring-1 ring-white/10 shrink-0 transition-all duration-200'
         }
@@ -7177,7 +7221,7 @@ export const PortraitEmulator: React.FC<Props> = ({
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className={`relative z-0 w-full h-full bg-black ${isWebFrameless ? 'rounded-xl' : 'rounded-[34px]'} select-none scrollbar-none overscroll-none ${
+          className={`relative z-0 w-full h-full bg-black ${isPlayMode ? 'rounded-none' : isWebFrameless ? 'rounded-xl' : 'rounded-[34px]'} select-none scrollbar-none overscroll-none ${
             isExtended 
               ? (scaledMapWidth > screenWidth || scaledMapHeight > screenHeight ? 'overflow-auto' : 'overflow-hidden')
               : (scaledMapHeight > screenHeight ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden')
@@ -10072,7 +10116,8 @@ export const PortraitEmulator: React.FC<Props> = ({
               {/* CÁPSULA VERTICAL DE VIDRO COM BORDAS DOURADAS (3 SLOTS DE PET EM TEMPO REAL + BOTÃO ITEM PET) NO CANTO DIREITO */}
               <div className="absolute right-2.5 top-1/2 -translate-y-1/2 z-60 pointer-events-auto">
                 <VerticalGlassPetSwitcherCapsuleWidget
-                  project={project}
+                  player={project.player}
+                  isLandscape={isLandscape}
                   onSelectPetSlot={(slotIdx) => {
                     const curPlayer = project.player;
                     if (!curPlayer || !onUpdateProject) return;
@@ -10107,7 +10152,8 @@ export const PortraitEmulator: React.FC<Props> = ({
                       setInventoryOpen(true);
                     }
                   }}
-                  onOpenPetCareModal={() => setIsPetCareOpen((v) => !v)}
+                  onOpenPetItemMenu={() => setIsPetCareOpen((v) => !v)}
+                  onOpenDeckModal={() => setInventoryOpen(true)}
                 />
               </div>
 
@@ -10627,8 +10673,10 @@ export const PortraitEmulator: React.FC<Props> = ({
                       : 'transition-transform duration-150 active:scale-95 cursor-pointer'
                   }`}
                   style={{
-                    left: `calc(50% - 150px + ${backpackConfig?.x || 0}px)`,
-                    bottom: `${68 + (backpackConfig?.y || 0)}px`,
+                    left: isLandscape
+                      ? `${Math.max(18, 28 + (backpackConfig?.x || 0))}px`
+                      : `calc(50% - 136px + ${backpackConfig?.x || 0}px)`,
+                    bottom: `${(isPlayMode ? 28 : 68) + (backpackConfig?.y || 0)}px`,
                     width: '64px',
                     height: '64px',
                     transform: `scale(${backpackConfig?.scale || 1.0})`,
@@ -10668,10 +10716,10 @@ export const PortraitEmulator: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* Joystick premium com offset e escala dinâmicos (some automaticamente no Modo WEB quando configurado) */}
+              {/* Joystick premium com offset e escala dinâmicos (sempre visível no Modo Play, a menos que o usuário alterne p/ Toque-Move) */}
               {locomotion === 'joystick' &&
                 joystickConfig?.visible !== false &&
-                (!effectiveWebMode || hudConfig?.webConfig?.hideJoystickInWeb === false || isInlineEditing) && (
+                (isPlayMode || !effectiveWebMode || hudConfig?.webConfig?.hideJoystickInWeb === false || isInlineEditing) && (
                 <div
                   className={`absolute z-60 touch-none select-none pointer-events-auto ${
                     isInlineEditing
@@ -10683,9 +10731,13 @@ export const PortraitEmulator: React.FC<Props> = ({
                       : 'cursor-pointer'
                   }`}
                   style={{
-                    left: `calc(50% + ${joystickConfig?.x || 0}px)`,
-                    bottom: `${56 + (joystickConfig?.y || 0)}px`,
-                    transform: `translateX(-50%) scale(${joystickConfig?.scale || 1.0})`,
+                    left: isLandscape
+                      ? `${Math.max(106, 128 + (joystickConfig?.x || 0))}px`
+                      : `calc(50% + ${joystickConfig?.x || 0}px)`,
+                    bottom: `${(isPlayMode ? 20 : 56) + (joystickConfig?.y || 0)}px`,
+                    transform: isLandscape
+                      ? `scale(${joystickConfig?.scale || 1.0})`
+                      : `translateX(-50%) scale(${joystickConfig?.scale || 1.0})`,
                     transformOrigin: 'center center',
                   }}
                   onPointerDown={(e) => {
@@ -10874,8 +10926,10 @@ export const PortraitEmulator: React.FC<Props> = ({
                           }`
                     }`}
                     style={{
-                      left: `calc(50% + 86px + ${touchMoveConfig?.x || 0}px)`,
-                      bottom: `${68 + (touchMoveConfig?.y || 0)}px`,
+                      left: isLandscape
+                        ? `${Math.max(216, 240 + (touchMoveConfig?.x || 0))}px`
+                        : `calc(50% + 78px + ${touchMoveConfig?.x || 0}px)`,
+                      bottom: `${(isPlayMode ? 28 : 68) + (touchMoveConfig?.y || 0)}px`,
                       width: '56px',
                       height: '56px',
                       transform: `scale(${touchMoveConfig?.scale || 1.0})`,
@@ -11037,6 +11091,55 @@ export const PortraitEmulator: React.FC<Props> = ({
                     </div>
                   );
                 })}
+
+              {/* Botões Padrão de Ação da Fase (Ataque ⚔️ e Dash 💨) quando nenhum botão customizado estiver configurado */}
+              {customHudButtons.filter((btn) => btn.visible !== false).length === 0 && (
+                <div className="absolute right-3.5 bottom-6 z-60 flex items-end gap-2.5 pointer-events-auto select-none">
+                  {/* Botão Dash / Esquiva */}
+                  <button
+                    type="button"
+                    onClick={() => triggerPlayerDash()}
+                    className="w-12 h-12 rounded-full flex flex-col items-center justify-center cursor-pointer active:scale-90 transition-transform"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 50% 25%, rgba(252,250,245,0.96) 0%, rgba(235,225,206,0.94) 70%, rgba(212,193,161,0.96) 100%)',
+                      border: '2px solid #c59638',
+                      outline: '1.5px solid #523707',
+                      boxShadow:
+                        '0 6px 16px rgba(0,8,22,0.75), inset 0 1px 2px rgba(255,255,255,0.95)',
+                    }}
+                    title="Impulso / Dash Rápido [Espaço]"
+                  >
+                    <span className="text-lg leading-none drop-shadow">💨</span>
+                    <span className="font-cinzel font-black text-[7px] text-[#3a2b1c] uppercase tracking-wider mt-0.5">
+                      DASH
+                    </span>
+                  </button>
+
+                  {/* Botão Principal de Ataque (Herói + Pet) */}
+                  <button
+                    type="button"
+                    onClick={() => triggerPlayerOrPetAttack()}
+                    className="w-15 h-15 rounded-full flex flex-col items-center justify-center cursor-pointer active:scale-90 transition-transform"
+                    style={{
+                      background:
+                        'linear-gradient(180deg, #0b3778 0%, #041f4a 58%, #02122e 100%)',
+                      border: '2.5px solid #e5c168',
+                      outline: '1.5px solid #523707',
+                      boxShadow:
+                        '0 8px 20px rgba(0,8,22,0.85), 0 0 14px rgba(229,193,104,0.45), inset 0 1px 2px rgba(255,243,194,0.55)',
+                    }}
+                    title="Atacar com Herói & Pet [Espaço / Clique]"
+                  >
+                    <span className="text-2xl leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                      ⚔️
+                    </span>
+                    <span className="font-cinzel font-black text-[7.5px] text-[#fff3c2] uppercase tracking-wider mt-0.5">
+                      ATACAR
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           );
         })()}

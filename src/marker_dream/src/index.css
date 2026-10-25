@@ -15,20 +15,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom sleek dark scrollbar */
+/* Subtle golden scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
+  background: rgba(212, 175, 55, 0.55);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: rgba(180, 130, 25, 0.8);
 }
 
 /* Animations for marker capsule emerging from opposite side and banner springing up above */

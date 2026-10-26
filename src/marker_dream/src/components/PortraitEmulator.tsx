@@ -44,6 +44,14 @@ import { drawBiomeSpansWithFeather } from '../utils/canvasSeamBlend';
 import { GroundShadow } from '../utils/assetSize';
 import { getRenderableAssetUrl } from '../utils/assetRegistry';
 import { DialogueTheme, DEFAULT_GREEN_THEME, extractThemeFromImage } from '../utils/dialogueTheme';
+import {
+  OrnateDialogueBubble,
+  DialogueOptionItem,
+  QuestBadgeInfo,
+  DialogueViewportMode,
+  DEFAULT_VIEWPORT_VARIABLES,
+} from './dialogue/OrnateDialogueBubble';
+import type { QuestStatusState } from '../types/dialogue';
 import { getOrCreateScreensConfig } from './screens/ScreensStudio';
 import {
   PlayerHeaderHudWidget,
@@ -9063,644 +9071,381 @@ export const PortraitEmulator: React.FC<Props> = ({
             - Caixa de texto rica
             - Opções de múltipla escolha padrão de jogos
            ========================================================================= */}
-        {activeDialogueMarker && (
-          <div
-            className={`absolute inset-3 rounded-[34px] z-50 overflow-hidden bg-slate-950/65 backdrop-blur-xs flex ${
-              isLandscape ? 'flex-row items-center justify-end' : 'flex-col justify-end'
-            } select-none pointer-events-auto border-[3px] border-[#5c2c16]/80 shadow-2xl`}
-          >
-            {/* DEGRADÊ TEMÁTICO DINÂMICO (VERTICAL NO RETRATO / LATERAL+PALCO NO PAISAGEM) */}
-            <div
-              className={`absolute pointer-events-none z-0 transition-all duration-500 ${
-                isLandscape ? 'inset-0' : 'left-0 right-0 bottom-0 h-[64%]'
-              }`}
-              style={{
-                background: isLandscape
-                  ? `linear-gradient(100deg, rgba(0,0,0,0.25) 0%, ${dialogueTheme.gradientVia} 42%, ${dialogueTheme.gradientTo} 85%, ${dialogueTheme.gradientTo} 100%)`
-                  : `linear-gradient(to bottom, transparent 0%, ${dialogueTheme.gradientVia} 26%, ${dialogueTheme.gradientTo} 60%, ${dialogueTheme.gradientTo} 100%)`,
-              }}
-            />
+        {activeDialogueMarker && (() => {
+          const markerHasQuest = Boolean(activeDialogueMarker.quest || activeDialogueMarker.linkedQuestId);
+          const prog = getProg(activeDialogueMarker.id);
+          const ready = questReady(activeDialogueMarker, playerInventory);
+          const responses = currentStep?.playerResponses || [];
+          const hasCustomResponses = responses.length > 0;
+          const markerNonDialogueEvents = (activeDialogueMarker.events || []).filter((e) => e.type !== 'dialogue');
+          const isDuelQuest = activeDialogueMarker.quest?.kind === 'duel' || activeDialogueMarker.eventKind === 'duel';
 
-            {/* AURA DE BRILHO RADIANTE ATRÁS DA PNG */}
-            <div
-              className={`absolute ${
-                isLandscape ? 'left-2 top-4 bottom-4 w-[44%]' : 'inset-x-0 top-14 bottom-30'
-              } flex items-center justify-center pointer-events-none z-5`}
-            >
-              <div
-                className={`${
-                  isLandscape ? 'w-60 h-60' : 'w-72 h-72'
-                } rounded-full blur-3xl opacity-70 transition-all duration-700 animate-pulse pointer-events-none`}
-                style={{
-                  background: `radial-gradient(circle, ${dialogueTheme.primary} 0%, transparent 70%)`,
-                }}
-              />
-            </div>
+          const handleFinalizeDialogueOption = (isPrimaryOption: boolean) => {
+            const targetMarker = activeDialogueMarker;
+            if (isPrimaryOption) {
+              if (isDuelQuest || targetMarker.actionNpc?.enabled || targetMarker.matrixCardId || targetMarker.actionNpc?.matrixCardId) {
+                setActiveDialogueMarker(null);
+                setInspectedMarker(null);
+                eventFreezeUntilRef.current = 0;
+                onCloseDialogue?.();
+                setScanBattleModalMarker(targetMarker);
+                return;
+              } else if (markerHasQuest) {
+                if ((prog.accepted && !prog.done && ready) || (!prog.accepted && ready && targetMarker.quest?.kind !== 'collect')) {
+                  completeQuest(targetMarker);
+                } else if (!prog.accepted && !prog.done) {
+                  acceptQuest(targetMarker.id);
+                } else if (!prog.done && ready) {
+                  completeQuest(targetMarker);
+                }
+              }
+              if (markerNonDialogueEvents.length > 0) {
+                triggerEvent({ ...targetMarker, events: markerNonDialogueEvents });
+              }
+            }
+            setActiveDialogueMarker(null);
+            setInspectedMarker(null);
+            eventFreezeUntilRef.current = 0;
+            onCloseDialogue?.();
+          };
 
-            {/* PNG DO PERSONAGEM (NO RETRATO: TOPO/CENTRO | NO PAISAGEM: PALCO DEDICADO À ESQUERDA SEM SOBREPOSIÇÃO) */}
-            <div
-              className={`absolute ${
-                isLandscape ? 'left-1 top-2 bottom-2 w-[45%]' : 'inset-x-0 top-14 bottom-30'
-              } flex items-center justify-center pointer-events-none overflow-hidden z-10 animate-dialogue-entrance`}
-            >
-              <div
-                className="w-full h-full flex items-center justify-center transition-transform duration-150 origin-bottom"
-                style={{
-                  transform: `translateY(${(liveDialogueMarker?.dialogueCharacterOffsetY ?? 0) + (isLandscape ? 4 : 12)}px) scale(${liveDialogueMarker?.dialogueCharacterScale ?? 1})`,
-                }}
-              >
-                {/* Se o NPC for um Motion Asset com camadas animadas e não houver um retrato estático diferente */}
-                {liveDialogueMarker?.motionLayers &&
-                liveDialogueMarker.motionLayers.length > 0 &&
-                (!liveDialogueMarker?.dialogueCharacterPng ||
-                  liveDialogueMarker.dialogueCharacterPng === liveDialogueMarker.customIconPng) &&
-                (!currentStep?.characterPng ||
-                  currentStep.characterPng === liveDialogueMarker.customIconPng) ? (
-                  <div
-                    key={`motion-dialogue-${liveDialogueMarker.id}-${currentStepIndex}`}
-                    className={`${
-                      isLandscape ? 'w-56 h-56 sm:w-64 sm:h-64' : 'w-72 h-72 sm:w-80 sm:h-80'
-                    } flex items-center justify-center filter drop-shadow-[0_18px_35px_rgba(0,0,0,0.7)] select-none origin-bottom ${
-                      currentStepIndex > 0 ? 'animate-jelly-reaction' : 'animate-jelly'
-                    }`}
-                  >
-                    <MotionAssetCanvas
-                      src={liveDialogueMarker.customIconPng || ''}
-                      alt={currentSpeaker}
-                      effect={liveDialogueMarker.effect}
-                      speed={liveDialogueMarker.effectSpeed ?? liveDialogueMarker.jellySpeed ?? 1.0}
-                      intensity={liveDialogueMarker.effectIntensity ?? liveDialogueMarker.jellyIntensity ?? 1.0}
-                      strokes={liveDialogueMarker.effectStrokes}
-                      motionLayers={liveDialogueMarker.motionLayers}
-                      isNpcBounce={true}
-                      width={320}
-                      height={320}
-                      className="w-full h-full object-contain pointer-events-none"
-                    />
-                  </div>
-                ) : currentCharacterPng ? (
-                  <img
-                    key={`jelly-step-${currentStepIndex}`}
-                    src={currentCharacterPng}
-                    alt={currentSpeaker}
-                    className={`max-h-full ${
-                      isLandscape ? 'max-w-[92%]' : 'max-w-[85%]'
-                    } object-contain filter drop-shadow-[0_18px_35px_rgba(0,0,0,0.7)] select-none origin-bottom ${
-                      currentStepIndex > 0 ? 'animate-jelly-reaction' : 'animate-jelly'
-                    }`}
-                  />
-                ) : liveDialogueMarker?.customIconPng ? (
-                  <img
-                    key={`jelly-icon-${currentStepIndex}`}
-                    src={liveDialogueMarker.customIconPng}
-                    alt={liveDialogueMarker.name}
-                    className={`max-h-full ${
-                      isLandscape ? 'max-w-[90%]' : 'max-w-[80%]'
-                    } object-contain filter drop-shadow-[0_18px_35px_rgba(0,0,0,0.7)] select-none origin-bottom ${
-                      currentStepIndex > 0 ? 'animate-jelly-reaction' : 'animate-jelly'
-                    }`}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-6 opacity-85 animate-dialogue-entrance">
-                    <div
-                      className={`${
-                        isLandscape ? 'w-24 h-24 text-4xl' : 'w-28 h-28 text-5xl'
-                      } rounded-full flex items-center justify-center shadow-2xl border-4 border-amber-400/80`}
-                      style={{ backgroundColor: liveDialogueMarker?.color || '#3b82f6' }}
-                    >
-                      👑
-                    </div>
-                    <span className="text-amber-200 text-xs font-black mt-2.5 drop-shadow">
-                      {liveDialogueMarker?.name || 'NPC'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
+          // Informações de Badge da Quest
+                    let questInfo: QuestBadgeInfo | null = null;
+          if (markerHasQuest) {
+            const statusKey: QuestStatusState = prog.done
+              ? 'COMPLETED'
+              : ready && prog.accepted
+              ? 'READY'
+              : prog.accepted
+              ? 'IN_PROGRESS'
+              : 'INITIAL_OFFER';
 
-            {/* Botão 3D de Fechar / Sair no canto superior direito */}
-            <div className="absolute top-3.5 right-3.5 z-30">
-              <button
-                onClick={() => {
-                  setActiveDialogueMarker(null);
-                  setInspectedMarker(null);
-                  eventFreezeUntilRef.current = 0;
-                  onCloseDialogue?.();
-                }}
-                className="w-9 h-9 rounded-full bg-gradient-to-b from-[#ff5252] to-[#dc2626] hover:brightness-110 border-[3px] border-white text-white flex items-center justify-center shadow-[0_4px_0_#991b1b,0_6px_12px_rgba(0,0,0,0.5)] transition-transform active:translate-y-0.5 cursor-pointer"
-                title="Fechar diálogo"
-              >
-                <X className="w-4 h-4 stroke-[3]" />
-              </button>
-            </div>
+            const badgeLabel = prog.done
+              ? 'CONCLUÍDA'
+              : ready && prog.accepted
+              ? 'PRONTO'
+              : prog.accepted
+              ? 'EM ANDAMENTO'
+              : 'NOVA MISSÃO';
 
-            {/* CONTEÚDO DO DIÁLOGO:
-                - RETRATO (!isLandscape): Na base da tela (pb-26)
-                - PAISAGEM (isLandscape): Painel dedicado nos 57% à direita, centralizado verticalmente e sem cobrir o NPC! */}
-            <div
-              className={`relative z-20 ${
-                isLandscape
-                  ? 'w-[57%] ml-auto pr-4 pl-1 py-3 flex flex-col justify-center space-y-2.5'
-                  : 'w-full space-y-2 pb-26 pt-1'
-              }`}
-            >
-              {/* Pílula do Nome ("Nome") — Centralizada no Retrato / Alinhada à Esquerda com Destaque 3D no Paisagem */}
-              <div className={`flex ${isLandscape ? 'justify-start pl-4' : 'justify-center'} -mb-3.5 relative z-30`}>
-                <div
-                  className="px-7 py-1.5 rounded-full border-[3px] shadow-[0_4px_0_rgba(0,0,0,0.35),0_6px_12px_rgba(0,0,0,0.4)] flex items-center justify-center min-w-[148px] transition-colors duration-500"
-                  style={{
-                    backgroundColor: dialogueTheme.nameBg,
-                    borderColor: '#ffffff',
-                  }}
-                >
-                  <span className="text-[14px] sm:text-[15px] font-black text-white tracking-wide drop-shadow-[0_1.5px_0_rgba(0,0,0,0.7)] select-none">
-                    {currentSpeaker}
-                  </span>
-                </div>
-              </div>
+            questInfo = {
+              status: statusKey,
+              label: badgeLabel,
+              progressText: prog.accepted ? questText(activeDialogueMarker, playerInventory) : undefined,
+              questTitle: activeDialogueMarker.quest?.title || 'Objetivo',
+              isDone: prog.done,
+              isReady: ready && prog.accepted,
+              isAccepted: prog.accepted,
+              statusLabel: badgeLabel,
+              rewardText: !prog.done ? '🎁 +200 XP • +120 Ouro' : undefined,
+            };
+          }
 
-              {/* Caixa de Texto do Diálogo 3D Estilo Game (com tag de Quest integrada ao tema) */}
-              <div className={isLandscape ? 'px-1 py-1' : 'px-4 py-1'}>
-                <div
-                  onClick={handleDialogueBoxClick}
-                  className={`w-full ${
-                    isLandscape ? 'p-4 px-5 rounded-[28px] text-left' : 'p-4 px-5 pt-5 rounded-[32px] text-center'
-                  } border-[3px] shadow-[0_6px_0_rgba(0,0,0,0.3),0_12px_24px_rgba(0,0,0,0.45)] cursor-pointer transition-all duration-300 select-none active:scale-[0.99]`}
-                  style={{
-                    backgroundColor: dialogueTheme.surfaceBg,
-                    borderColor: dialogueTheme.surfaceBorder,
-                    color: dialogueTheme.surfaceText,
-                  }}
-                  title={!isTypingComplete ? 'Toque para completar o texto imediatamente' : ''}
-                >
-                  {/* Tag integrada ao tema do diálogo quando o NPC possui Quest */}
-                  {Boolean(activeDialogueMarker.quest || activeDialogueMarker.linkedQuestId) && (() => {
-                    const prog = getProg(activeDialogueMarker.id);
-                    const ready = questReady(activeDialogueMarker, playerInventory);
-                    const statusLabel = prog.done
-                      ? '✔️ Missão Concluída'
-                      : ready && prog.accepted
-                      ? '✨ Itens Prontos p/ Entregar!'
-                      : prog.accepted
-                      ? `📜 Em Andamento • ${questText(activeDialogueMarker, playerInventory)}`
-                      : `❗ Nova Missão • ${activeDialogueMarker.quest?.title || 'Objetivo'}`;
-                    return (
-                      <div
-                        className={`flex flex-wrap items-center ${
-                          isLandscape ? 'justify-start' : 'justify-center'
-                        } gap-1.5 mb-2`}
-                      >
-                        <span
-                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide text-white border-2 border-white/90 shadow-xs"
-                          style={{
-                            backgroundColor: prog.done
-                              ? '#10b981'
-                              : ready && prog.accepted
-                              ? '#059669'
-                              : dialogueTheme.buttonBg,
-                          }}
-                        >
-                          {statusLabel}
-                        </span>
-                        {!prog.done && (
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold border"
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.55)',
-                              borderColor: dialogueTheme.surfaceBorder,
-                              color: dialogueTheme.surfaceText,
-                            }}
-                          >
-                            🎁 +200 XP • +120 Ouro
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })()}
+          // Montagem dinâmica das Opções de Botão (Pílulas com Estrela Ouro)
+          const bubbleOptions: DialogueOptionItem[] = [];
 
-                  <p
-                    className={`text-xs sm:text-sm font-bold leading-relaxed ${
-                      isLandscape
-                        ? 'min-h-[3.4rem] flex items-center justify-start'
-                        : 'min-h-[3.0rem] flex items-center justify-center'
-                    }`}
-                  >
-                    <span>
-                      {displayedDialogueText}
-                      {!isTypingComplete && (
-                        <span
-                          className="inline-block w-1.5 h-3.5 ml-1 animate-pulse align-middle"
-                          style={{ backgroundColor: dialogueTheme.cursorColor }}
-                        />
-                      )}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              {/* SLOTS DE BOTÕES 3D DO DIÁLOGO (CONSCIENTES DO ESTADO DA QUEST) */}
-              <div className={`${isLandscape ? 'px-1' : 'px-4'} space-y-2.5 pt-0.5 animate-fade-in`}>
-                {(() => {
-                  const responses = currentStep?.playerResponses || [];
-                  const hasCustomResponses = responses.length > 0;
-                  const markerHasQuest = Boolean(activeDialogueMarker.quest || activeDialogueMarker.linkedQuestId);
-                  const markerNonDialogueEvents = (activeDialogueMarker.events || []).filter((e) => e.type !== 'dialogue');
-                  const prog = getProg(activeDialogueMarker.id);
-                  const ready = questReady(activeDialogueMarker, playerInventory);
-                  const isDuelQuest = activeDialogueMarker.quest?.kind === 'duel' || activeDialogueMarker.eventKind === 'duel';
-
-                  const handleFinalizeDialogueOption = (isPrimaryOption: boolean) => {
-                    const targetMarker = activeDialogueMarker;
-                    if (isPrimaryOption) {
-                      if (isDuelQuest || targetMarker.actionNpc?.enabled || targetMarker.matrixCardId || targetMarker.actionNpc?.matrixCardId) {
-                        setActiveDialogueMarker(null);
-                        setInspectedMarker(null);
-                        eventFreezeUntilRef.current = 0;
-                        onCloseDialogue?.();
-                        setScanBattleModalMarker(targetMarker);
-                        return;
-                      } else if (markerHasQuest) {
-                        if ((prog.accepted && !prog.done && ready) || (!prog.accepted && ready && targetMarker.quest?.kind !== 'collect')) {
-                          completeQuest(targetMarker);
-                        } else if (!prog.accepted && !prog.done) {
-                          acceptQuest(targetMarker.id);
-                        } else if (!prog.done && ready) {
-                          completeQuest(targetMarker);
-                        }
-                      }
-                      if (markerNonDialogueEvents.length > 0) {
-                        triggerEvent({ ...targetMarker, events: markerNonDialogueEvents });
-                      }
+          // Caso 1: Quest no passo final ou já aceita/concluída
+          if (markerHasQuest && (isFinalStep || prog.accepted || prog.done)) {
+            if (prog.done) {
+              bubbleOptions.push({
+                id: 'quest_done',
+                label: 'Disponha! Até logo',
+                variant: 'primary_sapphire',
+                onClick: () => {
+                  if (!isTypingComplete) {
+                    setDisplayedDialogueText(fullDialogueText);
+                    setIsTypingComplete(true);
+                    return;
+                  }
+                  handleFinalizeDialogueOption(false);
+                },
+              });
+            } else if (prog.accepted && ready) {
+              bubbleOptions.push(
+                {
+                  id: 'quest_deliver',
+                  label: 'Entregar & Finalizar!',
+                  variant: 'emerald_quest',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
+                    }
+                    handleFinalizeDialogueOption(true);
+                  },
+                },
+                {
+                  id: 'quest_deliver_later',
+                  label: 'Entregar depois',
+                  variant: 'secondary_pearl',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
+                    }
+                    handleFinalizeDialogueOption(false);
+                  },
+                }
+              );
+            } else if (prog.accepted && !ready) {
+              bubbleOptions.push(
+                {
+                  id: 'quest_fetch',
+                  label: 'Vou buscar!',
+                  variant: 'primary_sapphire',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
+                    }
+                    handleFinalizeDialogueOption(false);
+                  },
+                },
+                {
+                  id: 'quest_view_list',
+                  label: 'Ver Quests',
+                  variant: 'secondary_pearl',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
                     }
                     setActiveDialogueMarker(null);
                     setInspectedMarker(null);
                     eventFreezeUntilRef.current = 0;
                     onCloseDialogue?.();
-                  };
-
-                  // Se o NPC possui uma Quest e já está no passo final (ou quando já aceitou/concluiu a missão),
-                  // priorizamos os botões inteligentes de estado da Quest para não oferecer a mesma missão duas vezes!
-                  if (markerHasQuest && (isFinalStep || prog.accepted || prog.done)) {
-                    // 1. Quest já concluída
-                    if (prog.done) {
-                      return (
-                        <div className="max-w-[72%] mx-auto">
-                          <button
-                            onClick={() => {
-                              if (!isTypingComplete) {
-                                setDisplayedDialogueText(fullDialogueText);
-                                setIsTypingComplete(true);
-                                return;
-                              }
-                              handleFinalizeDialogueOption(false);
-                            }}
-                            className="w-full h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                            style={{ backgroundColor: dialogueTheme.buttonBg }}
-                          >
-                            <span>🙌 Disponha! Até logo</span>
-                          </button>
-                        </div>
-                      );
+                    setQuestPopupState({ open: true, initialTab: 'tarefas' });
+                  },
+                }
+              );
+            } else {
+              // Oferta inicial de Quest
+              const acceptLabel = hasCustomResponses && responses[0]?.label ? responses[0].label : 'Aceitar Missão';
+              const declineLabel = hasCustomResponses && responses[1]?.label ? responses[1].label : 'Agora não';
+              bubbleOptions.push(
+                {
+                  id: 'quest_accept',
+                  label: acceptLabel,
+                  variant: 'primary_sapphire',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
                     }
-
-                    // 2. Quest já aceita e PRONTA para entregar itens e finalizar
-                    if (prog.accepted && ready) {
-                      return (
-                        <div className="grid grid-cols-2 gap-3.5 max-w-[90%] mx-auto">
-                          <button
-                            onClick={() => {
-                              if (!isTypingComplete) {
-                                setDisplayedDialogueText(fullDialogueText);
-                                setIsTypingComplete(true);
-                                return;
-                              }
-                              handleFinalizeDialogueOption(true);
-                            }}
-                            className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_#065f46,0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                            style={{ backgroundColor: '#10b981' }}
-                          >
-                            <span>✨ Entregar & Finalizar!</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (!isTypingComplete) {
-                                setDisplayedDialogueText(fullDialogueText);
-                                setIsTypingComplete(true);
-                                return;
-                              }
-                              handleFinalizeDialogueOption(false);
-                            }}
-                            className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                            style={{ backgroundColor: dialogueTheme.buttonSecondaryBg }}
-                          >
-                            <span>👋 Entregar depois</span>
-                          </button>
-                        </div>
-                      );
+                    handleFinalizeDialogueOption(true);
+                  },
+                },
+                {
+                  id: 'quest_decline',
+                  label: declineLabel,
+                  variant: 'secondary_pearl',
+                  onClick: () => {
+                    if (!isTypingComplete) {
+                      setDisplayedDialogueText(fullDialogueText);
+                      setIsTypingComplete(true);
+                      return;
                     }
-
-                    // 3. Quest já aceita mas AINDA EM ANDAMENTO (faltam itens ou objetivos)
-                    if (prog.accepted && !ready) {
-                      return (
-                        <div className="grid grid-cols-2 gap-3.5 max-w-[90%] mx-auto">
-                          <button
-                            onClick={() => {
-                              if (!isTypingComplete) {
-                                setDisplayedDialogueText(fullDialogueText);
-                                setIsTypingComplete(true);
-                                return;
-                              }
-                              handleFinalizeDialogueOption(false);
-                            }}
-                            className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                            style={{ backgroundColor: dialogueTheme.buttonBg }}
-                          >
-                            <span>👍 Vou buscar!</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (!isTypingComplete) {
-                                setDisplayedDialogueText(fullDialogueText);
-                                setIsTypingComplete(true);
-                                return;
-                              }
-                              setActiveDialogueMarker(null);
-                              setInspectedMarker(null);
-                              eventFreezeUntilRef.current = 0;
-                              onCloseDialogue?.();
-                              setQuestPopupState({ open: true, initialTab: 'tarefas' });
-                            }}
-                            className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                            style={{ backgroundColor: dialogueTheme.buttonSecondaryBg }}
-                          >
-                            <span>📜 Ver Quests</span>
-                          </button>
-                        </div>
-                      );
-                    }
-
-                    // 4. Quest ainda NÃO aceita (oferta inicial da missão)
-                    const acceptLabel =
-                      hasCustomResponses && responses[0]?.label
-                        ? responses[0].label
-                        : '🎯 Aceitar Missão';
-                    const declineLabel =
-                      hasCustomResponses && responses[1]?.label
-                        ? responses[1].label
-                        : '👋 Agora não';
-
-                    return (
-                      <div className="grid grid-cols-2 gap-3.5 max-w-[90%] mx-auto">
-                        <button
-                          onClick={() => {
-                            if (!isTypingComplete) {
-                              setDisplayedDialogueText(fullDialogueText);
-                              setIsTypingComplete(true);
-                              return;
-                            }
-                            handleFinalizeDialogueOption(true);
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                          style={{ backgroundColor: dialogueTheme.buttonBg }}
-                        >
-                          <span>{acceptLabel}</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (!isTypingComplete) {
-                              setDisplayedDialogueText(fullDialogueText);
-                              setIsTypingComplete(true);
-                              return;
-                            }
-                            handleFinalizeDialogueOption(false);
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] cursor-pointer"
-                          style={{ backgroundColor: dialogueTheme.buttonSecondaryBg }}
-                        >
-                          <span>{declineLabel}</span>
-                        </button>
-                      </div>
-                    );
+                    handleFinalizeDialogueOption(false);
+                  },
+                }
+              );
+            }
+          }
+          // Caso 2: Respostas Customizadas configuradas no Studio
+          else if (hasCustomResponses) {
+            responses.slice(0, 3).forEach((btn, idx) => {
+              bubbleOptions.push({
+                id: `custom_resp_${idx}`,
+                label: btn.label || `Opção ${idx + 1}`,
+                variant: idx === 0 ? 'primary_sapphire' : 'secondary_pearl',
+                onClick: () => {
+                  if (!isTypingComplete) {
+                    setDisplayedDialogueText(fullDialogueText);
+                    setIsTypingComplete(true);
+                    return;
                   }
-
-                  // Se há respostas customizadas configuradas (para diálogos normais ou passos intermediários)
-                  if (hasCustomResponses) {
-                    const btn1 = responses[0];
-                    const btn2 = responses[1];
-                    const btn3 = responses[2];
-
-                    return (
-                      <div className="space-y-2">
-                        {/* Linha de Cima: Slot 1 e Slot 2 */}
-                        {(btn1 || btn2) && (
-                          <div className={`grid ${btn1 && btn2 ? 'grid-cols-2' : 'grid-cols-1 max-w-[70%] mx-auto'} gap-3.5`}>
-                            {btn1 && (
-                              <button
-                                onClick={() => {
-                                  if (!isTypingComplete) {
-                                    setDisplayedDialogueText(fullDialogueText);
-                                    setIsTypingComplete(true);
-                                    return;
-                                  }
-                                  if (btn1.nextStepIndex !== undefined && btn1.nextStepIndex < totalSteps) {
-                                    setCurrentStepIndex(btn1.nextStepIndex);
-                                  } else if (!isFinalStep) {
-                                    setCurrentStepIndex((prev) => prev + 1);
-                                  } else {
-                                    handleFinalizeDialogueOption(true);
-                                  }
-                                }}
-                                className="h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                                style={{ backgroundColor: dialogueTheme.buttonBg }}
-                              >
-                                <span>{btn1.label}</span>
-                              </button>
-                            )}
-                            {btn2 && (
-                              <button
-                                onClick={() => {
-                                  if (!isTypingComplete) {
-                                    setDisplayedDialogueText(fullDialogueText);
-                                    setIsTypingComplete(true);
-                                    return;
-                                  }
-                                  if (btn2.nextStepIndex !== undefined && btn2.nextStepIndex < totalSteps) {
-                                    setCurrentStepIndex(btn2.nextStepIndex);
-                                  } else if (!isFinalStep) {
-                                    setCurrentStepIndex((prev) => prev + 1);
-                                  } else {
-                                    const lower = (btn2.label || '').toLowerCase();
-                                    const isDecline =
-                                      lower.includes('depois') ||
-                                      lower.includes('recus') ||
-                                      lower.includes('sair') ||
-                                      lower.includes('não') ||
-                                      lower.includes('explorar') ||
-                                      lower.includes('antes') ||
-                                      lower.includes('paz');
-                                    handleFinalizeDialogueOption(!isDecline);
-                                  }
-                                }}
-                                className="h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                                style={{ backgroundColor: dialogueTheme.buttonBg }}
-                              >
-                                <span>{btn2.label}</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Linha de Baixo: Slot 3 Centralizado */}
-                        {btn3 && (
-                          <div className="max-w-[70%] mx-auto">
-                            <button
-                              onClick={() => {
-                                if (!isTypingComplete) {
-                                  setDisplayedDialogueText(fullDialogueText);
-                                  setIsTypingComplete(true);
-                                  return;
-                                }
-                                if (btn3.nextStepIndex !== undefined && btn3.nextStepIndex < totalSteps) {
-                                  setCurrentStepIndex(btn3.nextStepIndex);
-                                } else if (!isFinalStep) {
-                                  setCurrentStepIndex((prev) => prev + 1);
-                                } else {
-                                  const lower = (btn3.label || '').toLowerCase();
-                                  const isDecline = lower.includes('depois') || lower.includes('recus') || lower.includes('sair') || lower.includes('não');
-                                  handleFinalizeDialogueOption(!isDecline);
-                                }
-                              }}
-                              className="w-full h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                              style={{ backgroundColor: dialogueTheme.buttonBg }}
-                            >
-                              <span>{btn3.label}</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
+                  if (btn.nextStepIndex !== undefined && btn.nextStepIndex < totalSteps) {
+                    setCurrentStepIndex(btn.nextStepIndex);
+                  } else if (!isFinalStep) {
+                    setCurrentStepIndex((prev) => prev + 1);
+                  } else {
+                    const lower = (btn.label || '').toLowerCase();
+                    const isDecline =
+                      lower.includes('depois') ||
+                      lower.includes('recus') ||
+                      lower.includes('sair') ||
+                      lower.includes('não') ||
+                      lower.includes('explorar') ||
+                      lower.includes('antes') ||
+                      lower.includes('paz');
+                    handleFinalizeDialogueOption(!isDecline);
                   }
-
-                  // Fluxo Padrão: Botão "Continuar" para avançar frases
-                  if (!isFinalStep) {
-                    return (
-                      <div className="max-w-[70%] mx-auto">
-                        <button
-                          onClick={() => {
-                            if (!isTypingComplete) {
-                              setDisplayedDialogueText(fullDialogueText);
-                              setIsTypingComplete(true);
-                              return;
-                            }
-                            setCurrentStepIndex((prev) => prev + 1);
-                          }}
-                          className={`w-full h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] ${
-                            !isTypingComplete ? 'opacity-65 cursor-pointer' : 'opacity-100'
-                          }`}
-                          style={{ backgroundColor: dialogueTheme.buttonBg }}
-                        >
-                          <span>Continuar</span>
-                        </button>
-                      </div>
-                    );
+                },
+              });
+            });
+          }
+          // Caso 3: Passo Intermediário -> Botão Continuar
+          else if (!isFinalStep) {
+            bubbleOptions.push({
+              id: 'dialogue_continue',
+              label: 'Continuar',
+              variant: 'primary_sapphire',
+              onClick: () => {
+                if (!isTypingComplete) {
+                  setDisplayedDialogueText(fullDialogueText);
+                  setIsTypingComplete(true);
+                  return;
+                }
+                setCurrentStepIndex((prev) => prev + 1);
+              },
+            });
+          }
+          // Caso 4: Duelo / Desafio
+          else if (activeDialogueMarker.eventKind === 'duel') {
+            bubbleOptions.push(
+              {
+                id: 'duel_fight',
+                label: 'Lutar / Duelo',
+                variant: 'crimson_duel',
+                onClick: () => {
+                  const targetMarker = activeDialogueMarker;
+                  setActiveDialogueMarker(null);
+                  setInspectedMarker(null);
+                  eventFreezeUntilRef.current = 0;
+                  onCloseDialogue?.();
+                  setScanBattleModalMarker(targetMarker);
+                },
+              },
+              {
+                id: 'duel_flee',
+                label: 'Recuar',
+                variant: 'secondary_pearl',
+                onClick: () => {
+                  setActiveDialogueMarker(null);
+                  setInspectedMarker(null);
+                  eventFreezeUntilRef.current = 0;
+                  onCloseDialogue?.();
+                },
+              }
+            );
+          }
+          // Caso 5: Teleporte / Viagem
+          else if (activeDialogueMarker.type === 'travel') {
+            bubbleOptions.push(
+              {
+                id: 'travel_now',
+                label: 'Viajar Agora',
+                variant: 'amethyst_travel',
+                onClick: () => {
+                  const markerToTravel = activeDialogueMarker;
+                  setActiveDialogueMarker(null);
+                  setInspectedMarker(null);
+                  eventFreezeUntilRef.current = 0;
+                  onCloseDialogue?.();
+                  if (markerToTravel.travelTargetType === 'sub_biome') {
+                    handleTravelToSubBiome(markerToTravel);
+                  } else {
+                    handleFastTravel(markerToTravel);
                   }
+                },
+              },
+              {
+                id: 'travel_stay',
+                label: 'Ficar Aqui',
+                variant: 'secondary_pearl',
+                onClick: () => {
+                  setActiveDialogueMarker(null);
+                  setInspectedMarker(null);
+                  eventFreezeUntilRef.current = 0;
+                  onCloseDialogue?.();
+                },
+              }
+            );
+          }
+          // Caso 6: Conclusão Padrão de Diálogo
+          else {
+            bubbleOptions.push({
+              id: 'dialogue_close',
+              label: 'Até logo',
+              variant: 'primary_sapphire',
+              onClick: () => {
+                setActiveDialogueMarker(null);
+                setInspectedMarker(null);
+                eventFreezeUntilRef.current = 0;
+                onCloseDialogue?.();
+              },
+            });
+          }
 
-                  // Passo Final: Duelo / Desafio
-                  if (activeDialogueMarker.eventKind === 'duel') {
-                    return (
-                      <div className="grid grid-cols-2 gap-3.5 max-w-[85%] mx-auto">
-                        <button
-                          onClick={() => {
-                            const targetMarker = activeDialogueMarker;
-                            setActiveDialogueMarker(null);
-                            setInspectedMarker(null);
-                            eventFreezeUntilRef.current = 0;
-                            onCloseDialogue?.();
-                            setScanBattleModalMarker(targetMarker);
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                          style={{ backgroundColor: '#e11d48' }}
-                        >
-                          <span>⚔️ Lutar / Duelo</span>
-                        </button>
+          const customMotionNode =
+            liveDialogueMarker?.motionLayers &&
+            liveDialogueMarker.motionLayers.length > 0 &&
+            (!liveDialogueMarker?.dialogueCharacterPng ||
+              liveDialogueMarker.dialogueCharacterPng === liveDialogueMarker.customIconPng) &&
+            (!currentStep?.characterPng ||
+              currentStep.characterPng === liveDialogueMarker.customIconPng) ? (
+              <MotionAssetCanvas
+                src={liveDialogueMarker.customIconPng || ''}
+                alt={currentSpeaker}
+                effect={liveDialogueMarker.effect}
+                speed={liveDialogueMarker.effectSpeed ?? liveDialogueMarker.jellySpeed ?? 1.0}
+                intensity={liveDialogueMarker.effectIntensity ?? liveDialogueMarker.jellyIntensity ?? 1.0}
+                strokes={liveDialogueMarker.effectStrokes}
+                motionLayers={liveDialogueMarker.motionLayers}
+                isNpcBounce={true}
+                width={320}
+                height={320}
+                className="w-full h-full object-contain pointer-events-none"
+              />
+            ) : undefined;
 
-                        <button
-                          onClick={() => {
-                            setActiveDialogueMarker(null);
-                            setInspectedMarker(null);
-                            eventFreezeUntilRef.current = 0;
-                            onCloseDialogue?.();
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                          style={{ backgroundColor: dialogueTheme.buttonSecondaryBg }}
-                        >
-                          <span>👋 Recuar</span>
-                        </button>
-                      </div>
-                    );
-                  }
+          const isDesktopWeb = typeof window !== 'undefined' && (effectiveWebMode || window.innerWidth >= 1024);
+          const activeViewportMode: DialogueViewportMode = isLandscape
+            ? isDesktopWeb
+              ? 'desktop_landscape'
+              : 'mobile_landscape'
+            : screenWidth >= 600
+            ? 'tablet_portrait'
+            : 'mobile_portrait';
 
-                  // Passo Final: Teleporte / Viagem vinculado ao fim do diálogo
-                  if (activeDialogueMarker.type === 'travel') {
-                    return (
-                      <div className="grid grid-cols-2 gap-3.5 max-w-[85%] mx-auto">
-                        <button
-                          onClick={() => {
-                            const markerToTravel = activeDialogueMarker;
-                            setActiveDialogueMarker(null);
-                            setInspectedMarker(null);
-                            eventFreezeUntilRef.current = 0;
-                            onCloseDialogue?.();
-                            if (markerToTravel.travelTargetType === 'sub_biome') {
-                              handleTravelToSubBiome(markerToTravel);
-                            } else {
-                              handleFastTravel(markerToTravel);
-                            }
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                          style={{ backgroundColor: '#8b5cf6' }}
-                        >
-                          <span>🌌 Viajar Agora</span>
-                        </button>
+          return (
+            <>
+              {/* Vinheta suave de contraste na base */}
+              <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-transparent pointer-events-none z-[185]" />
 
-                        <button
-                          onClick={() => {
-                            setActiveDialogueMarker(null);
-                            setInspectedMarker(null);
-                            eventFreezeUntilRef.current = 0;
-                            onCloseDialogue?.();
-                          }}
-                          className="h-11 px-3 rounded-full border-[3px] border-white text-white font-extrabold text-xs shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                          style={{ backgroundColor: dialogueTheme.buttonSecondaryBg }}
-                        >
-                          <span>👋 Ficar Aqui</span>
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  // Apenas Diálogo Concluído
-                  return (
-                    <div className="max-w-[70%] mx-auto">
-                      <button
-                        onClick={() => {
-                          setActiveDialogueMarker(null);
-                          setInspectedMarker(null);
-                          eventFreezeUntilRef.current = 0;
-                          onCloseDialogue?.();
-                        }}
-                        className="w-full h-11 px-4 rounded-full border-[3px] border-white text-white font-extrabold text-xs sm:text-sm shadow-[0_5px_0_rgba(0,0,0,0.38),0_9px_16px_rgba(0,0,0,0.45)] transition-all active:translate-y-1 active:shadow-[0_1px_0_rgba(0,0,0,0.38),0_4px_8px_rgba(0,0,0,0.4)] hover:brightness-110 flex items-center justify-center drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
-                        style={{ backgroundColor: dialogueTheme.buttonBg }}
-                      >
-                        <span>👋 Até logo (Continuar no mapa)</span>
-                      </button>
-                    </div>
-                  );
-                })()}
+              <div
+                className="absolute inset-x-0 z-[190] pointer-events-auto select-none flex items-end justify-center"
+                style={{
+                  bottom: `${DEFAULT_VIEWPORT_VARIABLES[activeViewportMode]?.bottomMargin ?? 28}px`,
+                }}
+              >
+                <OrnateDialogueBubble
+                  viewportMode={activeViewportMode}
+                  speakerName={currentSpeaker}
+                  characterPng={currentCharacterPng || liveDialogueMarker?.customIconPng}
+                  fallbackColor={liveDialogueMarker?.color || '#3b82f6'}
+                  characterScale={liveDialogueMarker?.dialogueCharacterScale ?? 1}
+                  characterOffsetX={liveDialogueMarker?.dialogueCharacterOffsetX ?? 0}
+                  characterOffsetY={liveDialogueMarker?.dialogueCharacterOffsetY ?? 0}
+                  displayedText={displayedDialogueText}
+                  fullText={fullDialogueText}
+                  isTypingComplete={isTypingComplete}
+                  onSkipTyping={handleDialogueBoxClick}
+                  options={bubbleOptions}
+                  questInfo={questInfo}
+                  customMotionAsset={customMotionNode}
+                  currentStepIndex={currentStepIndex}
+                  totalSteps={totalSteps}
+                />
               </div>
-            </div>
-          </div>
-        )}
+            </>
+          );
+        })()}
 
         {/* =========================================================================
             HUD DE INTERCEPTAÇÃO & ESCOLTA GUIADA (BANNER DE LOCOMOÇÃO + DIÁLOGO CINEMÁTICO)

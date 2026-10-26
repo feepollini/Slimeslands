@@ -135,57 +135,18 @@ export function getBuiltInUv2to1DataUrl(
   return url;
 }
 
+export const OFFICIAL_40_UV_TEXTURES: PlanetUvTextureItem[] = Array.from({ length: 40 }, (_, i) => {
+  const num = String(i + 1).padStart(2, '0');
+  return {
+    id: `uv-planet-${num}`,
+    name: `Textura UV ${num}`,
+    url: `/assets/planets/uv/UV_${num}.png`,
+    accentColor: '#38bdf8',
+  };
+});
+
 export function getDefaultUvTextureLibrary(): PlanetUvTextureItem[] {
-  return [
-    {
-      id: 'uv-preset-slimelands',
-      name: 'UV 2:1 • Gaia Esmeralda & Mares',
-      url: getBuiltInUv2to1DataUrl('slimelands', '#0284c7', '#10b981', '#34d399'),
-      accentColor: '#38bdf8',
-    },
-    {
-      id: 'uv-preset-pyros',
-      name: 'UV 2:1 • Magma & Obsidiana',
-      url: getBuiltInUv2to1DataUrl('pyros', '#7c2d12', '#f97316', '#facc15'),
-      accentColor: '#f97316',
-    },
-    {
-      id: 'uv-preset-kronos',
-      name: 'UV 2:1 • Gigante Gasoso Dourado',
-      url: getBuiltInUv2to1DataUrl('kronos', '#b45309', '#fbbf24', '#fef08a'),
-      accentColor: '#fbbf24',
-    },
-    {
-      id: 'uv-preset-glacies',
-      name: 'UV 2:1 • Safira Glacial',
-      url: getBuiltInUv2to1DataUrl('glacies', '#1e3a8a', '#38bdf8', '#e0f2fe'),
-      accentColor: '#60a5fa',
-    },
-    {
-      id: 'uv-preset-arcana',
-      name: 'UV 2:1 • Nebulosa Ametista',
-      url: getBuiltInUv2to1DataUrl('arcana', '#4c1d95', '#a855f7', '#f0abfc'),
-      accentColor: '#a855f7',
-    },
-    {
-      id: 'uv-preset-lunar',
-      name: 'UV 2:1 • Crateras de Platina Lunar',
-      url: getBuiltInUv2to1DataUrl('lunar', '#475569', '#94a3b8', '#f1f5f9'),
-      accentColor: '#e2e8f0',
-    },
-    {
-      id: 'uv-preset-coral',
-      name: 'UV 2:1 • Aurora Rubra & Quartzo',
-      url: getBuiltInUv2to1DataUrl('coral', '#881337', '#f43f5e', '#fda4af'),
-      accentColor: '#fb7185',
-    },
-    {
-      id: 'uv-preset-dune',
-      name: 'UV 2:1 • Dunas de Âmbar & Cobre',
-      url: getBuiltInUv2to1DataUrl('dune', '#78350f', '#d97706', '#fde68a'),
-      accentColor: '#f59e0b',
-    },
-  ];
+  return OFFICIAL_40_UV_TEXTURES;
 }
 
 export function buildDefaultMarkersForPlanet(
@@ -977,6 +938,7 @@ function buildSixStarConstellationSystems(
     },
   ];
 
+  let celestialBodyCounter = 0;
   return starDefinitions.map((star) => ({
     id: star.id,
     name: star.name,
@@ -991,12 +953,29 @@ function buildSixStarConstellationSystems(
     status: 'unlocked',
     planets: star.planets.map((p) => {
       const isSlimelands = p.id === 'planet-slimelands' || p.id === 'solar-planet-1';
+      const pIdx = celestialBodyCounter++;
+      const planetUvUrl = OFFICIAL_40_UV_TEXTURES[pIdx % 40]?.url || `/assets/planets/uv/UV_${String((pIdx % 40) + 1).padStart(2, '0')}.png`;
+
+      const mappedMoons = (p.moons || []).map((m) => {
+        const mIdx = celestialBodyCounter++;
+        const moonUvUrl = OFFICIAL_40_UV_TEXTURES[mIdx % 40]?.url || `/assets/planets/uv/UV_${String((mIdx % 40) + 1).padStart(2, '0')}.png`;
+        return {
+          ...m,
+          imagePng: m.imagePng || defaultPlanetImageUrl,
+          uvTexturePng: moonUvUrl,
+          markers:
+            m.markers && m.markers.length > 0
+              ? m.markers
+              : buildDefaultMarkersForPlanet(m.id, m.name, project),
+        };
+      });
+
       return {
         id: p.id,
         name: p.name,
         description: p.description,
         planetImagePng: defaultPlanetImageUrl,
-        uvTexturePng: pickUv(p.uvIdx),
+        uvTexturePng: planetUvUrl,
         markerIconEmoji: p.markerIconEmoji,
         glowColor: p.glowColor,
         hasRings: p.hasRings,
@@ -1006,15 +985,7 @@ function buildSixStarConstellationSystems(
         selfRotateSpeed: 0.65,
         initialAngleDeg: p.initialAngleDeg,
         status: 'unlocked',
-        moons: (p.moons || []).map((m, mIdx) => ({
-          ...m,
-          imagePng: m.imagePng || defaultPlanetImageUrl,
-          uvTexturePng: m.uvTexturePng || pickUv((p.uvIdx + mIdx + 1) % uvLibrary.length),
-          markers:
-            m.markers && m.markers.length > 0
-              ? m.markers
-              : buildDefaultMarkersForPlanet(m.id, m.name, project),
-        })),
+        moons: mappedMoons,
         markers: isSlimelands
           ? slimelandsMarkers
           : buildDefaultMarkersForPlanet(p.id, p.name, project),
@@ -1027,9 +998,14 @@ export function getOrCreatePlanetGlobeConfig(project: MapProject): PlanetGlobeCo
   const existing = project.planetGlobe;
   const baseImagePng = existing?.planetImagePng || DEFAULT_PLANET_IMAGE_URL;
 
+  const isLegacyProcedural = (url?: string) =>
+    !url || url.startsWith('data:image/') || url.includes('uv-preset');
+
   const defaultUvLib = getDefaultUvTextureLibrary();
   const uvTextureLibrary: PlanetUvTextureItem[] =
-    existing?.uvTextureLibrary && existing.uvTextureLibrary.length > 0
+    existing?.uvTextureLibrary &&
+    existing.uvTextureLibrary.length >= 40 &&
+    !existing.uvTextureLibrary.some((item) => isLegacyProcedural(item.url))
       ? existing.uvTextureLibrary
       : defaultUvLib;
 
@@ -1072,9 +1048,16 @@ export function getOrCreatePlanetGlobeConfig(project: MapProject): PlanetGlobeCo
             ...canonP,
             planetImagePng: ep.planetImagePng || canonP.planetImagePng || baseImagePng,
             uvTexturePng:
-              ep.uvTexturePng ||
-              canonP.uvTexturePng ||
-              uvTextureLibrary[(index + pIdx) % Math.max(1, uvTextureLibrary.length)]?.url,
+              !isLegacyProcedural(ep.uvTexturePng)
+                ? ep.uvTexturePng
+                : canonP.uvTexturePng,
+            moons: (canonP.moons || []).map((canonM) => {
+              const em = (ep.moons || []).find((m) => m.id === canonM.id);
+              return {
+                ...canonM,
+                uvTexturePng: em && !isLegacyProcedural(em.uvTexturePng) ? em.uvTexturePng : canonM.uvTexturePng,
+              };
+            }),
             markers:
               canonP.id === 'planet-slimelands' || canonP.id === 'solar-planet-1'
                 ? slimelandsMarkers
@@ -1102,7 +1085,7 @@ export function getOrCreatePlanetGlobeConfig(project: MapProject): PlanetGlobeCo
     title: existing?.title || 'Mundo de Slimelands',
     systemName: existing?.systemName || 'Constelação Real',
     planetImagePng: baseImagePng,
-    uvTexturePng: existing?.uvTexturePng || uvTextureLibrary[0]?.url,
+    uvTexturePng: !isLegacyProcedural(existing?.uvTexturePng) ? existing!.uvTexturePng : (canonicalSix[0]?.planets?.[1]?.uvTexturePng || '/assets/planets/uv/UV_02.png'),
     sunName: existing?.sunName || 'Solaris Prime',
     sunSizePx: existing?.sunSizePx ?? 56,
     showCentralSun: existing?.showCentralSun ?? true,
@@ -2137,13 +2120,13 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
 
       bgTwinkleMat.uniforms.uTime.value = t;
 
-      // Gentle continuous 3D auto-rotation when not dragging
+      // Rotação sutil e suave na constelação
       if (!st.isDragging) {
-        st.autoRotPhase += dt * 0.24;
+        st.autoRotPhase += dt * 0.02;
       }
-      const autoYaw = Math.sin(st.autoRotPhase) * 0.16 + Math.cos(st.autoRotPhase * 0.45) * 0.07;
-      const autoPitch = Math.sin(st.autoRotPhase * 0.65) * 0.075;
-      const autoRoll = Math.sin(st.autoRotPhase * 0.38) * 0.028;
+      const autoYaw = Math.sin(st.autoRotPhase) * 0.015;
+      const autoPitch = 0;
+      const autoRoll = 0;
 
       st.rotY += (st.targetRotY - st.rotY) * 0.08;
       st.rotX += (st.targetRotX - st.rotX) * 0.08;
@@ -2154,8 +2137,8 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       st.panY += (st.targetPanY - st.panY) * 0.09;
 
       // Apply 3D rotation + pointer parallax to the Constellation Glow Group
-      const totalRotY = st.rotY + autoYaw + st.pointerParallaxX * 0.14;
-      const totalRotX = st.rotX + autoPitch + st.pointerParallaxY * 0.11;
+      const totalRotY = st.rotY + autoYaw + st.pointerParallaxX * 0.03;
+      const totalRotX = st.rotX + autoPitch + st.pointerParallaxY * 0.02;
       constellationGroup.rotation.y = totalRotY;
       constellationGroup.rotation.x = totalRotX;
       constellationGroup.rotation.z = autoRoll;
@@ -2570,7 +2553,8 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
       }
       setFocusedBodyId(bodyId);
       onSelectPausedPlanet?.(bodyId);
-      camStateRef.current.targetDistance = 16.5;
+      // Aproxima a câmera do planeta para inspeção e rotação em 360 graus
+      camStateRef.current.targetDistance = 6.2;
     },
     [focusedBodyId, onSelectPausedPlanet, triggerApproachPlanet]
   );
@@ -2782,8 +2766,8 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
         mesh: planetGroup,
         sphereMesh: planetMesh,
         orbitRadius,
-        orbitSpeed: ((planet.orbitSpeed || 10) * Math.PI) / 180 * 0.35,
-        selfRotateSpeed: planet.selfRotateSpeed ?? 0.65,
+        orbitSpeed: ((planet.orbitSpeed || 10) * Math.PI) / 180 * 0.04,
+        selfRotateSpeed: 0.02,
         baseAngle: ((planet.initialAngleDeg || pIdx * 72) * Math.PI) / 180,
         planetObj: planet,
       });
@@ -2845,8 +2829,8 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
           mesh: moonGroup,
           sphereMesh: moonMesh,
           orbitRadius: moonOrbitR,
-          orbitSpeed: ((moon.orbitSpeed || 20) * Math.PI) / 180 * 0.4,
-          selfRotateSpeed: 0.85,
+          orbitSpeed: ((moon.orbitSpeed || 20) * Math.PI) / 180 * 0.05,
+          selfRotateSpeed: 0.02,
           baseAngle: ((moon.initialAngleDeg || mIdx * 140) * Math.PI) / 180,
           parentId: planet.id,
           planetObj: moonAsPlanet,
@@ -2865,7 +2849,8 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
       const dt = Math.min(0.05, (now - lastTime) * 0.001);
       lastTime = now;
 
-      if (!approachingBodyId) {
+      // Pausa a translação quando o usuário estiver inspecionando ou aproximando de um planeta focado
+      if (!approachingBodyId && !focusedBodyId) {
         simTime += dt;
       }
 
@@ -2875,7 +2860,7 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
           const x = Math.cos(angle) * body.orbitRadius;
           const z = Math.sin(angle) * body.orbitRadius * 0.88;
           body.mesh.position.set(x, 0, z);
-          body.sphereMesh.rotation.y += dt * body.selfRotateSpeed;
+          body.sphereMesh.rotation.y += dt * (body.selfRotateSpeed || 0.02);
         }
       });
 
@@ -2890,7 +2875,7 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
             const mz =
               parent.mesh.position.z + Math.sin(angle) * body.orbitRadius;
             body.mesh.position.set(mx, my, mz);
-            body.sphereMesh.rotation.y += dt * body.selfRotateSpeed;
+            body.sphereMesh.rotation.y += dt * (body.selfRotateSpeed || 0.02);
           }
         }
       });
@@ -3180,6 +3165,11 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
 
   const planetId = activePlanet?.id || 'planet-slimelands';
   const planetName = activePlanet?.name || config.title || 'Mundo de Slimelands';
+  const uvTextureUrl =
+    activePlanet?.uvTexturePng ||
+    config.uvTexturePng ||
+    OFFICIAL_40_UV_TEXTURES[0]?.url ||
+    DEFAULT_PLANET_IMAGE_URL;
   const planetImageUrl =
     activePlanet?.planetImagePng ||
     config.planetImagePng ||
@@ -3325,14 +3315,11 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
     scene.add(planetRoot);
 
     const sphereGeo = new THREE.SphereGeometry(1.0, 64, 64);
-    const tex = getOrLoadPlanetTexture(planetImageUrl, false);
-    const isDefaultAsset = planetImageUrl === DEFAULT_PLANET_IMAGE_URL;
-    const planetMat = create3DPlanetPngDiveMaterial({
+    // Usa a mesma textura equirretangular 2:1 da visualização planetária
+    const tex = getOrLoadPlanetTexture(uvTextureUrl, true);
+    const planetMat = create3DEquirectangularUvMaterial({
       texture: tex,
       atmosphereColor,
-      tintColor: atmosphereColor,
-      tintStrength:
-        planetId === 'planet-slimelands' || !isDefaultAsset ? 0.0 : 0.30,
     });
     const planetMesh = new THREE.Mesh(sphereGeo, planetMat);
     planetRoot.add(planetMesh);
@@ -3397,8 +3384,20 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
 
       const next: Array<{ id: string; x: number; y: number; visible: boolean }> =
         [];
+      const camPos = camera.position;
+      const planetCenter = planetRoot.position;
       markerAnchors.forEach((anchor, id) => {
         anchor.getWorldPosition(tempVec);
+        // Marcador só é visível se a normal da face estiver apontando em direção à câmera
+        const toCamX = camPos.x - tempVec.x;
+        const toCamY = camPos.y - tempVec.y;
+        const toCamZ = camPos.z - tempVec.z;
+        const normX = tempVec.x - planetCenter.x;
+        const normY = tempVec.y - planetCenter.y;
+        const normZ = tempVec.z - planetCenter.z;
+        const dot = normX * toCamX + normY * toCamY + normZ * toCamZ;
+        const isFacingCamera = dot > 0.05;
+
         tempVec.project(camera);
         const sx = (tempVec.x * 0.5 + 0.5) * width;
         const sy = (-tempVec.y * 0.5 + 0.5) * height;
@@ -3406,7 +3405,7 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
           id,
           x: sx,
           y: sy,
-          visible: tempVec.z < 1.0,
+          visible: isFacingCamera && tempVec.z < 1.0,
         });
       });
       setProjectedMarkers(next);
@@ -3450,13 +3449,11 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
     globeViewRef.current.startX = e.clientX;
     globeViewRef.current.startY = e.clientY;
 
-    globeViewRef.current.targetTiltY = Math.max(
-      -0.65,
-      Math.min(0.65, globeViewRef.current.targetTiltY + dx * 0.0045)
-    );
+    // Rotação livre e contínua 360 graus na horizontal (Y) e ampla na vertical (X)
+    globeViewRef.current.targetTiltY += dx * 0.0075;
     globeViewRef.current.targetTiltX = Math.max(
-      -0.55,
-      Math.min(0.55, globeViewRef.current.targetTiltX + dy * 0.0045)
+      -1.35,
+      Math.min(1.35, globeViewRef.current.targetTiltX + dy * 0.0065)
     );
   };
 

@@ -560,6 +560,7 @@ export interface MapMarker {
   dialogueCharacterPng?: string; // PNG centralizado do personagem/criatura
   dialogueCharacterName?: string; // Nome do personagem
   dialogueCharacterScale?: number; // Escala/Zoom da PNG no diálogo (ex: 0.5 a 1.8, padrão 1.0)
+  dialogueCharacterOffsetX?: number;
   dialogueCharacterOffsetY?: number; // Deslocamento vertical no diálogo em pixels (ex: -100 a +100)
   dialogueText?: string; // Texto/Falas do diálogo (fala inicial ou compatibilidade)
   dialogueSteps?: {

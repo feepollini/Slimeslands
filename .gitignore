@@ -21,3 +21,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Cartas locais adicionais (armazenamento futuro em nuvem / Firecloud)
+public/cards/*

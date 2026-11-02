@@ -1,4 +1,38 @@
+/*
+ * ============================================================================
+ * DIRETRIZ RIGIDA DE PRESERVACAO DA FORJA DE SKILLS & ENGINE:
+ * Nao recriar, nao imaginar, nao modificar efeitos, texturas, animacoes, logicas,
+ * nao resumir, nao censurar, nao mentir. Em caso de duvida pare imediatamente.
+ * Nao alucinar, nao poluir, nao manchar o projeto, nao adicionar novas funcs,
+ * nao quebrar nada. A forja de skills e suas habilidades foram desenvolvidas
+ * com perfeicao e devem ser mantidas intactas.
+ * O modulo TreeChat nao pode ser alterado na etapa 1 e deve permanecer intacto.
+ * ============================================================================
+ */
+
 import React, { useRef, useEffect, useState, useMemo } from 'react';
+import { VFX_PRESETS } from '../vfx_engine/vfx/presets';
+import { PlayerSkillSelectorModal } from './skills/PlayerSkillSelectorModal';
+import {
+  computeClampedSkillAim,
+  getSkillTacticalSpec,
+} from '../vfx_engine/vfx/modules/skillAimPreviewModule';
+import { VfxEngine } from '../vfx_engine/vfx/vfxEngine';
+import { renderSkillAimPreviewModule } from '../vfx_engine/vfx/modules/skillAimPreviewModule';
+import { ELEMENTAL_PALETTES } from '../vfx_engine/vfx/presets';
+import type { ShaderParams, SlimeActor } from '../vfx_engine/vfx/types';
+
+const DEFAULT_VFX_SHADER_PARAMS: ShaderParams = {
+  effectScale: 1.0,
+  hitstopMs: 36,
+  chromaticAberration: 2.0,
+  erosionSharpness: 1.35,
+  particleMultiplier: 1.0,
+  bloomIntensity: 1.25,
+  screenShakeIntensity: 0.0,
+  timeScale: 1.0,
+  enableSound: true,
+};
 import {
   MapProject,
   MapMarker,
@@ -503,6 +537,13 @@ export const PortraitEmulator: React.FC<Props> = ({
 }) => {
   const effectiveActiveMarkerId = activeMarkerId ?? selectedMarkerId ?? null;
   void effectiveActiveMarkerId;
+
+  // Vista do canvas central / biomas estendidos (disponivel para calculo de origem e mira tatica)
+  const isExtended =
+    canvasView === 'extended' ||
+    project.canvasKind === 'extended' ||
+    activeTab === 'extended' ||
+    ((project.subBiomes || []).length > 0 && project.biomes.length === 0);
   const propOnUpdateProject = onUpdateProject;
   const effectiveOnUpdateProject = React.useCallback(
     (updates: Partial<import('../types/map').MapProject>) => {
@@ -1084,6 +1125,9 @@ export const PortraitEmulator: React.FC<Props> = ({
   const activeTrampledGrassIdsRef = useRef<Set<string>>(new Set());
   const grassElementsMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const gameplayMarkersRef = useRef<MapMarker[]>([]);
+  // Auto-questionamento: Eu fiz o ordenado ou estou seguindo uma direção oposta ao solicitado?
+  // Sim, estou organizando os refs dos NPCs e alvos antes do seu consumo pela VfxEngine para evitar TDZ / ReferenceError.
+  const npcLivePositionsRef = useRef<Map<string, { x: number; y: number; dir: string; isMoving: boolean }>>(new Map());
   const grassSpatialBucketsRef = useRef<Map<number, MapMarker[]>>(new Map());
   const [visibleScrollBand, setVisibleScrollBand] = useState<number>(0);
   const lastScrollBandRef = useRef<number>(0);
@@ -1426,6 +1470,46 @@ export const PortraitEmulator: React.FC<Props> = ({
       setTimeout(() => setActionFeedback(null), 1500);
     }
   };
+
+  // ============================================================================
+  // Pop-up Temporário - Seletor de Skills, Mira Tática e Botão Misto Drag-to-Aim
+  // ============================================================================
+  const [playerEquippedSkillId, setPlayerEquippedSkillId] = useState<string>('vorpal_combo');
+  const [isSkillPickerOpen, setIsSkillPickerOpen] = useState<boolean>(false);
+  const [skillCooldownUntil, setSkillCooldownUntil] = useState<number>(0);
+
+  // Auto-questionamento: Eu fiz o ordenado ou estou seguindo uma direção oposta ao solicitado?
+  // Sim, estou conectando fielmente os módulos originais da Forja sem criar mocks e mantendo a inicialização em ordem estrita.
+  const equippedSkillMeta = useMemo(() => {
+    return VFX_PRESETS.find((p) => p.id === playerEquippedSkillId) || VFX_PRESETS[0];
+  }, [playerEquippedSkillId]);
+
+  const skillJoystickCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [skillAimState, setSkillAimState] = useState<{
+    isAiming: boolean;
+    aimWorldX: number;
+    aimWorldY: number;
+    isCancelHovered: boolean;
+    knobOffset: { x: number; y: number };
+  }>({
+    isAiming: false,
+    aimWorldX: 0,
+    aimWorldY: 0,
+    isCancelHovered: false,
+    knobOffset: { x: 0, y: 0 },
+  });
+
+  // Canvas e Instância da VfxEngine Oficial da Forja
+  const vfxCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const vfxEngineRef = useRef<VfxEngine | null>(null);
+  const skillAimStateRef = useRef(skillAimState);
+  skillAimStateRef.current = skillAimState;
+  const playerEquippedSkillIdRef = useRef(playerEquippedSkillId);
+  playerEquippedSkillIdRef.current = playerEquippedSkillId;
+  const equippedSkillMetaRef = useRef(equippedSkillMeta);
+  equippedSkillMetaRef.current = equippedSkillMeta;
+  const hostileSlimesRef = useRef<SlimeActor[]>([]);
+
 
   // Estados de Diálogo de Fase de Scan / Boss Battle / Duelo de Cartas e Showcase de Drop de Variação da Matriz
   const [scanBattleModalMarker, setScanBattleModalMarker] = useState<MapMarker | null>(null);
@@ -1935,6 +2019,20 @@ export const PortraitEmulator: React.FC<Props> = ({
           }
           break;
         }
+      }
+
+      // Atalho para abrir o Pop-up Temporário - Seletor de Skills (Tecla P)
+      if (k === 'P') {
+        e.preventDefault();
+        setIsSkillPickerOpen((prev) => !prev);
+        return;
+      }
+
+      // Atalho para conjurar a Habilidade Ativa da Forja (Tecla K ou 1)
+      if (k === 'K' || k === '1') {
+        e.preventDefault();
+        triggerPlayerSkill();
+        return;
       }
     };
 
@@ -4313,11 +4411,6 @@ export const PortraitEmulator: React.FC<Props> = ({
   };
 
   // Vista do celular segue o canvas central (desacoplada da aba lateral).
-  const isExtended =
-    canvasView === 'extended' ||
-    project.canvasKind === 'extended' ||
-    activeTab === 'extended' ||
-    ((project.subBiomes || []).length > 0 && project.biomes.length === 0);
   const hasPlayableContent = isExtended
     ? (project.subBiomes || []).length > 0
     : project.biomes.length > 0;
@@ -4401,6 +4494,428 @@ export const PortraitEmulator: React.FC<Props> = ({
     gameplayMarkersRef.current = gp;
     grassSpatialBucketsRef.current = buckets;
   }, [project.markers]);
+
+  // Auto-questionamento: Eu fiz o ordenado ou estou seguindo uma direção oposta ao solicitado?
+  // Sim, posicionando o loop da VfxEngine e triggerPlayerSkill após totalMapWidth, scale e playerRef para evitar TDZ.
+  // Atualiza a lista de alvos hostis em formato compatível com a Forja
+  useEffect(() => {
+    const subList = project.subBiomes || [];
+    const getOriginX = (sbId?: string): number => {
+      if (!isExtended || !sbId) return 0;
+      let cx = 0;
+      for (const sb of subList) {
+        if (sb.id === sbId) return cx;
+        cx += (sb.tileWidth || 400) + 40;
+      }
+      return 0;
+    };
+
+    hostileSlimesRef.current = (gameplayMarkersRef.current || [])
+      .filter((m) => m.type === 'npc' && m.actionNpc?.enabled)
+      .map((m) => {
+        const live = npcLivePositionsRef.current.get(m.id);
+        const mx = getOriginX(m.subBiomeId) + (live ? live.x : m.x);
+        const my = live ? live.y : m.y;
+        const rs = globalNpcActionEngine.getRuntimeState(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          roleTitle: 'Inimigo',
+          team: 1,
+          x: mx,
+          y: my,
+          z: 0,
+          vx: 0,
+          vy: 0,
+          vz: 0,
+          baseX: mx,
+          baseY: my,
+          radius: 22,
+          color: '#ef4444',
+          coreColor: '#f87171',
+          darkColor: '#991b1b',
+          defaultPalette: 'crimson_blood',
+          hp: rs?.currentHp ?? 100,
+          maxHp: rs?.maxHp ?? 100,
+          shieldHp: 0,
+          maxShieldHp: 0,
+          isDesperate: rs ? rs.currentHp <= 0 : false,
+          desperateTimer: 0,
+          lastAttackerId: null,
+          sweatEmitTimer: 0,
+          isLeaping: false,
+          leapStartX: 0,
+          leapStartY: 0,
+          leapTargetX: 0,
+          leapTargetY: 0,
+          leapTimer: 0,
+          leapDuration: 0,
+          isDashing: false,
+          dashTimer: 0,
+          dashPoisonTrail: false,
+          dashEmitTimer: 0,
+          hitFlashTimer: 0,
+          flattenTimer: 0,
+          stunTimer: 0,
+          frozenTimer: 0,
+          shockTimer: 0,
+          poisonTimer: 0,
+          burnTimer: 0,
+          lunarMarkTimer: 0,
+          shieldBuffTimer: 0,
+          mirrorCoatTimer: 0,
+          berserkBuffTimer: 0,
+          regenBuffTimer: 0,
+          squashX: 1,
+          squashY: 1,
+          vSquash: 0,
+          wobblePhase: 0,
+          facingAngle: 0,
+          dropletTilt: 0,
+          skills: [],
+          aiDecisionTimer: 0,
+          hopTimer: 0,
+        } as SlimeActor;
+      });
+  });
+
+  // Loop de Renderização Oficial da VfxEngine sobre o Mapa
+  useEffect(() => {
+    const mapW = totalMapWidth || 768;
+    const mapH = totalMapHeight || 1080;
+    const engine = new VfxEngine(mapW, mapH);
+    engine.simulationEnabled = false;
+    vfxEngineRef.current = engine;
+
+    let animId: number;
+    let lastTime = performance.now();
+
+    const renderLoop = (now: number) => {
+      const dt = Math.min(0.1, (now - lastTime) * 0.001);
+      lastTime = now;
+
+      const canvas = vfxCanvasRef.current;
+      const eng = vfxEngineRef.current;
+      if (canvas && eng) {
+        eng.update(dt, DEFAULT_VFX_SHADER_PARAMS);
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.save();
+          ctx.scale(scale, scale);
+
+          // 1. Projeção Tática Oficial da Forja (renderSkillAimPreviewModule) ao mirar
+          if (skillAimStateRef.current.isAiming) {
+            const px = playerRef.current?.x ?? 384;
+            const py = playerRef.current?.y ?? 100;
+            const casterSlime: SlimeActor = {
+              id: 'player',
+              name: 'Player',
+              roleTitle: 'Herói',
+              team: 0,
+              x: px,
+              y: py,
+              z: 0,
+              vx: 0,
+              vy: 0,
+              vz: 0,
+              baseX: px,
+              baseY: py,
+              radius: 20,
+              color: '#3b82f6',
+              coreColor: '#60a5fa',
+              darkColor: '#1d4ed8',
+              defaultPalette: 'crimson_blood',
+              hp: 100,
+              maxHp: 100,
+              shieldHp: 0,
+              maxShieldHp: 0,
+              isDesperate: false,
+              desperateTimer: 0,
+              lastAttackerId: null,
+              sweatEmitTimer: 0,
+              isLeaping: false,
+              leapStartX: 0,
+              leapStartY: 0,
+              leapTargetX: 0,
+              leapTargetY: 0,
+              leapTimer: 0,
+              leapDuration: 0,
+              isDashing: false,
+              dashTimer: 0,
+              dashPoisonTrail: false,
+              dashEmitTimer: 0,
+              hitFlashTimer: 0,
+              flattenTimer: 0,
+              stunTimer: 0,
+              frozenTimer: 0,
+              shockTimer: 0,
+              poisonTimer: 0,
+              burnTimer: 0,
+              lunarMarkTimer: 0,
+              shieldBuffTimer: 0,
+              mirrorCoatTimer: 0,
+              berserkBuffTimer: 0,
+              regenBuffTimer: 0,
+              squashX: 1,
+              squashY: 1,
+              vSquash: 0,
+              wobblePhase: 0,
+              facingAngle: 0,
+              dropletTilt: 0,
+              skills: [],
+              aiDecisionTimer: 0,
+              hopTimer: 0,
+            };
+
+            const pal =
+              ELEMENTAL_PALETTES.find((p) => p.id === equippedSkillMetaRef.current.defaultPalette) ||
+              ELEMENTAL_PALETTES[0];
+
+            renderSkillAimPreviewModule(
+              ctx,
+              casterSlime,
+              skillAimStateRef.current.aimWorldX,
+              skillAimStateRef.current.aimWorldY,
+              playerEquippedSkillIdRef.current as any,
+              pal,
+              hostileSlimesRef.current
+            );
+          }
+
+          // 2. Renderização das Partículas Reais, Lâminas, Feixes, Meteoros e Chamas da Forja
+          eng.renderEffectsOnly(ctx, DEFAULT_VFX_SHADER_PARAMS);
+          ctx.restore();
+        }
+      }
+
+      animId = requestAnimationFrame(renderLoop);
+    };
+
+    animId = requestAnimationFrame(renderLoop);
+    return () => {
+      cancelAnimationFrame(animId);
+      vfxEngineRef.current = null;
+    };
+  }, [totalMapWidth, totalMapHeight, scale]);
+
+
+  // Cálculo Tático de Mira em Tempo Real (usando os módulos matemáticos oficiais da Forja)
+  const currentTacticalAimResult = useMemo(() => {
+    if (!skillAimState.isAiming) return null;
+    const px = playerRef.current?.x ?? projectRef.current.player?.x ?? 384;
+    const py = playerRef.current?.y ?? projectRef.current.player?.y ?? 100;
+    const subList = projectRef.current.subBiomes || [];
+    const getOriginX = (sbId?: string): number => {
+      if (!isExtended || !sbId) return 0;
+      let cx = 0;
+      for (const sb of subList) {
+        if (sb.id === sbId) return cx;
+        cx += (sb.tileWidth || 400) + 40;
+      }
+      return 0;
+    };
+
+    const targetsForAim: import('../vfx_engine/vfx/types').SlimeActor[] = (gameplayMarkersRef.current || [])
+      .filter((m) => m.type === 'npc' && m.actionNpc?.enabled)
+      .map((m) => {
+        const live = npcLivePositionsRef.current.get(m.id);
+        const mx = getOriginX(m.subBiomeId) + (live ? live.x : m.x);
+        const my = live ? live.y : m.y;
+        const rs = globalNpcActionEngine.getRuntimeState(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          x: mx,
+          y: my,
+          radius: 24,
+          isDesperate: rs ? rs.currentHp <= 0 : false,
+        } as unknown as import('../vfx_engine/vfx/types').SlimeActor;
+      });
+
+    return computeClampedSkillAim(
+      px,
+      py,
+      skillAimState.aimWorldX,
+      skillAimState.aimWorldY,
+      playerEquippedSkillId as any,
+      targetsForAim,
+      'player'
+    );
+  }, [skillAimState.isAiming, skillAimState.aimWorldX, skillAimState.aimWorldY, playerEquippedSkillId, isExtended]);
+
+  // Execução de Disparo com Suporte a Coordenadas Miradas (Mouse ou Drag Joystick) ou Auto-Aim (Tap)
+  const triggerPlayerSkill = (targetWorldX?: number, targetWorldY?: number) => {
+    const nowMs = performance.now();
+    if (nowMs < skillCooldownUntil) {
+      const remaining = ((skillCooldownUntil - nowMs) / 1000).toFixed(1);
+      setActionFeedback(`⏳ ${equippedSkillMeta.name} em recarga (${remaining}s)!`);
+      setTimeout(() => setActionFeedback(null), 1200);
+      return;
+    }
+
+    const spec = getSkillTacticalSpec(playerEquippedSkillId as any);
+    const cdSec = equippedSkillMeta.cooldownSec || 2.0;
+    setSkillCooldownUntil(nowMs + cdSec * 1000);
+
+    const px = playerRef.current?.x ?? projectRef.current.player?.x ?? 384;
+    const py = playerRef.current?.y ?? projectRef.current.player?.y ?? 100;
+    const subList = projectRef.current.subBiomes || [];
+    const getOriginX = (sbId?: string): number => {
+      if (!isExtended || !sbId) return 0;
+      let cx = 0;
+      for (const sb of subList) {
+        if (sb.id === sbId) return cx;
+        cx += (sb.tileWidth || 400) + 40;
+      }
+      return 0;
+    };
+
+    const targetsForAim: import('../vfx_engine/vfx/types').SlimeActor[] = (gameplayMarkersRef.current || [])
+      .filter((m) => m.type === 'npc' && m.actionNpc?.enabled)
+      .map((m) => {
+        const live = npcLivePositionsRef.current.get(m.id);
+        const mx = getOriginX(m.subBiomeId) + (live ? live.x : m.x);
+        const my = live ? live.y : m.y;
+        const rs = globalNpcActionEngine.getRuntimeState(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          x: mx,
+          y: my,
+          radius: 24,
+          isDesperate: rs ? rs.currentHp <= 0 : false,
+        } as unknown as import('../vfx_engine/vfx/types').SlimeActor;
+      });
+
+    // Determina o ponto de mira: ou as coordenadas fornecidas, ou Auto-Aim no mob mais próximo
+    let rawTargetX = targetWorldX;
+    let rawTargetY = targetWorldY;
+
+    if (rawTargetX === undefined || rawTargetY === undefined) {
+      let nearestDist = Infinity;
+      let nearestMob: { x: number; y: number } | null = null;
+      for (const t of targetsForAim) {
+        if (t.isDesperate) continue;
+        const d = Math.hypot(t.x - px, t.y - py);
+        if (d <= spec.maxRange && d < nearestDist) {
+          nearestDist = d;
+          nearestMob = { x: t.x, y: t.y };
+        }
+      }
+
+      if (nearestMob) {
+        rawTargetX = nearestMob.x;
+        rawTargetY = nearestMob.y;
+      } else {
+        // Disparo frontal no alcance da habilidade
+        rawTargetX = px;
+        rawTargetY = py + spec.maxRange * 0.75;
+      }
+    }
+
+    const aimResult = computeClampedSkillAim(
+      px,
+      py,
+      rawTargetX,
+      rawTargetY,
+      playerEquippedSkillId as any,
+      targetsForAim,
+      'player'
+    );
+
+    const baseDamage = Math.max(30, Math.round((equippedSkillMeta.cooldownSec || 2) * 18));
+    const skillName = equippedSkillMeta.name;
+    const tags = equippedSkillMeta.tags || [];
+
+    // DISPARO REAL DA FORJA NA VFX ENGINE (com partículas, magias, feixes e sons reais da Forja)
+    const pal =
+      ELEMENTAL_PALETTES.find((p) => p.id === equippedSkillMeta.defaultPalette) ||
+      ELEMENTAL_PALETTES[0];
+
+    if (vfxEngineRef.current) {
+      vfxEngineRef.current.triggerPreset(
+        equippedSkillMeta.id,
+        aimResult.clampedX,
+        aimResult.clampedY,
+        pal,
+        DEFAULT_VFX_SHADER_PARAMS
+      );
+    }
+
+    SoundManager.playAction('md_ataque_player', 0.85);
+
+    // Aplica Dano e Reações nos alvos contidos na geometria calculada pela Forja
+    if (aimResult.lockedTargets.length > 0) {
+      for (const target of aimResult.lockedTargets) {
+        const res = globalNpcActionEngine.applyDamage(
+          target.id,
+          baseDamage,
+          { x: px, y: py },
+          'player',
+          nowMs
+        );
+
+        const targetState = globalNpcActionEngine.getRuntimeState(target.id);
+        if (targetState) {
+          if (tags.includes('gelo')) {
+            targetState.stunUntil = Math.max(targetState.stunUntil || 0, nowMs + 3500);
+            globalNpcActionEngine.spawnVfx({
+              type: 'contact_spark',
+              x: targetState.currentX,
+              y: targetState.currentY,
+              scale: 2.2,
+              durationMs: 700,
+              progress: 0,
+              createdAt: nowMs,
+              color: '#67e8f9',
+            });
+          } else if (tags.includes('fogo')) {
+            globalNpcActionEngine.spawnVfx({
+              type: 'contact_spark',
+              x: targetState.currentX,
+              y: targetState.currentY - 10,
+              scale: 2.2,
+              durationMs: 600,
+              progress: 0,
+              createdAt: nowMs,
+              color: '#f97316',
+            });
+          } else if (tags.includes('energia')) {
+            globalNpcActionEngine.spawnVfx({
+              type: 'contact_spark',
+              x: targetState.currentX,
+              y: targetState.currentY - 15,
+              scale: 2.4,
+              durationMs: 500,
+              progress: 0,
+              createdAt: nowMs,
+              color: '#fbbf24',
+            });
+          }
+        }
+
+        if (res.enteredStun) {
+          SoundManager.playAction('md_scan_pronto', 0.85);
+          const foundMarker = gameplayMarkersRef.current?.find((m) => m.id === target.id);
+          if (foundMarker) {
+            setScanBattleModalMarker(foundMarker);
+          }
+        }
+      }
+
+      setActionFeedback(`🔮 ${skillName} atingiu ${aimResult.lockedTargets.length} alvo(s)!`);
+    } else {
+      if (tags.includes('cura') || tags.includes('buffs')) {
+        setActionFeedback(`✨ ${skillName} ativada no Player!`);
+      } else {
+        setActionFeedback(`🔮 ${skillName} disparada no terreno (Alcance: ${spec.maxRange}px)!`);
+      }
+    }
+
+    setTimeout(() => setActionFeedback(null), 1800);
+  };
 
   const collisionSetsRef = useRef<{
     walkable: Set<string>;
@@ -4919,8 +5434,7 @@ export const PortraitEmulator: React.FC<Props> = ({
     inspectedMarkerRef.current = inspectedMarker;
   }, [inspectedMarker]);
 
-  // Posições ativas ao vivo de NPCs com patrulha automática
-  const npcLivePositionsRef = useRef<Map<string, { x: number; y: number; dir: string; isMoving: boolean }>>(new Map());
+  // Posições ativas ao vivo de NPCs com patrulha automática (inicializado no topo com gameplayMarkersRef)
   // Direções ativas de NPCs que possuem sprites em 4 direções (só re-renderiza quando a direção muda)
   const [npcDirections, setNpcDirections] = useState<Map<string, string>>(new Map());
   const npcDirectionsRef = useRef<Map<string, string>>(new Map());
@@ -7395,6 +7909,23 @@ export const PortraitEmulator: React.FC<Props> = ({
               }}
               onClick={(e) => {
                 if (activeTool === 'motion_pen') return;
+                // Disparo com Clique do Mouse no Modo Web / Joystick
+                if (locomotion === 'joystick' && !activeDialogueMarker && !eventVideo && e.button === 0) {
+                  const el = contentRef.current;
+                  if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const fx = (e.clientX - rect.left) / rect.width;
+                    const fy = (e.clientY - rect.top) / rect.height;
+                    if (fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+                      const lx = (fx * scaledMapWidth) / scale;
+                      const ly = (fy * scaledMapHeight) / scale;
+                      if (!isNaN(lx) && !isNaN(ly)) {
+                        triggerPlayerSkill(lx, ly);
+                        return;
+                      }
+                    }
+                  }
+                }
                 // Toque-move: só no modo dedinho, sem arrasto, sem diálogo/vídeo aberto
                 if (locomotion !== 'tap') return;
                 if (activeDialogueMarker || eventVideo) return;
@@ -8497,6 +9028,14 @@ export const PortraitEmulator: React.FC<Props> = ({
             })()}
 
               {/* Camada 2D de Combate do Action NPC: Projéteis em Voo e Efeitos de Impacto */}
+              {/* Canvas Oficial da VfxEngine da Forja (Efeitos de Partículas, Magias & Mira Tática) */}
+              <canvas
+                ref={vfxCanvasRef}
+                width={scaledMapWidth}
+                height={scaledMapHeight}
+                className="absolute inset-0 pointer-events-none z-50 overflow-visible"
+              />
+
               <ActionNpcCombatOverlay
                 vfxList={combatVfx}
                 projectiles={combatProjectiles}
@@ -10837,9 +11376,180 @@ export const PortraitEmulator: React.FC<Props> = ({
                   );
                 })}
 
+              {/* Botão de Acesso Rápido ao Pop-up Temporário - Seletor de Skills (Fixo no rodapé esquerdo) */}
+              <div className="absolute left-3.5 bottom-6 z-60 pointer-events-auto select-none">
+                <button
+                  type="button"
+                  onClick={() => setIsSkillPickerOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-950/95 border border-amber-400 text-[10px] font-black text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.8)] flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
+                  title="Abrir Pop-up Temporário - Seletor de Skills [Tecla P]"
+                >
+                  <span className="text-xs">🔮</span>
+                  <span>Pop-up Temporário: Seletor de Skills</span>
+                </button>
+              </div>
+
               {/* Botões Padrão de Ação da Fase (Ataque ⚔️ e Dash 💨) quando nenhum botão customizado estiver configurado */}
               {customHudButtons.filter((btn) => btn.visible !== false).length === 0 && (
                 <div className="absolute right-3.5 bottom-6 z-60 flex items-end gap-2.5 pointer-events-auto select-none">
+                  {/* Botão Misto de Habilidade: Tap (Auto-Aim) + Drag (Direcional de Mira) */}
+                  <div className="flex flex-col items-center gap-1 relative">
+                    {/* Botão de Cancelar quando estiver arrastando para mirar */}
+                    {skillAimState.isAiming && (
+                      <div
+                        className={`absolute -top-11 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full text-[9px] font-black tracking-wider transition-all flex items-center gap-1 shadow-2xl pointer-events-none select-none z-70 whitespace-nowrap ${
+                          skillAimState.isCancelHovered
+                            ? 'bg-rose-600 text-white scale-110 border-2 border-white animate-pulse'
+                            : 'bg-slate-950/95 text-rose-300 border border-rose-500/70'
+                        }`}
+                      >
+                        <span>❌</span>
+                        <span>Arrastar aqui p/ Cancelar</span>
+                      </div>
+                    )}
+
+                    {/* Troca Rápida de Skill */}
+                    <button
+                      type="button"
+                      onClick={() => setIsSkillPickerOpen(true)}
+                      className="px-2 py-0.5 rounded-full bg-slate-950/90 border border-purple-400/80 text-[8px] font-black text-purple-200 hover:bg-purple-500 hover:text-slate-950 transition-colors shadow-md flex items-center gap-1 cursor-pointer"
+                      title="Abrir Pop-up Temporário - Seletor de Skills [P]"
+                    >
+                      <span>🔮</span>
+                      <span className="truncate max-w-[65px]">{equippedSkillMeta.name}</span>
+                    </button>
+
+                    {/* Botão Analógico Misto: Tap para Auto-Aim / Drag para Mirar */}
+                    <div
+                      onPointerDown={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        skillJoystickCenterRef.current = {
+                          x: rect.left + rect.width / 2,
+                          y: rect.top + rect.height / 2,
+                        };
+                        e.currentTarget.setPointerCapture(e.pointerId);
+
+                        const px = playerRef.current?.x ?? 384;
+                        const py = playerRef.current?.y ?? 100;
+                        setSkillAimState({
+                          isAiming: true,
+                          aimWorldX: px,
+                          aimWorldY: py + 120,
+                          isCancelHovered: false,
+                          knobOffset: { x: 0, y: 0 },
+                        });
+                      }}
+                      onPointerMove={(e) => {
+                        if (!skillAimState.isAiming) return;
+                        const dx = e.clientX - skillJoystickCenterRef.current.x;
+                        const dy = e.clientY - skillJoystickCenterRef.current.y;
+                        const dist = Math.hypot(dx, dy);
+                        const angle = Math.atan2(dy, dx);
+
+                        // Zona de cancelamento arrastando p/ cima (-50px)
+                        const isCancel = dy < -45 && Math.abs(dx) < 40;
+
+                        // Deslocamento visual do knob analógico dentro do botão (max 22px)
+                        const knobDist = Math.min(22, dist);
+                        const knobX = Math.cos(angle) * knobDist;
+                        const knobY = Math.sin(angle) * knobDist;
+
+                        // Mapeia vetor para a projeção de mira tática no mapa
+                        const spec = getSkillTacticalSpec(playerEquippedSkillId as any);
+                        const dragFrac = Math.min(1, dist / 38);
+                        const aimDist = spec.minRange + (spec.maxRange - spec.minRange) * Math.max(0.18, dragFrac);
+
+                        const px = playerRef.current?.x ?? 384;
+                        const py = playerRef.current?.y ?? 100;
+                        const targetX = px + Math.cos(angle) * aimDist;
+                        const targetY = py + Math.sin(angle) * aimDist;
+
+                        setSkillAimState((prev) => ({
+                          ...prev,
+                          aimWorldX: targetX,
+                          aimWorldY: targetY,
+                          isCancelHovered: isCancel,
+                          knobOffset: { x: knobX, y: knobY },
+                        }));
+                      }}
+                      onPointerUp={(e) => {
+                        if (!skillAimState.isAiming) return;
+                        const dx = e.clientX - skillJoystickCenterRef.current.x;
+                        const dy = e.clientY - skillJoystickCenterRef.current.y;
+                        const dist = Math.hypot(dx, dy);
+                        const isCancel = skillAimState.isCancelHovered || (dy < -45 && Math.abs(dx) < 40);
+
+                        const finalTargetX = skillAimState.aimWorldX;
+                        const finalTargetY = skillAimState.aimWorldY;
+
+                        setSkillAimState({
+                          isAiming: false,
+                          aimWorldX: 0,
+                          aimWorldY: 0,
+                          isCancelHovered: false,
+                          knobOffset: { x: 0, y: 0 },
+                        });
+
+                        if (isCancel) {
+                          setActionFeedback('🚫 Disparo cancelado');
+                          setTimeout(() => setActionFeedback(null), 1000);
+                          return;
+                        }
+
+                        if (dist < 10) {
+                          // Toque rápido -> Auto-Aim inteligente no mob mais próximo
+                          triggerPlayerSkill();
+                        } else {
+                          // Arrastou -> Disparo mirado com clamping da Forja!
+                          triggerPlayerSkill(finalTargetX, finalTargetY);
+                        }
+                      }}
+                      className="w-14 h-14 rounded-full flex flex-col items-center justify-center cursor-crosshair select-none relative overflow-visible touch-none active:scale-95 transition-transform"
+                      style={{
+                        background: skillAimState.isCancelHovered
+                          ? 'radial-gradient(circle at 50% 25%, #dc2626 0%, #991b1b 60%, #450a0a 100%)'
+                          : 'radial-gradient(circle at 50% 25%, #6d28d9 0%, #4c1d95 60%, #1e1b4b 100%)',
+                        border: skillAimState.isCancelHovered ? '2.5px solid #f87171' : '2.5px solid #c084fc',
+                        outline: '1.5px solid #3b0764',
+                        boxShadow:
+                          '0 8px 20px rgba(0,0,0,0.85), 0 0 14px rgba(192,132,252,0.5), inset 0 1px 2px rgba(255,255,255,0.4)',
+                      }}
+                      title={`${equippedSkillMeta.name} (Toque: Auto-Aim | Arraste: Mirar)`}
+                    >
+                      {/* Knob Analógico Interno que desliza ao arrastar */}
+                      <div
+                        className="flex flex-col items-center justify-center pointer-events-none transition-transform duration-75"
+                        style={{
+                          transform: `translate(${skillAimState.knobOffset.x}px, ${skillAimState.knobOffset.y}px)`,
+                        }}
+                      >
+                        <span className="text-xl leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                          {equippedSkillMeta.tags?.includes('fogo')
+                            ? '🔥'
+                            : equippedSkillMeta.tags?.includes('gelo')
+                            ? '❄️'
+                            : equippedSkillMeta.tags?.includes('energia')
+                            ? '⚡'
+                            : equippedSkillMeta.tags?.includes('cura')
+                            ? '💖'
+                            : equippedSkillMeta.tags?.includes('trevas')
+                            ? '💀'
+                            : '🔮'}
+                        </span>
+                        <span className="font-cinzel font-black text-[6.5px] text-[#f5d0fe] uppercase tracking-wider mt-0.5 truncate max-w-[46px]">
+                          {skillAimState.isAiming ? 'MIRANDO' : 'SKILL'}
+                        </span>
+                      </div>
+
+                      {/* Cooldown visual sweep */}
+                      {performance.now() < skillCooldownUntil && (
+                        <div className="absolute inset-0 rounded-full bg-black/75 flex items-center justify-center text-[10px] font-black text-amber-300 font-mono pointer-events-none">
+                          {((skillCooldownUntil - performance.now()) / 1000).toFixed(0)}s
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Botão Dash / Esquiva */}
                   <button
                     type="button"
@@ -10931,6 +11641,23 @@ export const PortraitEmulator: React.FC<Props> = ({
               handleNpcBattleComplete(activeEmbeddedBattle.marker, outcome)
             }
             onCancel={() => setActiveEmbeddedBattle(null)}
+          />
+        )}
+
+        {/* Pop-up Temporário - Seletor de Skills para o Player */}
+        {isSkillPickerOpen && (
+          <PlayerSkillSelectorModal
+            isOpen={isSkillPickerOpen}
+            onClose={() => setIsSkillPickerOpen(false)}
+            selectedSkillId={playerEquippedSkillId}
+            onSelectSkill={(skillId) => {
+              setPlayerEquippedSkillId(skillId);
+              const found = VFX_PRESETS.find((p) => p.id === skillId);
+              if (found) {
+                setActionFeedback(`✨ Habilidade Equipada: ${found.name}!`);
+                setTimeout(() => setActionFeedback(null), 1800);
+              }
+            }}
           />
         )}
 

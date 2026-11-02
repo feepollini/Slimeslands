@@ -973,20 +973,25 @@ export function rewardPlayerCoinsAndGems(
   gemsDelta: number = 0,
   xpDelta: number = 0
 ): { gold: number; diamonds: number; level: number; xp: number } {
-  const state = ProgressionManager.getState();
-  state.gold = Math.max(0, (state.gold || 0) + goldDelta);
-  state.diamonds = Math.max(0, (state.diamonds || 0) + gemsDelta);
-  ProgressionManager.saveState(state);
-  if (xpDelta > 0) {
-    ProgressionManager.addXp(xpDelta);
+  try {
+    const state = ProgressionManager.getState();
+    state.gold = Math.max(0, (state.gold || 0) + goldDelta);
+    state.diamonds = Math.max(0, (state.diamonds || 0) + gemsDelta);
+    ProgressionManager.savePlayerData(state);
+    if (xpDelta > 0) {
+      ProgressionManager.addXpAndCheckLevelUp(xpDelta);
+    }
+    const updated = ProgressionManager.getState();
+    return {
+      gold: updated.gold,
+      diamonds: updated.diamonds,
+      level: updated.level,
+      xp: updated.xp,
+    };
+  } catch (err) {
+    console.error('Failed to reward player progression:', err);
+    return { gold: 0, diamonds: 0, level: 1, xp: 0 };
   }
-  const updated = ProgressionManager.getState();
-  return {
-    gold: updated.gold,
-    diamonds: updated.diamonds,
-    level: updated.level,
-    xp: updated.xp,
-  };
 }
 
 /**

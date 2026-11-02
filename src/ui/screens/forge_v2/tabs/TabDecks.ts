@@ -8,6 +8,11 @@ import {
   renderMatrixCardSVG,
   toggleDeckAvailability,
 } from '../utils/HestridiaMatrixRenderer';
+import {
+  buildBalancedPlayerDeck,
+  isMagicCard,
+  getDeckCompositionStats,
+} from '../../../../core/DeckBuilder';
 
 export class TabDecks {
   private callbacks: any;
@@ -757,17 +762,22 @@ export class TabDecks {
 
           <!-- MODAL FOOTER -->
           <div style="padding: 14px 24px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.35); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
-            ${
-              this.confirmClearDeck
-                ? `<div style="display:flex; align-items:center; gap:8px;">
-                    <span style="font-size:0.75rem; color:#fca5a5; font-weight:800;">Zerar todas as cartas deste deck?</span>
-                    <button type="button" id="btn-confirm-clear-deck" style="background:#ef4444; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.72rem; font-weight:900; cursor:pointer;">Sim, Zerar</button>
-                    <button type="button" id="btn-cancel-clear-deck" style="background:rgba(255,255,255,0.1); color:#cbd5e1; border:none; border-radius:6px; padding:6px 10px; font-size:0.72rem; cursor:pointer;">Cancelar</button>
-                  </div>`
-                : `<button type="button" id="btn-clear-deck-cards" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 8px; padding: 8px 14px; font-size: 0.75rem; font-weight: 700; cursor: pointer;">
-                    🗑️ Limpar Deck
-                  </button>`
-            }
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              ${
+                this.confirmClearDeck
+                  ? `<div style="display:flex; align-items:center; gap:8px;">
+                      <span style="font-size:0.75rem; color:#fca5a5; font-weight:800;">Zerar todas as cartas deste deck?</span>
+                      <button type="button" id="btn-confirm-clear-deck" style="background:#ef4444; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.72rem; font-weight:900; cursor:pointer;">Sim, Zerar</button>
+                      <button type="button" id="btn-cancel-clear-deck" style="background:rgba(255,255,255,0.1); color:#cbd5e1; border:none; border-radius:6px; padding:6px 10px; font-size:0.72rem; cursor:pointer;">Cancelar</button>
+                    </div>`
+                  : `<button type="button" id="btn-clear-deck-cards" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; border-radius: 8px; padding: 8px 14px; font-size: 0.75rem; font-weight: 700; cursor: pointer;">
+                      🗑️ Limpar Deck
+                    </button>`
+              }
+              <button type="button" id="btn-autofill-deck-cards" style="background: linear-gradient(135deg, rgba(56,189,248,0.22), rgba(168,85,247,0.25)); border: 1.5px solid rgba(56,189,248,0.5); color: #38bdf8; border-radius: 8px; padding: 8px 15px; font-size: 0.75rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(56,189,248,0.15);" title="Preencher automaticamente com equilíbrio ideal de Criaturas e Magias">
+                <span>⚡ Auto-Preencher Equilibrado</span>
+              </button>
+            </div>
 
             <div style="display: flex; align-items: center; gap: 10px;">
               <button type="button" id="btn-modal-open-matrix" style="background: linear-gradient(135deg, #7928ca, #ff0080); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 0.78rem; font-weight: 800; cursor: pointer;">
@@ -1300,6 +1310,27 @@ export class TabDecks {
       }
       this.confirmClearDeck = false;
       this.callbacks.showToast('Deck zerado com sucesso!', '#ef4444');
+      this.reRenderSelf();
+    });
+
+    // AUTO-PREENCHER DECK COM EQUILÍBRIO CRIATURAS & MAGIAS
+    parent.querySelector('#btn-autofill-deck-cards')?.addEventListener('click', () => {
+      if (!this.managingDeckId) return;
+      const deck = this.decks.find((d) => d.id === this.managingDeckId);
+      if (!deck) return;
+
+      const balanced = buildBalancedPlayerDeck(this.matrixCards, 12);
+      deck.cards = balanced.map((c) => c.id || c.name || c.title);
+      delete (deck as any).isUserCleared;
+      saveCustomDecks(this.decks);
+      if (deck.isActive) {
+        setActiveCustomDeck(deck.id);
+      }
+      const stats = getDeckCompositionStats(balanced);
+      this.callbacks.showToast(
+        `⚡ Deck Equilibrado Gerado: ${stats.creatures} Slimes e ${stats.spells} Magias montadas! (⭐ Rank S: ${stats.rankCounts.S || 0})`,
+        '#10b981'
+      );
       this.reRenderSelf();
     });
 

@@ -25,6 +25,7 @@ import {
   Eye,
   Move,
   Brain,
+  Headphones,
 } from 'lucide-react';
 import { PhasePreviewCard } from './PhasePreviewCard';
 import { CreatePhaseModal } from './CreatePhaseModal';
@@ -66,6 +67,8 @@ interface Props {
   onOpenHudUniversal?: (screenId?: string) => void;
   onOpenMindMap?: () => void;
   onOpenMotionStudio?: () => void;
+  onOpenAudioStudio?: () => void;
+  onOpenSkillsForge?: () => void;
   onUpdateProject?: (updates: Partial<MapProject>) => void;
 }
 
@@ -90,6 +93,8 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
   onOpenHudUniversal,
   onOpenMindMap,
   onOpenMotionStudio,
+  onOpenAudioStudio,
+  onOpenSkillsForge,
   onUpdateProject,
 }) => {
   const currentProjectMap = project ? getOrCreateWorldMapConfig(project) : null;
@@ -372,33 +377,9 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] font-mono tracking-widest text-zinc-400 uppercase flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-500" />
-              <span>Marker Dream • Estúdios e Editores da Engine (8 Editores Integrados)</span>
+              <span>Marker Dream • Estúdios e Editores da Engine (10 Editores Integrados)</span>
             </span>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const testLvl = createStandaloneInterceptTestLevel();
-                  onPlayLevel(testLvl);
-                }}
-                className="px-3 py-1 rounded-md bg-gradient-to-r from-rose-600 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 border border-rose-300/40"
-                title="Jogar imediatamente a Fase Teste do novo evento Interceptação & Escolta Guiada"
-              >
-                <span>🚨</span>
-                <span>Jogar Fase Teste: Intercept & Escolta</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const testLvl = createStandaloneInterceptTestLevel();
-                  onOpenLevelInEditor(testLvl);
-                }}
-                className="px-2.5 py-1 rounded-md bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 text-[11px] text-rose-200 font-bold transition-colors flex items-center gap-1 cursor-pointer"
-                title="Abrir a Fase Teste de Interceptação & Escolta no Editor de Fase"
-              >
-                <Edit3 className="w-3 h-3 text-rose-400" />
-                <span>Abrir Teste no Editor</span>
-              </button>
               {activeLevel && (
                 <button
                   type="button"
@@ -422,7 +403,7 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2.5">
             {/* 1. EDITOR DE FASE */}
             <div className="rounded-xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800 p-3 flex flex-col justify-between hover:border-orange-500/50 transition-all group shadow-sm">
               <div className="space-y-1.5">
@@ -675,6 +656,68 @@ export const PhaseDashboardScreen: React.FC<Props> = ({
                 >
                   <Film className="w-3 h-3 shrink-0" />
                   <span className="truncate">Motion Studio</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 9. AUDIO STUDIO (SOLO) */}
+            <div className="rounded-xl bg-gradient-to-b from-emerald-950/45 via-zinc-900/90 to-zinc-950 border border-emerald-500/45 p-3 flex flex-col justify-between hover:border-emerald-400 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 shrink-0">
+                    <Headphones className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 font-bold truncate">
+                    Audio Engine
+                  </span>
+                </div>
+                <h3 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors leading-tight">
+                  9. Audio Studio
+                </h3>
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Mixagem de canais, BGM, SFX e vozes da fase.
+                </p>
+              </div>
+
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
+                <button
+                  type="button"
+                  onClick={() => (onOpenAudioStudio ? onOpenAudioStudio() : onGoToEditor())}
+                  className="w-full py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-emerald-600/20 truncate"
+                >
+                  <Headphones className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Audio Studio</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 10. SKILLS FORGE (SOLO) */}
+            <div className="rounded-xl bg-gradient-to-b from-amber-950/45 via-zinc-900/90 to-zinc-950 border border-amber-500/45 p-3 flex flex-col justify-between hover:border-amber-400 transition-all group shadow-sm">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 border border-amber-500/30 font-bold truncate">
+                    Skills Matrix
+                  </span>
+                </div>
+                <h3 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors leading-tight">
+                  10. Skills Forge
+                </h3>
+                <p className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
+                  Forja de magias, habilidades ativas, passivas e custos.
+                </p>
+              </div>
+
+              <div className="pt-2.5 mt-2 border-t border-zinc-800/80">
+                <button
+                  type="button"
+                  onClick={() => (onOpenSkillsForge ? onOpenSkillsForge() : onGoToEditor())}
+                  className="w-full py-1.5 px-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-extrabold transition-colors flex items-center justify-center gap-1 cursor-pointer shadow-sm shadow-amber-600/20 truncate"
+                >
+                  <Sparkles className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Skills Forge</span>
                 </button>
               </div>
             </div>

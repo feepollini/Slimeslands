@@ -24,3 +24,10 @@ Thumbs.db
 
 # Cartas locais adicionais (armazenamento futuro em nuvem / Firecloud)
 public/cards/*
+
+# Armazenamento de projetos e assets locais da engine
+data/
+src/core/disk_storage/
+
+# Scratch temporary directory
+scratch/

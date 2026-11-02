@@ -2038,7 +2038,10 @@ export interface WorldMapPOI {
   targetLevelName?: string; // Nome da fase para exibição rápida
   status?: 'unlocked' | 'locked' | 'completed'; // Estado de desbloqueio
   badgeText?: string; // Tag/Etiqueta (ex: "Fase 1", "Chefe", "Bônus")
-  scale?: number; // Multiplicador de escala do ícone (0.3 a 6.0, padrão 1.0)
+  scale?: number; // Multiplicador de escala do ícone/grupo geral (0.3 a 6.0, padrão 1.0)
+  pngScale?: number; // Escala exclusiva do asset PNG (0.2 a 4.0, padrão 1.0)
+  pngOffsetX?: number; // Deslocamento horizontal X do PNG em pixels
+  pngOffsetY?: number; // Deslocamento vertical Y do PNG em pixels
   parentId?: string; // ID do POI pai do qual este ponto se ramifica
   connectedPoiIds?: string[]; // IDs de POIs diretamente conectados (ramificações ativas)
   bannerPng?: string; // Imagem de banner ilustrada do topo da janela de viagem
@@ -2110,7 +2113,10 @@ export interface PlanetGlobeMarker {
   targetLevelId?: string; // ID de fase salva opcional
   status?: 'unlocked' | 'locked' | 'completed';
   badgeText?: string;
-  scale?: number;
+  scale?: number; // Escala geral do pino/marcador
+  pngScale?: number; // Escala exclusiva do asset PNG do continente/região (0.2 a 4.0, padrão 1.0)
+  pngOffsetX?: number; // Deslocamento horizontal X do PNG em pixels
+  pngOffsetY?: number; // Deslocamento vertical Y do PNG em pixels
 }
 
 export interface PlanetMoonBody {

@@ -22,6 +22,8 @@ import {
   Package,
   GitBranch,
   Brain,
+  Headphones,
+  Sparkles,
 } from 'lucide-react';
 
 import type { TabId } from '../types/map';
@@ -49,6 +51,8 @@ interface Props {
   onOpenHudUniversal?: () => void;
   onOpenMindMap?: () => void;
   onOpenMotionStudio?: () => void;
+  onOpenAudioStudio?: () => void;
+  onOpenSkillsForge?: () => void;
 }
 
 export const TopNav: React.FC<Props> = ({
@@ -74,6 +78,8 @@ export const TopNav: React.FC<Props> = ({
   onOpenHudUniversal,
   onOpenMindMap,
   onOpenMotionStudio,
+  onOpenAudioStudio,
+  onOpenSkillsForge,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -235,6 +241,30 @@ export const TopNav: React.FC<Props> = ({
           >
             <Film className="w-3.5 h-3.5 text-fuchsia-400" />
             <span className="hidden sm:inline">Motion &amp; Skins</span>
+          </button>
+        )}
+
+                {onOpenAudioStudio && (
+          <button
+            type="button"
+            onClick={onOpenAudioStudio}
+            className="px-2.5 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[11px] font-bold text-emerald-300 hover:text-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-emerald-500/10"
+            title="Abrir o Audio Studio"
+          >
+            <Headphones className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Audio</span>
+          </button>
+        )}
+
+        {onOpenSkillsForge && (
+          <button
+            type="button"
+            onClick={onOpenSkillsForge}
+            className="px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[11px] font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-amber-500/10"
+            title="Abrir a Skills Forge"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Skills</span>
           </button>
         )}
 

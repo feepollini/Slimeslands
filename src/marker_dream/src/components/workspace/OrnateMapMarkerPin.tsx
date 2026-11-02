@@ -13,6 +13,9 @@ export interface OrnateMapMarkerPinProps {
   isSelected?: boolean;
   isFocused?: boolean;
   scale?: number;
+  pngScale?: number;
+  pngOffsetX?: number;
+  pngOffsetY?: number;
   sizeVariant?: 'sm' | 'md' | 'lg';
   revealStage?: MarkerRevealStage;
   hideTopAsset?: boolean;
@@ -150,6 +153,9 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
   isSelected = false,
   isFocused = false,
   scale = 1.0,
+  pngScale = 1.0,
+  pngOffsetX = 0,
+  pngOffsetY = 0,
   sizeVariant = 'md',
   revealStage = 'full',
   hideTopAsset = false,
@@ -323,10 +329,10 @@ export const OrnateMapMarkerPin: React.FC<OrnateMapMarkerPinProps> = ({
             transformOrigin: 'bottom center',
             opacity: isFullMarkerVisible ? 1 : 0,
             transform: isFullMarkerVisible
-              ? 'translateY(0) scale(1)'
-              : 'translateY(10px) scale(0.82)',
+              ? `translate(${pngOffsetX}px, ${pngOffsetY}px) scale(${pngScale})`
+              : `translate(${pngOffsetX}px, ${pngOffsetY + 10}px) scale(${pngScale * 0.82})`,
             transition:
-              'opacity 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.18s, transform 1.05s cubic-bezier(0.22, 1, 0.36, 1) 0.18s',
+              'opacity 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.18s, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           {iconPng ? (

@@ -7,6 +7,7 @@ import type { Card, Skill, GameState, AttackResult } from './types';
 import { SKILL_POOL, CARD_TEMPLATES, RARITY_POOL, ABILITY_POOL } from './constants';
 import { computeAttack, computeSkill, healingCardTick } from './CombatEngine';
 import { getMergedGameTemplatesSync } from '../ui/screens/forge_v2/utils/HestridiaMatrixRenderer';
+import { buildBalancedPlayerDeck, isMagicCard } from './DeckBuilder';
 
 export type { Card, Skill, GameState };
 export { SKILL_POOL };
@@ -114,7 +115,7 @@ export class GameEngine {
         }
 
         if (chosenTemplates.length === 0 && pool.length > 0) {
-            chosenTemplates = Array.from({ length: count }, () => pool[Math.floor(Math.random() * pool.length)]);
+            chosenTemplates = buildBalancedPlayerDeck(pool, count);
         }
 
         return chosenTemplates.filter(Boolean).map((tmpl: any, i: number) => {

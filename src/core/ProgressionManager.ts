@@ -69,6 +69,14 @@ export class ProgressionManager {
     }
 
     /**
+     * Alias for savePlayerData to support external systems and bridges.
+     */
+    public static saveState(data: PlayerData): void {
+        this.savePlayerData(data);
+    }
+
+
+    /**
      * Calculate rewards based on win/loss and match statistics.
      */
     public static calculateMatchRewards(isWin: boolean, stats: MatchStats): MatchRewards {
@@ -94,6 +102,13 @@ export class ProgressionManager {
     /**
      * Apply XP and checks if a level-up threshold is reached.
      */
+    
+    /**
+     * Alias for addXpAndCheckLevelUp to support external systems and bridges.
+     */
+    public static addXp(amount: number): PlayerData {
+        return this.addXpAndCheckLevelUp(amount);
+    }
     public static addXpAndCheckLevelUp(amount: number): PlayerData {
         const data = this.getPlayerData();
         data.xp += amount;

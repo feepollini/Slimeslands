@@ -1,6 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
-import type { MapProject, WorldMapConfig, WorldMapPOI, WorldMapLayer, WorldMapAtmosphereConfig, SavedLevel } from '../../types/map';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import type {
+  MapProject,
+  WorldMapConfig,
+  WorldMapPOI,
+  WorldMapLayer,
+  WorldMapAtmosphereConfig,
+  SavedLevel,
+  PlanetGlobeMarker,
+  SolarSystemPlanet,
+  ConstellationSystemNode,
+} from '../../types/map';
 import {
+  ChevronLeft,
+  ChevronRight,
+  Crosshair,
+  Grid,
   Upload,
   Plus,
   Compass,
@@ -44,7 +58,11 @@ import { DEFAULT_CLOUD_SVG, DEFAULT_FOG_SVG } from '../../data/defaultAtmosphere
 import { readUploadedImage } from '../../utils/tileGenerator';
 import { uploadFileToDisk } from '../../../../core/DiskAssetEngine';
 import { OrnateMapMarkerPin } from './OrnateMapMarkerPin';
-import { PlanetGlobeEditorSection, getOrCreatePlanetGlobeConfig } from './PlanetGlobeView';
+import {
+  PlanetGlobeEditorSection,
+  getOrCreatePlanetGlobeConfig,
+  buildDefaultMarkersForPlanet,
+} from './PlanetGlobeView';
 
 // Imagens padrão de Mapas Panorâmicos (SVG estilizados e decorativos)
 export const DEFAULT_WORLD_MAP_BACKGROUNDS = [
@@ -159,6 +177,86 @@ export function getOrCreateWorldMapConfig(project: MapProject): WorldMapConfig {
   };
 }
 
+// Helper para resolver a hierarquia cósmica: Estrela > Planeta > Região Marcador
+export function findPlanetAndMarkerForWorldMap(
+  project: MapProject,
+  worldMapId: string,
+  preferredPlanetId?: string,
+  preferredMarkerId?: string | null
+): {
+  system: ConstellationSystemNode | null;
+  planet: SolarSystemPlanet | null;
+  marker: PlanetGlobeMarker | null;
+  planetMarkers: PlanetGlobeMarker[];
+} {
+  const config = getOrCreatePlanetGlobeConfig(project);
+  const constellations = config.constellations || [];
+
+  const getMarkersForPlanet = (p: SolarSystemPlanet): PlanetGlobeMarker[] => {
+    if (p.id === 'planet-slimelands' || p.id === 'solar-planet-1') {
+      return config.markers && config.markers.length > 0
+        ? config.markers
+        : buildDefaultMarkersForPlanet(p.id, p.name, project);
+    }
+    return p.markers && p.markers.length > 0
+      ? p.markers
+      : buildDefaultMarkersForPlanet(p.id, p.name, project);
+  };
+
+  // 1. Se preferredPlanetId foi fornecido, buscar primeiro nele
+  if (preferredPlanetId) {
+    for (const sys of constellations) {
+      const matchedPlanet = (sys.planets || []).find((p) => p.id === preferredPlanetId);
+      if (matchedPlanet) {
+        const pMarkers = getMarkersForPlanet(matchedPlanet);
+        const matchedMarker =
+          (preferredMarkerId ? pMarkers.find((m) => m.id === preferredMarkerId) : null) ||
+          pMarkers.find((m) => m.targetWorldMapId === worldMapId) ||
+          pMarkers[0] ||
+          null;
+        return {
+          system: sys,
+          planet: matchedPlanet,
+          marker: matchedMarker,
+          planetMarkers: pMarkers,
+        };
+      }
+    }
+  }
+
+  // 2. Busca reversa por targetWorldMapId
+  for (const sys of constellations) {
+    for (const p of sys.planets || []) {
+      const pMarkers = getMarkersForPlanet(p);
+      const matchedMarker = pMarkers.find((m) => m.targetWorldMapId === worldMapId);
+      if (matchedMarker) {
+        return {
+          system: sys,
+          planet: p,
+          marker: matchedMarker,
+          planetMarkers: pMarkers,
+        };
+      }
+    }
+  }
+
+  // 3. Fallback: Primeiro sistema e planeta
+  const defaultSys = constellations[0] || null;
+  const defaultPlanet = defaultSys?.planets?.[0] || null;
+  const defaultMarkers = defaultPlanet ? getMarkersForPlanet(defaultPlanet) : [];
+  const defaultMarker =
+    defaultMarkers.find((m) => m.targetWorldMapId === worldMapId) ||
+    defaultMarkers[0] ||
+    null;
+
+  return {
+    system: defaultSys,
+    planet: defaultPlanet,
+    marker: defaultMarker,
+    planetMarkers: defaultMarkers,
+  };
+}
+
 interface Props {
   project: MapProject;
   setProject: React.Dispatch<React.SetStateAction<MapProject>>;
@@ -179,6 +277,39 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
   const worldMap = getOrCreateWorldMapConfig(project);
   const [editorLayerMode, setEditorLayerMode] = useState<'planet' | 'region'>('planet');
   const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('pois');
+
+  // Estados de Hierarquia Cósmica: Estrela > Planeta > Região Marcador
+  const [activeSysId, setActiveSysId] = useState<string>('sys-solaris-prime');
+  const [activePlanetId, setActivePlanetId] = useState<string>('planet-slimelands');
+  const [activeMarkerId, setActiveMarkerId] = useState<string | null>(null);
+
+  // Resolução da hierarquia atual (Estrela, Planeta e Marcador de Região)
+  const resolvedHierarchy = useMemo(() => {
+    return findPlanetAndMarkerForWorldMap(
+      project,
+      worldMap.id,
+      activePlanetId,
+      activeMarkerId
+    );
+  }, [project, worldMap.id, activePlanetId, activeMarkerId]);
+
+  const activeSystem = resolvedHierarchy.system;
+  const activePlanet = resolvedHierarchy.planet;
+  const currentMarker = resolvedHierarchy.marker;
+  const planetMarkers = resolvedHierarchy.planetMarkers;
+
+  // Auto-sincronização do activePlanetId e activeMarkerId quando a resolução encontra o marcador
+  useEffect(() => {
+    if (resolvedHierarchy.planet && resolvedHierarchy.planet.id !== activePlanetId) {
+      setActivePlanetId(resolvedHierarchy.planet.id);
+    }
+    if (resolvedHierarchy.system && resolvedHierarchy.system.id !== activeSysId) {
+      setActiveSysId(resolvedHierarchy.system.id);
+    }
+    if (resolvedHierarchy.marker && resolvedHierarchy.marker.id !== activeMarkerId) {
+      setActiveMarkerId(resolvedHierarchy.marker.id);
+    }
+  }, [resolvedHierarchy.planet?.id, resolvedHierarchy.system?.id, resolvedHierarchy.marker?.id]);
   const [selectedPoiId, setSelectedPoiId] = useState<string | null>(
     worldMap.pointsOfInterest[0]?.id || null
   );
@@ -192,6 +323,23 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
     startX: 0,
     startY: 0,
   });
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchDistRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef<number>(zoom);
+
+  const [isMobileScreen, setIsMobileScreen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  const [isMobilePanelOpen, setIsMobilePanelOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileScreen(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const viewportRef = useRef<HTMLDivElement>(null);
   const bgUploadInputRef = useRef<HTMLInputElement>(null);
   const poiIconInputRef = useRef<HTMLInputElement>(null);
@@ -204,6 +352,9 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
   const [mouseMapPos, setMouseMapPos] = useState<{ x: number; y: number } | null>(null);
   const [showMapManagerModal, setShowMapManagerModal] = useState<boolean>(false);
   const [editingSlotIndex, setEditingSlotIndex] = useState<number | null>(null);
+  const [isAddPoiMode, setIsAddPoiMode] = useState<boolean>(false);
+  const [cursorCoords, setCursorCoords] = useState<{ x: number; y: number } | null>(null);
+  const [showRpgSection, setShowRpgSection] = useState<boolean>(false);
 
   const selectedPoi = worldMap.pointsOfInterest.find((p) => p.id === selectedPoiId) || null;
   const layers = worldMap.layers || DEFAULT_WORLD_MAP_LAYERS;
@@ -291,6 +442,279 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
 
     setSelectedPoiId(newMap.pointsOfInterest[0]?.id || null);
     showToast(`✨ Novo mapa "${newMap.title}" criado e ativado!`);
+  };
+
+  // Atualiza propriedades de um marcador no planeta pai
+  const updateMarkerForPlanet = (
+    planetId: string,
+    markerId: string,
+    partial: Partial<PlanetGlobeMarker>
+  ) => {
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      const isMain =
+        planetId === 'planet-slimelands' ||
+        planetId === 'solar-planet-1';
+
+      if (isMain) {
+        const curM =
+          curr.markers && curr.markers.length > 0
+            ? curr.markers
+            : buildDefaultMarkersForPlanet('planet-slimelands', 'Slimelands Alpha', prev);
+        const nextMarkers = curM.map((m) =>
+          m.id === markerId ? { ...m, ...partial } : m
+        );
+        return {
+          ...prev,
+          planetGlobe: {
+            ...curr,
+            markers: nextMarkers,
+          },
+        };
+      }
+
+      const nextConstellations = (curr.constellations || []).map((system) => ({
+        ...system,
+        planets: (system.planets || []).map((p) => {
+          if (p.id !== planetId) return p;
+          const curM =
+            p.markers && p.markers.length > 0
+              ? p.markers
+              : buildDefaultMarkersForPlanet(p.id, p.name, prev);
+          const nextM = curM.map((m) =>
+            m.id === markerId ? { ...m, ...partial } : m
+          );
+          return {
+            ...p,
+            markers: nextM,
+          };
+        }),
+      }));
+
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          constellations: nextConstellations,
+        },
+      };
+    });
+  };
+
+  // Adiciona um novo marcador de região ao planeta pai
+  const addMarkerToPlanet = (planetId: string, newMarker: PlanetGlobeMarker) => {
+    setProject((prev) => {
+      const curr = getOrCreatePlanetGlobeConfig(prev);
+      const isMain =
+        planetId === 'planet-slimelands' ||
+        planetId === 'solar-planet-1';
+
+      if (isMain) {
+        const curM =
+          curr.markers && curr.markers.length > 0
+            ? curr.markers
+            : buildDefaultMarkersForPlanet('planet-slimelands', 'Slimelands Alpha', prev);
+        return {
+          ...prev,
+          planetGlobe: {
+            ...curr,
+            markers: [...curM, newMarker],
+          },
+        };
+      }
+
+      const nextConstellations = (curr.constellations || []).map((system) => ({
+        ...system,
+        planets: (system.planets || []).map((p) => {
+          if (p.id !== planetId) return p;
+          const curM =
+            p.markers && p.markers.length > 0
+              ? p.markers
+              : buildDefaultMarkersForPlanet(p.id, p.name, prev);
+          return {
+            ...p,
+            markers: [...curM, newMarker],
+          };
+        }),
+      }));
+
+      return {
+        ...prev,
+        planetGlobe: {
+          ...curr,
+          constellations: nextConstellations,
+        },
+      };
+    });
+  };
+
+  // Alterna diretamente para a região de um marcador deste planeta (ou gera o mapa sob demanda)
+  const handleSwitchRegionMarker = (markerId: string) => {
+    const targetMarker = planetMarkers.find((m) => m.id === markerId);
+    if (!targetMarker) return;
+    setActiveMarkerId(markerId);
+
+    let targetMap: WorldMapConfig | undefined;
+    if (targetMarker.targetWorldMapId) {
+      targetMap = savedWorldMaps.find((m) => m.id === targetMarker.targetWorldMapId);
+    }
+
+    if (targetMap) {
+      setProject((prev) => ({
+        ...prev,
+        worldMap: targetMap!,
+        activeWorldMapId: targetMap!.id,
+      }));
+      setSelectedPoiId(targetMap.pointsOfInterest[0]?.id || null);
+      showToast(`🗺️ Alternado para a região: "${targetMarker.name}"`);
+    } else {
+      const newMapId = targetMarker.targetWorldMapId || `map-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const nowIso = new Date().toISOString();
+      const newMap: WorldMapConfig = {
+        id: newMapId,
+        enabled: true,
+        title: targetMarker.name || 'Nova Região',
+        description: `Mapa regional vinculado à região ${targetMarker.name} do planeta ${activePlanet?.name || ''}.`,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        backgroundPng: DEFAULT_WORLD_MAP_BACKGROUNDS[0].url,
+        mapWidth: 1600,
+        mapHeight: 667,
+        initialScrollX: 0,
+        layers: DEFAULT_WORLD_MAP_LAYERS,
+        atmosphere: DEFAULT_WORLD_MAP_ATMOSPHERE,
+        pointsOfInterest: [
+          {
+            id: `poi-entry-${Date.now()}`,
+            name: `Entrada de ${targetMarker.name}`,
+            description: 'Ponto de partida desta região.',
+            x: 280,
+            y: 330,
+            iconEmoji: targetMarker.iconEmoji || '🚩',
+            iconType: 'town',
+            status: 'unlocked',
+            badgeText: 'Entrada',
+            scale: 1.0,
+          },
+        ],
+      };
+
+      if (activePlanet) {
+        updateMarkerForPlanet(activePlanet.id, markerId, { targetWorldMapId: newMapId });
+      }
+
+      setProject((prev) => ({
+        ...prev,
+        worldMap: newMap,
+        savedWorldMaps: [...(prev.savedWorldMaps || []).filter((m) => m.id !== newMapId), newMap],
+        activeWorldMapId: newMapId,
+      }));
+
+      setSelectedPoiId(newMap.pointsOfInterest[0]?.id || null);
+      showToast(`✨ Mapa para a região "${targetMarker.name}" criado e vinculado!`);
+    }
+  };
+
+  // Alterna o planeta ativo e foca na primeira região dele
+  const handleSwitchPlanet = (planetId: string) => {
+    setActivePlanetId(planetId);
+    const targetPlanet = (activeSystem?.planets || []).find((p) => p.id === planetId);
+    if (!targetPlanet) return;
+
+    const pMarkers =
+      planetId === 'planet-slimelands' || planetId === 'solar-planet-1'
+        ? (getOrCreatePlanetGlobeConfig(project).markers || [])
+        : (targetPlanet.markers || []);
+
+    const effectiveMarkers =
+      pMarkers.length > 0
+        ? pMarkers
+        : buildDefaultMarkersForPlanet(targetPlanet.id, targetPlanet.name, project);
+
+    const firstMarker = effectiveMarkers[0];
+    if (firstMarker) {
+      handleSwitchRegionMarker(firstMarker.id);
+    }
+    showToast(`🪐 Planeta selecionado: "${targetPlanet.name}"`);
+  };
+
+  // Cria uma nova região vinculada ao planeta atual
+  const handleCreateNewRegionForCurrentPlanet = () => {
+    if (!activePlanet) return;
+    const count = planetMarkers.length + 1;
+    const newMarkerId = `reg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const newMapId = `map-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const markerName = `Nova Região ${count}`;
+    const nowIso = new Date().toISOString();
+
+    const newMarker: PlanetGlobeMarker = {
+      id: newMarkerId,
+      name: markerName,
+      iconEmoji: '🏰',
+      nx: Number((Math.random() * 0.8 - 0.4).toFixed(3)),
+      ny: Number((Math.random() * 0.8 - 0.4).toFixed(3)),
+      scale: 1.0,
+      status: 'unlocked',
+      badgeText: 'NOVA',
+      targetWorldMapId: newMapId,
+      description: `Região explorável ${markerName} no planeta ${activePlanet.name}.`,
+    };
+
+    const newMap: WorldMapConfig = {
+      id: newMapId,
+      enabled: true,
+      title: markerName,
+      description: `Mapa regional vinculado ao marcador ${markerName} do planeta ${activePlanet.name}.`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      backgroundPng: DEFAULT_WORLD_MAP_BACKGROUNDS[0].url,
+      mapWidth: 1600,
+      mapHeight: 667,
+      initialScrollX: 0,
+      layers: DEFAULT_WORLD_MAP_LAYERS,
+      atmosphere: DEFAULT_WORLD_MAP_ATMOSPHERE,
+      pointsOfInterest: [
+        {
+          id: `poi-entry-${Date.now()}`,
+          name: `Entrada de ${markerName}`,
+          description: 'Ponto de partida desta região.',
+          x: 280,
+          y: 330,
+          iconEmoji: '🚩',
+          iconType: 'town',
+          status: 'unlocked',
+          badgeText: 'Entrada',
+          scale: 1.0,
+        },
+      ],
+    };
+
+    addMarkerToPlanet(activePlanet.id, newMarker);
+
+    setProject((prev) => ({
+      ...prev,
+      worldMap: newMap,
+      savedWorldMaps: [...(prev.savedWorldMaps || []).filter((m) => m.id !== newMapId), newMap],
+      activeWorldMapId: newMapId,
+    }));
+
+    setActiveMarkerId(newMarkerId);
+    setSelectedPoiId(newMap.pointsOfInterest[0]?.id || null);
+    showToast(`✨ Nova região "${markerName}" criada no planeta ${activePlanet.name}!`);
+  };
+
+  // Retorna diretamente para o globo do planeta
+  const handleBackToGlobe = () => {
+    setEditorLayerMode('planet');
+    showToast(`🪐 Retornando ao Globo 3D do planeta ${activePlanet?.name || ''}`);
+  };
+
+  // Atualiza o título do mapa e sincroniza com o marcador no planeta
+  const handleUpdateRegionTitle = (newTitle: string) => {
+    updateWorldMap({ title: newTitle });
+    if (activePlanet && currentMarker) {
+      updateMarkerForPlanet(activePlanet.id, currentMarker.id, { name: newTitle });
+    }
   };
 
   // Função para alternar o mapa global ativo
@@ -406,6 +830,48 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
     setSelectedPoiId(newId);
     setActiveSidebarTab('pois');
     showToast('✨ Ponto de Interesse adicionado ao Mapa!');
+  };
+
+  // Adiciona novo Ponto de Interesse em coordenadas exatas do clique
+  const handleAddNewPoiAtCoords = (x: number, y: number) => {
+    const newId = `poi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const count = worldMap.pointsOfInterest.length + 1;
+    const newPoi: WorldMapPOI = {
+      id: newId,
+      name: `Local ${count}`,
+      description: 'Ponto de interesse explorável no mapa regional.',
+      x,
+      y,
+      iconEmoji: '📍',
+      iconType: 'castle',
+      status: 'unlocked',
+      badgeText: `Local ${count}`,
+      scale: 1.0,
+    };
+    updateWorldMap({
+      pointsOfInterest: [...worldMap.pointsOfInterest, newPoi],
+    });
+    setSelectedPoiId(newId);
+    setIsAddPoiMode(false);
+    setActiveSidebarTab('pois');
+    showToast(`✨ Ponto adicionado em (${x}, ${y})!`);
+  };
+
+  const handleCanvasPlaneClick = (e: React.MouseEvent) => {
+    if (isAddPoiMode) {
+      const canvasEl = document.getElementById('world-map-canvas-plane');
+      if (!canvasEl) return;
+      const rect = canvasEl.getBoundingClientRect();
+      const rawX = (e.clientX - rect.left) / zoom;
+      const rawY = (e.clientY - rect.top) / zoom;
+      const clampedX = Math.max(30, Math.min((worldMap.mapWidth || 1600) - 30, Math.round(rawX)));
+      const clampedY = Math.max(30, Math.min((worldMap.mapHeight || 667) - 30, Math.round(rawY)));
+      handleAddNewPoiAtCoords(clampedX, clampedY);
+      return;
+    }
+    if (continuousMode) {
+      handleContinuousCanvasClick(e);
+    }
   };
 
   // Exclui POI selecionado
@@ -545,7 +1011,47 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
+  const handleCanvasPointerDown = (e: React.PointerEvent) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      if (!isDraggingPoi && !isAddPoiMode) {
+        setIsPanning(true);
+        panStartRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          x: panOffset.x,
+          y: panOffset.y,
+        };
+      }
+    } else if (activePointersRef.current.size === 2) {
+      // Gesto de pinça tátil com 2 dedos no mobile
+      setIsPanning(false);
+      setIsDraggingPoi(null);
+      const [p1, p2] = Array.from(activePointersRef.current.values());
+      pinchDistRef.current = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      pinchStartZoomRef.current = zoom;
+    }
+  };
+
   const handlePointerMove = (e: React.PointerEvent) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Multi-touch Pinch to Zoom fluido no mobile
+    if (activePointersRef.current.size === 2 && pinchDistRef.current && pinchDistRef.current > 0) {
+      const [p1, p2] = Array.from(activePointersRef.current.values());
+      const currentDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const factor = currentDist / pinchDistRef.current;
+      const nextZoom = Math.max(0.2, Math.min(3.0, Number((pinchStartZoomRef.current * factor).toFixed(3))));
+      setZoom(nextZoom);
+      return;
+    }
+
     if (isDraggingPoi) {
       const canvasEl = document.getElementById('world-map-canvas-plane');
       if (!canvasEl) return;
@@ -564,24 +1070,29 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (isDraggingPoi) {
-      setIsDraggingPoi(null);
+    activePointersRef.current.delete(e.pointerId);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
     }
-    if (isPanning) {
-      setIsPanning(false);
+    if (activePointersRef.current.size < 2) {
+      pinchDistRef.current = null;
+    }
+    if (activePointersRef.current.size === 0) {
+      if (isDraggingPoi) {
+        setIsDraggingPoi(null);
+      }
+      if (isPanning) {
+        setIsPanning(false);
+      }
     }
   };
 
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && !isDraggingPoi) {
-      setIsPanning(true);
-      panStartRef.current = {
-        startX: e.clientX,
-        startY: e.clientY,
-        x: panOffset.x,
-        y: panOffset.y,
-      };
-    }
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.08 : -0.08;
+    setZoom((z) => Math.max(0.2, Math.min(3.0, Number((z + delta).toFixed(2)))));
   };
 
   const mapW = worldMap.mapWidth || 1600;
@@ -601,30 +1112,10 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
 
   return (
     <div className="flex-1 h-full flex flex-col bg-zinc-950 select-none overflow-hidden relative">
-      {/* Barra de Ferramentas Superior do Editor Solo de Mapa */}
+      {/* Barra de Ferramentas Superior com Navegação Hierárquica Estrela > Planeta > Região */}
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800 shrink-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Compass className="w-4 h-4" />
-            </div>
-            <div>
-              <input
-                type="text"
-                value={worldMap.title || 'Mapa do Reino'}
-                onChange={(e) => updateWorldMap({ title: e.target.value })}
-                className="bg-zinc-800/80 border border-zinc-700 rounded px-2 py-0.5 text-xs font-bold text-white max-w-[220px] focus:outline-none focus:border-amber-400"
-                placeholder="Nome do Mapa"
-              />
-              <span className="text-[10px] text-zinc-400 block font-mono">
-                Editor Solo de Mapa • {worldMap.pointsOfInterest.length} Locais
-              </span>
-            </div>
-          </div>
-
-          <div className="h-4 w-[1px] bg-zinc-800" />
-
-          {/* Seletor Principal: Editor do Globo Planetário vs Editor de Mapa Regional */}
+          {/* Seletor Principal: Modo Globo vs Modo Regional */}
           <div className="flex items-center bg-zinc-950 p-0.5 rounded-xl border border-zinc-800">
             <button
               type="button"
@@ -634,7 +1125,7 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'text-zinc-400 hover:text-white'
               }`}
-              title="Editar o Planeta Giratório e os Marcadores Globais das Regiões"
+              title="Visualizar e Editar o Globo do Planeta"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>🌍 Globo do Planeta</span>
@@ -647,126 +1138,168 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-white'
               }`}
-              title="Editar o Mapa Regional selecionado e seus Locais/Fases"
+              title="Editar o Mapa Regional da Região Selecionada"
             >
               <Compass className="w-3.5 h-3.5" />
-              <span>🗺️ Mapa Regional ({worldMap.title || 'Ativo'})</span>
+              <span>🗺️ Mapa Regional</span>
             </button>
           </div>
 
-          <div className="h-4 w-[1px] bg-zinc-800" />
+          <div className="h-5 w-[1px] bg-zinc-800" />
 
-          {/* Botão Adicionar Ponto de Interesse (quando no Mapa Regional) */}
-          {editorLayerMode === 'region' && (
-            <>
+          {/* Breadcrumb e Conexão Hierárquica no Modo Regional */}
+          {editorLayerMode === 'region' ? (
+            <div className="flex items-center gap-2">
+              {/* Botão de Retorno Imediato ao Globo 3D */}
               <button
                 type="button"
-                onClick={handleAddNewPoi}
-                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
-                title="Adicionar novo Ponto de Interesse (Local clicável no mapa)"
+                onClick={handleBackToGlobe}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-amber-300 hover:text-amber-200 border border-zinc-700 text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-sm"
+                title={`Retornar ao Globo 3D de ${activePlanet?.name || 'Planeta'}`}
               >
-                <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                <span>+ Novo Marcador</span>
+                <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>Voltar ao Globo</span>
+              </button>
+
+              <div className="h-4 w-[1px] bg-zinc-800" />
+
+              {/* Breadcrumb: Estrela */}
+              <div
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] font-semibold text-zinc-300"
+                title="Sistema Estelar"
+              >
+                <span className="text-amber-400">⭐</span>
+                <span className="max-w-[100px] truncate">{activeSystem?.name || 'Solaris Prime'}</span>
+              </div>
+
+              <span className="text-zinc-600 font-bold text-xs">›</span>
+
+              {/* Breadcrumb: Planeta */}
+              <div
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-bold text-amber-200"
+                title="Planeta Pai"
+              >
+                <span>🪐</span>
+                <select
+                  value={activePlanet?.id || ''}
+                  onChange={(e) => handleSwitchPlanet(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-amber-200 outline-none cursor-pointer max-w-[130px] truncate"
+                >
+                  {(activeSystem?.planets || []).map((p) => (
+                    <option key={p.id} value={p.id} className="bg-zinc-900 text-white">
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <span className="text-zinc-600 font-bold text-xs">›</span>
+
+              {/* Breadcrumb: Região (Marcador do Globo) */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/70 border border-indigo-500/40 text-xs font-bold text-indigo-200 shadow-inner">
+                <span>{currentMarker?.iconEmoji || '📍'}</span>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">Região:</label>
+                <select
+                  value={currentMarker?.id || ''}
+                  onChange={(e) => handleSwitchRegionMarker(e.target.value)}
+                  className="bg-transparent text-xs font-black text-white outline-none cursor-pointer max-w-[170px] truncate"
+                >
+                  {planetMarkers.map((m) => (
+                    <option key={m.id} value={m.id} className="bg-zinc-900 text-white">
+                      {m.name} {m.badgeText ? `[${m.badgeText}]` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Botão + Nova Região neste Planeta */}
+              <button
+                type="button"
+                onClick={handleCreateNewRegionForCurrentPlanet}
+                className="p-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-amber-300 hover:text-amber-200 border border-zinc-700 transition-colors cursor-pointer"
+                title="Criar Nova Região neste Planeta"
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               </button>
 
               <button
                 type="button"
-                onClick={() => bgUploadInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-300 rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95"
-                title="Trocar a imagem PNG de fundo deste Mapa Regional"
+                onClick={() => setShowMapManagerModal(true)}
+                className="px-2 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white text-[10px] font-bold border border-zinc-750 transition-colors cursor-pointer"
+                title="Gerenciar Biblioteca de Mapas (Duplicar, Excluir)"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>🖼️ Trocar PNG desta Região</span>
+                Biblioteca ({savedWorldMaps.length})
               </button>
-            </>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <span className="font-semibold text-zinc-300">
+                ⭐ {activeSystem?.name || 'Sistema'}
+              </span>
+              <span className="text-zinc-600 font-bold">›</span>
+              <span className="font-bold text-amber-300">
+                🪐 {activePlanet?.name || 'Planeta'}
+              </span>
+              <span className="text-zinc-500 text-[11px] font-mono">
+                ({planetMarkers.length} Regiões no Globo)
+              </span>
+            </div>
           )}
-
-          {/* Botão do Modo de Inserção Contínua com Ramificação */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !continuousMode;
-              setContinuousMode(next);
-              if (next && !activeParentPoiId && worldMap.pointsOfInterest.length > 0) {
-                setActiveParentPoiId(selectedPoiId || worldMap.pointsOfInterest[0].id);
-              }
-              showToast(
-                next
-                  ? '⚡ Modo Inserção Contínua ATIVADO! Clique no mapa para posicionar marcadores encadeados e criar ramificações.'
-                  : 'Modo Inserção Contínua desativado.'
-              );
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-extrabold shadow-sm transition-all cursor-pointer active:scale-95 ${
-              continuousMode
-                ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 ring-2 ring-amber-300 animate-pulse'
-                : 'bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-zinc-300 hover:text-white'
-            }`}
-            title="Modo Trilha Contínua: Clique no mapa para adicionar marcadores encadeados e ramificações"
-          >
-            <GitBranch className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>{continuousMode ? 'Modo Trilha ON' : 'Inserção Contínua'}</span>
-          </button>
-
-          <div className="h-4 w-[1px] bg-zinc-800" />
-
-          {/* Botão Salvar Mapa Ativo */}
-          <button
-            type="button"
-            onClick={handleSaveCurrentMap}
-            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
-            title="Salvar alterações do mapa atual"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Salvar Mapa</span>
-          </button>
-
-          {/* Botão Gerenciador de Múltiplos Mapas */}
-          <button
-            type="button"
-            onClick={() => setShowMapManagerModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
-            title="Abrir Biblioteca de Múltiplos Mapas (Criar, Alternar e Duplicar)"
-          >
-            <Globe className="w-3.5 h-3.5 text-indigo-200" />
-            <span>Múltiplos Mapas ({savedWorldMaps.length})</span>
-          </button>
         </div>
 
-        {/* Controles de Zoom e Dimensão */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-zinc-850 p-0.5 rounded-lg border border-zinc-750">
+        {/* Lado Direito: Título da Região, Trocar Fundo e Salvar */}
+        {editorLayerMode === 'region' ? (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-zinc-400 uppercase font-bold">Nome da Região:</label>
+              <input
+                type="text"
+                value={worldMap.title || 'Mapa do Reino'}
+                onChange={(e) => handleUpdateRegionTitle(e.target.value)}
+                className="bg-zinc-950 border border-zinc-750 rounded-lg px-2.5 py-1 text-xs font-bold text-white max-w-[190px] focus:outline-none focus:border-amber-400"
+                placeholder="Nome da Região"
+              />
+            </div>
+
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))}
-              className="p-1 hover:bg-zinc-750 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              title="Diminuir Zoom"
+              onClick={() => bgUploadInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-300 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              title="Trocar a imagem PNG de fundo deste Mapa Regional"
             >
-              <ZoomOut className="w-3.5 h-3.5" />
+              <Upload className="w-3 h-3" />
+              <span>Trocar Fundo</span>
             </button>
-            <span className="text-[10px] font-mono font-bold text-zinc-300 px-1">
-              {Math.round(zoom * 100)}%
-            </span>
+
             <button
               type="button"
-              onClick={() => setZoom((z) => Math.min(2.5, z + 0.1))}
-              className="p-1 hover:bg-zinc-750 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              title="Aumentar Zoom"
+              onClick={handleSaveCurrentMap}
+              className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
+              title="Salvar alterações do mapa atual"
             >
-              <ZoomIn className="w-3.5 h-3.5" />
+              <Save className="w-3.5 h-3.5" />
+              <span>Salvar</span>
             </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
-                setZoom(0.85);
-                setPanOffset({ x: 30, y: 30 });
+                if (currentMarker?.targetWorldMapId) {
+                  handleSwitchMap(currentMarker.targetWorldMapId);
+                }
+                setEditorLayerMode('region');
               }}
-              className="p-1 hover:bg-zinc-750 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              title="Resetar Zoom e Centralizar"
+              className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95"
+              title="Editar o mapa regional da região selecionada"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Compass className="w-3.5 h-3.5" />
+              <span>Editar Mapa Desta Região</span>
             </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Área Principal: Modo Globo do Planeta OU Modo Mapa Regional */}
@@ -775,18 +1308,27 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
           project={project}
           setProject={setProject}
           savedWorldMaps={savedWorldMaps}
-          onSwitchToRegionalMapEditor={(targetMapId) => {
+          selectedSysId={activeSysId}
+          onSelectSysId={setActiveSysId}
+          selectedPlanetId={activePlanetId}
+          onSelectPlanetId={setActivePlanetId}
+          selectedMarkerId={activeMarkerId}
+          onSelectMarkerId={setActiveMarkerId}
+          onSwitchToRegionalMapEditor={(targetMapId, pId, mId) => {
+            if (pId) setActivePlanetId(pId);
+            if (mId) setActiveMarkerId(mId);
             handleSwitchMap(targetMapId);
             setEditorLayerMode('region');
           }}
-          onCreateNewRegionalMapForMarker={(markerId, markerName) => {
+          onCreateNewRegionalMapForMarker={(markerId, markerName, pId) => {
+            const currentPlanetId = pId || activePlanetId;
             const newMapId = `map-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
             const nowIso = new Date().toISOString();
             const newMap: WorldMapConfig = {
               id: newMapId,
               enabled: true,
-              title: `Região: ${markerName}`,
-              description: `Mapa regional vinculado ao marcador planetário ${markerName}.`,
+              title: markerName,
+              description: `Mapa regional vinculado ao marcador ${markerName}.`,
               createdAt: nowIso,
               updatedAt: nowIso,
               backgroundPng: DEFAULT_WORLD_MAP_BACKGROUNDS[0].url,
@@ -797,44 +1339,113 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
               atmosphere: DEFAULT_WORLD_MAP_ATMOSPHERE,
               pointsOfInterest: [
                 {
-                  id: `poi-start-${Date.now()}`,
+                  id: `poi-entry-${Date.now()}`,
                   name: `Entrada de ${markerName}`,
-                  description: 'Ponto inicial desta região.',
+                  description: 'Ponto de partida desta região.',
                   x: 280,
                   y: 330,
-                  iconEmoji: '🏰',
+                  iconEmoji: '🚩',
                   iconType: 'town',
                   status: 'unlocked',
-                  badgeText: 'Início',
+                  badgeText: 'Entrada',
                   scale: 1.0,
                 },
               ],
             };
-            const nextSaved = [...savedWorldMaps, newMap];
-            setProject((prev) => {
-              const currentGlobe = getOrCreatePlanetGlobeConfig(prev);
-              return {
-                ...prev,
-                worldMap: newMap,
-                savedWorldMaps: nextSaved,
-                activeWorldMapId: newMapId,
-                planetGlobe: {
-                  ...currentGlobe,
-                  markers: currentGlobe.markers.map((m) =>
-                    m.id === markerId ? { ...m, targetWorldMapId: newMapId } : m
-                  ),
-                },
-              };
-            });
+
+            updateMarkerForPlanet(currentPlanetId, markerId, { targetWorldMapId: newMapId });
+
+            setProject((prev) => ({
+              ...prev,
+              worldMap: newMap,
+              savedWorldMaps: [...(prev.savedWorldMaps || []).filter((m) => m.id !== newMapId), newMap],
+              activeWorldMapId: newMapId,
+            }));
+
+            setActiveMarkerId(markerId);
             setEditorLayerMode('region');
-            showToast(`✨ Mapa Regional "${newMap.title}" criado e vinculado ao marcador!`);
+            showToast(`✨ Mapa Regional "${markerName}" criado e vinculado ao marcador!`);
           }}
           showToast={showToast}
         />
       ) : (
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Backdrop escuro no mobile ao abrir o painel */}
+        {isMobileScreen && isMobilePanelOpen && (
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-xs z-40 md:hidden"
+            onClick={() => setIsMobilePanelOpen(false)}
+          />
+        )}
+
         {/* Painel Lateral ESQUERDO: Abas de Pontos, Camadas, Atmosfera e Fundo */}
-        <div className="w-[420px] xl:w-[460px] 2xl:w-[500px] bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 z-20 shadow-xl overflow-hidden">
+        <div
+          className={`${
+            isMobileScreen
+              ? isMobilePanelOpen
+                ? 'fixed inset-x-0 bottom-0 max-h-[82vh] z-50 bg-zinc-900 border-t border-zinc-700 rounded-t-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200'
+                : 'hidden'
+              : 'w-[400px] xl:w-[450px] 2xl:w-[490px] bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 z-20 shadow-xl overflow-hidden'
+          }`}
+        >
+          {/* Header Mobile com puxador e botão Fechar */}
+          {isMobileScreen && (
+            <div className="flex items-center justify-between px-3 py-2 bg-zinc-950 border-b border-zinc-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="w-8 h-1 rounded-full bg-zinc-600 block" />
+                <span className="text-xs font-bold text-amber-300">Configurações do Mapa Regional</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMobilePanelOpen(false)}
+                className="p-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white cursor-pointer"
+                title="Fechar painel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Cartão de Identidade Hierárquica da Região Vinculada ao Planeta */}
+          <div className="p-2.5 bg-gradient-to-r from-zinc-950 via-zinc-900 to-indigo-950/40 border-b border-zinc-800 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-zinc-950 border border-zinc-750 flex items-center justify-center shrink-0 shadow-inner overflow-hidden">
+                {currentMarker?.iconPng ? (
+                  <img src={currentMarker.iconPng} alt="" className="w-full h-full object-contain filter drop-shadow" />
+                ) : (
+                  <span className="text-sm">{currentMarker?.iconEmoji || '📍'}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-white truncate">{worldMap.title || currentMarker?.name}</span>
+                  {currentMarker?.badgeText && (
+                    <span className="text-[9px] px-1.5 py-0.2 bg-amber-500/20 text-amber-300 font-bold rounded shrink-0">
+                      {currentMarker.badgeText}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-zinc-400 flex items-center gap-1 mt-0.5 truncate">
+                  <span>🪐 {activePlanet?.name || 'Planeta'}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="font-mono text-cyan-400">
+                    ({currentMarker ? (currentMarker.nx >= 0 ? `+${currentMarker.nx.toFixed(2)}` : currentMarker.nx.toFixed(2)) : '0.00'}, {currentMarker ? (currentMarker.ny >= 0 ? `+${currentMarker.ny.toFixed(2)}` : currentMarker.ny.toFixed(2)) : '0.00'})
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBackToGlobe}
+              className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-750 text-amber-300 hover:text-amber-200 border border-zinc-700 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all"
+              title="Localizar a posição desta região no Globo 3D"
+            >
+              <Globe className="w-3 h-3 text-amber-400" />
+              <span>Ver no Globo</span>
+            </button>
+          </div>
+
           {/* Seletor de Abas do Menu Lateral do Mapa */}
           <div className="grid grid-cols-4 p-1.5 bg-zinc-950 border-b border-zinc-800 gap-1 text-[11px] font-bold">
             <button
@@ -1115,6 +1726,168 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                       </div>
                     </div>
 
+                    {/* Ajustes Independentes do Asset PNG */}
+                    {selectedPoi.iconPng && (
+                      <div className="pt-2 border-t border-zinc-800 space-y-2 bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-750">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-amber-300 font-bold uppercase flex items-center gap-1">
+                            <span>🖼️ Ajustes Exclusivos do PNG</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePoi(selectedPoi.id, {
+                                pngScale: 1.0,
+                                pngOffsetX: 0,
+                                pngOffsetY: 0,
+                              })
+                            }
+                            className="text-[9px] text-zinc-400 hover:text-white underline cursor-pointer"
+                          >
+                            Resetar
+                          </button>
+                        </div>
+
+                        {/* Escala Independente do PNG */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-zinc-400">Escala do PNG:</span>
+                            <span className="font-mono font-bold text-amber-300">
+                              {Math.round((selectedPoi.pngScale ?? 1.0) * 100)}%
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min="0.2"
+                              max="3.5"
+                              step="0.05"
+                              value={selectedPoi.pngScale ?? 1.0}
+                              onChange={(e) =>
+                                updatePoi(selectedPoi.id, {
+                                  pngScale: parseFloat(e.target.value) || 1.0,
+                                })
+                              }
+                              className="flex-1 accent-amber-500 cursor-pointer h-1.5"
+                            />
+                            <div className="flex items-center gap-0.5">
+                              {[0.8, 1.0, 1.5, 2.0].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => updatePoi(selectedPoi.id, { pngScale: s })}
+                                  className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${
+                                    Math.abs((selectedPoi.pngScale ?? 1.0) - s) < 0.05
+                                      ? 'bg-amber-500 text-black font-bold'
+                                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-750'
+                                  }`}
+                                >
+                                  {Math.round(s * 100)}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Deslocamento X e Y Exclusivo do PNG */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                              <span>Offset X:</span>
+                              <span className="font-mono text-zinc-300">{selectedPoi.pngOffsetX || 0}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-80"
+                              max="80"
+                              step="1"
+                              value={selectedPoi.pngOffsetX || 0}
+                              onChange={(e) =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetX: parseInt(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full accent-amber-500 cursor-pointer h-1.5"
+                            />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                              <span>Offset Y:</span>
+                              <span className="font-mono text-zinc-300">{selectedPoi.pngOffsetY || 0}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-80"
+                              max="80"
+                              step="1"
+                              value={selectedPoi.pngOffsetY || 0}
+                              onChange={(e) =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetY: parseInt(e.target.value) || 0,
+                                })
+                              }
+                              className="w-full accent-amber-500 cursor-pointer h-1.5"
+                            />
+                          </div>
+                        </div>
+
+                        {/* D-Pad Micro-Ajuste do PNG */}
+                        <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
+                          <span className="text-[9px] text-zinc-400">Micro-Posicionamento:</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              title="PNG Esquerda (-2px)"
+                              onClick={() =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetX: (selectedPoi.pngOffsetX || 0) - 2,
+                                })
+                              }
+                              className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            >
+                              ◀
+                            </button>
+                            <button
+                              type="button"
+                              title="PNG Cima (-2px)"
+                              onClick={() =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetY: (selectedPoi.pngOffsetY || 0) - 2,
+                                })
+                              }
+                              className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              title="PNG Baixo (+2px)"
+                              onClick={() =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetY: (selectedPoi.pngOffsetY || 0) + 2,
+                                })
+                              }
+                              className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            >
+                              ▼
+                            </button>
+                            <button
+                              type="button"
+                              title="PNG Direita (+2px)"
+                              onClick={() =>
+                                updatePoi(selectedPoi.id, {
+                                  pngOffsetX: (selectedPoi.pngOffsetX || 0) + 2,
+                                })
+                              }
+                              className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                            >
+                              ▶
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Presets de Ícones e Emojis */}
                     <div className="pt-1">
                       <span className="text-[9px] text-zinc-400 block mb-1">Ou escolha um ícone padrão:</span>
@@ -1191,11 +1964,27 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                     )}
                   </div>
 
-                  {/* Personalização da Janela / Pop-up de Game (Banner, Nível, Botão Viajar) */}
-                  <div className="space-y-3 p-3 bg-zinc-850 rounded-xl border border-zinc-800">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
-                      🎮 Pop-up RPG de Viagem
-                    </span>
+                  {/* Personalização da Janela / Pop-up de Game (Banner, Nível, Slimes) — Acordeão Colapsável */}
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-850 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowRpgSection(!showRpgSection)}
+                      className="w-full flex items-center justify-between p-2.5 hover:bg-zinc-800 transition-colors cursor-pointer text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400 text-xs">🎮</span>
+                        <div>
+                          <span className="text-[10px] font-bold text-white uppercase tracking-wider block">
+                            Pop-up RPG & Slimes ({selectedPoi.rewardSlotCount || selectedPoi.rewardSlots?.length || 10} Slots)
+                          </span>
+                          <span className="text-[9px] text-zinc-400">Banner, Nível e Slimes escaneados da área</span>
+                        </div>
+                      </div>
+                      <ChevronRight className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${showRpgSection ? 'rotate-90' : ''}`} />
+                    </button>
+
+                    {showRpgSection && (
+                      <div className="p-3 pt-1 space-y-3 border-t border-zinc-800/60">
 
                     {/* Banner Ilustrado da Janela */}
                     <div className="space-y-1.5">
@@ -1569,6 +2358,8 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                         </div>
                       )}
                     </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Configuração de Ponto Invisível (Guia de Rota) */}
@@ -1692,26 +2483,65 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
 
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <div>
-                        <span className="text-[9px] text-zinc-400">X:</span>
+                        <span className="text-[9px] text-zinc-400 font-semibold">Posição X (px):</span>
                         <input
                           type="number"
                           value={selectedPoi.x}
                           onChange={(e) =>
                             updatePoi(selectedPoi.id, { x: parseInt(e.target.value) || 0 })
                           }
-                          className="w-full bg-zinc-800 px-2 py-1 rounded text-xs text-white font-mono mt-0.5"
+                          className="w-full bg-zinc-800 border border-zinc-700 px-2 py-1 rounded-lg text-xs text-amber-300 font-mono mt-0.5 focus:border-amber-400 outline-none"
                         />
                       </div>
                       <div>
-                        <span className="text-[9px] text-zinc-400">Y:</span>
+                        <span className="text-[9px] text-zinc-400 font-semibold">Posição Y (px):</span>
                         <input
                           type="number"
                           value={selectedPoi.y}
                           onChange={(e) =>
                             updatePoi(selectedPoi.id, { y: parseInt(e.target.value) || 0 })
                           }
-                          className="w-full bg-zinc-800 px-2 py-1 rounded text-xs text-white font-mono mt-0.5"
+                          className="w-full bg-zinc-800 border border-zinc-700 px-2 py-1 rounded-lg text-xs text-amber-300 font-mono mt-0.5 focus:border-amber-400 outline-none"
                         />
+                      </div>
+                    </div>
+
+                    {/* D-Pad Micro-Ajuste Cirúrgico (1px ou 5px com Shift) */}
+                    <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800">
+                      <span className="text-[9px] text-zinc-400 font-medium">Ajuste Fino Milimétrico:</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          title="Mover para Esquerda (-1px)"
+                          onClick={() => updatePoi(selectedPoi.id, { x: Math.max(0, selectedPoi.x - 1) })}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ◀
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Cima (-1px)"
+                          onClick={() => updatePoi(selectedPoi.id, { y: Math.max(0, selectedPoi.y - 1) })}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Baixo (+1px)"
+                          onClick={() => updatePoi(selectedPoi.id, { y: selectedPoi.y + 1 })}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Direita (+1px)"
+                          onClick={() => updatePoi(selectedPoi.id, { x: selectedPoi.x + 1 })}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▶
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -2149,16 +2979,172 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
         {/* Palco Central do Canvas Panorâmico */}
         <div
           ref={viewportRef}
-          onMouseDown={handleCanvasMouseDown}
-          onPointerMove={handlePointerMove}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={(e) => {
+            handlePointerMove(e);
+            const canvasEl = document.getElementById('world-map-canvas-plane');
+            if (canvasEl) {
+              const rect = canvasEl.getBoundingClientRect();
+              const rawX = (e.clientX - rect.left) / zoom;
+              const rawY = (e.clientY - rect.top) / zoom;
+              if (rawX >= 0 && rawX <= (worldMap.mapWidth || 1600) && rawY >= 0 && rawY <= (worldMap.mapHeight || 667)) {
+                setCursorCoords({ x: Math.round(rawX), y: Math.round(rawY) });
+              } else {
+                setCursorCoords(null);
+              }
+            }
+          }}
+          onPointerLeave={() => {
+            setCursorCoords(null);
+            activePointersRef.current.clear();
+            setIsPanning(false);
+            setIsDraggingPoi(null);
+          }}
           onPointerUp={handlePointerUp}
-          className="order-first flex-1 h-full overflow-hidden relative cursor-grab active:cursor-grabbing bg-radial from-zinc-900 to-black select-none"
+          onPointerCancel={handlePointerUp}
+          onWheel={handleWheelZoom}
+          style={{ touchAction: 'none' }}
+          className={`order-first flex-1 h-full overflow-hidden relative bg-radial from-zinc-900 to-black select-none ${
+            isAddPoiMode ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'
+          }`}
         >
-          {/* Instruções Sutis no Canto Superior Esquerdo */}
-          <div className="absolute top-3 left-4 z-20 pointer-events-none flex items-center gap-2 text-[11px] text-zinc-400 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-zinc-800 shadow-md">
-            <Move className="w-3.5 h-3.5 text-amber-400" />
-            <span>Arraste o mapa para navegar • Arraste os pontos para reposicionar</span>
+          {/* BARRA FLUTUANTE SUPERIOR: MODOS, GRADE, ZOOM E SALVAR */}
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/85 backdrop-blur-md border border-zinc-800 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddPoiMode(false);
+                setContinuousMode(false);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                !isAddPoiMode && !continuousMode
+                  ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Move className="w-3.5 h-3.5" />
+              <span>Mover</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddPoiMode(!isAddPoiMode);
+                if (continuousMode) setContinuousMode(false);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isAddPoiMode
+                  ? 'bg-emerald-500 text-black font-extrabold shadow-sm ring-2 ring-emerald-400/50'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Clique no terreno para inserir um novo ponto no local exato"
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>+ Ponto</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = !continuousMode;
+                setContinuousMode(next);
+                if (isAddPoiMode) setIsAddPoiMode(false);
+                if (next && !activeParentPoiId && worldMap.pointsOfInterest.length > 0) {
+                  setActiveParentPoiId(selectedPoiId || worldMap.pointsOfInterest[0].id);
+                }
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                continuousMode
+                  ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black shadow-sm ring-2 ring-amber-300'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Modo Trilha: Clique no mapa para criar nós encadeados e ramificações"
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>Trilha</span>
+            </button>
+
+            <div className="w-[1px] h-3.5 bg-zinc-750" />
+
+            {/* Alternar Grade Cartográfica */}
+            <button
+              type="button"
+              onClick={() => updateLayer('grid', { visible: !isGridVisible })}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                isGridVisible ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Alternar Grade Náutica / Cartográfica"
+            >
+              <Grid className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="w-[1px] h-3.5 bg-zinc-750" />
+
+            {/* Zoom Controls */}
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))}
+                className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+                title="Diminuir Zoom"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[10px] font-mono font-bold text-zinc-300 px-1 min-w-[36px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.min(2.5, z + 0.1))}
+                className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+                title="Aumentar Zoom"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setZoom(0.85);
+                  setPanOffset({ x: 30, y: 30 });
+                }}
+                className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+                title="Resetar"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="w-[1px] h-3.5 bg-zinc-750" />
+
+            {/* Salvar Mapa Rápido */}
+            <button
+              type="button"
+              onClick={handleSaveCurrentMap}
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer active:scale-95"
+              title="Salvar alterações do mapa regional"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Salvar</span>
+            </button>
           </div>
+
+          {/* HUD DE COORDENADAS DO CURSOR (PRECISÃO CARTOGRÁFICA) */}
+          {cursorCoords && (
+            <div className="absolute bottom-3 left-3 z-30 px-3 py-1.5 rounded-xl bg-zinc-950/85 backdrop-blur-md border border-zinc-800 text-[10px] font-mono text-zinc-300 flex items-center gap-2 pointer-events-none shadow-xl">
+              <span className="text-amber-400 font-bold flex items-center gap-1">
+                <Compass className="w-3.5 h-3.5" />
+                <span>Cursor:</span>
+              </span>
+              <span className="text-cyan-300 font-semibold">
+                X: {cursorCoords.x}px • Y: {cursorCoords.y}px
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-400">
+                ({Math.round((cursorCoords.x / (worldMap.mapWidth || 1600)) * 100)}% ×{' '}
+                {Math.round((cursorCoords.y / (worldMap.mapHeight || 667)) * 100)}%)
+              </span>
+            </div>
+          )}
 
           {/* Banner Flutuante de Ação do Modo de Inserção Contínua com Ramificação */}
           {continuousMode && (
@@ -2234,7 +3220,7 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
           {/* Plano do Mapa com Zoom e Pan */}
           <div
             id="world-map-canvas-plane"
-            onClick={handleContinuousCanvasClick}
+            onClick={handleCanvasPlaneClick}
             style={{
               width: `${mapW}px`,
               height: `${mapH}px`,
@@ -2302,6 +3288,19 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                         isSelected ? 'z-30' : ''
                       }`}
                     >
+                      {/* Retículo Alvo Subpixel (Bulls-eye Anchor Point) */}
+                      {isSelected && (
+                        <div
+                          className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400 bg-amber-500/40 pointer-events-none shadow-sm flex items-center justify-center z-40"
+                          style={{
+                            left: poi.isInvisible ? '50%' : '20%',
+                            top: poi.isInvisible ? '50%' : '84%',
+                          }}
+                        >
+                          <div className="w-1 h-1 rounded-full bg-amber-300" />
+                        </div>
+                      )}
+
                       {/* Anel Pulsante do Nó Origem da Ramificação no Modo Contínuo */}
                       {isParentNode && (
                         <div className="absolute -inset-4 rounded-full border-2 border-dashed border-amber-400 animate-spin opacity-85 pointer-events-none" />
@@ -2332,6 +3331,9 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
                           badgeText={poi.badgeText}
                           isSelected={isSelected}
                           scale={poiScale}
+                          pngScale={poi.pngScale}
+                          pngOffsetX={poi.pngOffsetX}
+                          pngOffsetY={poi.pngOffsetY}
                           sizeVariant="md"
                         />
                       )}
@@ -2475,6 +3477,23 @@ export const WorldMapCanvasEditor: React.FC<Props> = ({
               </div>
             )}
           </div>
+
+          {/* Botão Flutuante de Abrir Painel no Mobile */}
+          {isMobileScreen && (
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => setIsMobilePanelOpen(true)}
+                className="px-4 py-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-slate-950 font-black text-xs shadow-2xl flex items-center gap-2 cursor-pointer border border-amber-300 active:scale-95 transition-all"
+              >
+                <Sliders className="w-4 h-4 stroke-[2.5]" />
+                <span>Painel da Região</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-950/20 text-slate-950 font-bold">
+                  {activeSidebarTab}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       )}

@@ -725,6 +725,9 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                         customLockIconPng={worldMap.customLockIconPng}
                         isFocused={isFocused}
                         scale={scale}
+                        pngScale={poi.pngScale}
+                        pngOffsetX={poi.pngOffsetX}
+                        pngOffsetY={poi.pngOffsetY}
                         sizeVariant="md"
                         revealStage={markerRevealStage}
                       />
@@ -1199,8 +1202,8 @@ export const WorldMapEmulatorView: React.FC<WorldMapEmulatorViewProps> = ({
                     visiblePois.map((poi, idx) => {
                       const isExpanded = expandedPlaceId === poi.id;
                       const isFocused = focusedPoiId === poi.id;
-                      const connectedPois = (poi.connectedToIds || [])
-                        .map((cid) => visiblePois.find((p) => p.id === cid))
+                      const connectedPois = (poi.connectedPoiIds || (poi as any).connectedToIds || [])
+                        .map((cid: string) => visiblePois.find((p) => p.id === cid))
                         .filter((p): p is WorldMapPOI => Boolean(p));
 
                       const subPlaces: {

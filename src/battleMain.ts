@@ -323,6 +323,10 @@ class BattleApp {
   // ─── RENDER ───────────────────────────────────────────────────────────────
 
   private render() {
+    FX.resetBattleTransforms();
+    if (this.engine.hp.p <= 0 || this.engine.hp.e <= 0) {
+      if (this.isGameOver()) return;
+    }
     this.landscapeBoard.setEnemyHandCount(this.engine.aiHand.length);
     this.container.innerHTML = this.board.render(
       this.engine.board, this.engine.hp, this.engine.mana, this.engine.stamina, this.engine.turn, this.timer, this.engine.grave, this.engine.deck.length
@@ -563,6 +567,7 @@ class BattleApp {
 
   private handleEndTurn() {
     this.stopTimer();
+    if (this.isGameOver()) return;
     this.clearHandSelection();
 
     const side = this.engine.turn;
@@ -618,6 +623,7 @@ class BattleApp {
 
   private triggerEndScreen(isWin: boolean, isSurrender: boolean = false) {
     this.stopTimer();
+    FX.resetBattleTransforms();
     if (document.getElementById('end-battle-overlay')) return;
      
     let title = isWin ? t('bt.winTitle') : t('bt.loseTitle');
@@ -628,7 +634,7 @@ class BattleApp {
       subtitle = t('bt.cowardSub');
     }
 
-    const pvRemain = this.engine.hp.p;
+    const pvRemain = Math.max(0, this.engine.hp.p);
 
     const prevData = ProgressionManager.getPlayerData();
     const previousXp = prevData.xp;
@@ -641,8 +647,29 @@ class BattleApp {
       cardsDefeated: this.engine.grave.filter(c => c.owner === 'e').length
     };
 
-    const { data: newData, rewards } = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
-    const npcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+    let newData = prevData;
+    let rewards = {
+      xpGained: isWin ? 60 : 25,
+      goldGained: isWin ? 60 : 20,
+      diamondGained: isWin ? 1 : 0,
+      enjinGained: isWin ? 1 : 0
+    };
+    let npcOutcome: any = null;
+
+    try {
+      const matchRewardsRes = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
+      newData = matchRewardsRes.data;
+      rewards = matchRewardsRes.rewards;
+    } catch (err) {
+      console.error('Error applying match rewards:', err);
+    }
+
+    try {
+      npcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+    } catch (err) {
+      console.error('Error recording NPC battle outcome:', err);
+    }
+
     const droppedVar = npcOutcome?.droppedVariation || null;
 
     const xpGained = rewards.xpGained + (npcOutcome?.xpEarned || 0);
@@ -665,16 +692,17 @@ class BattleApp {
     overlay.className = themeClass;
 
     const droppedRarityMeta = droppedVar ? RARITY_META[droppedVar.rarity] : null;
+    const droppedCardName = (droppedVar as any)?.name || (droppedVar as any)?.variationName || (droppedVar as any)?.baseCardName || 'Carta Especial';
     const droppedCardHtml = droppedVar && droppedRarityMeta ? `
       <div style="margin: 10px 0 6px; padding: 10px 12px; border-radius: 14px; background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(30,27,75,0.92)); border: 2px solid ${droppedRarityMeta.color}; box-shadow: 0 0 22px ${droppedRarityMeta.glow}; display: flex; align-items: center; gap: 12px; text-align: left;">
-        <img src="${droppedVar.image}" alt="${droppedVar.name}" style="width: 48px; height: 64px; object-fit: cover; border-radius: 8px; border: 1.5px solid ${droppedRarityMeta.color}; flex-shrink: 0;" />
+        <img src="${droppedVar.image}" alt="${droppedCardName}" style="width: 48px; height: 64px; object-fit: cover; border-radius: 8px; border: 1.5px solid ${droppedRarityMeta.color}; flex-shrink: 0;" />
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <span style="font-size: 9px; font-weight: 900; padding: 2px 7px; border-radius: 99px; background: ${droppedRarityMeta.color}; color: #090d16; text-transform: uppercase; letter-spacing: 0.08em;">✨ ${droppedRarityMeta.label}</span>
-            <span style="font-size: 9px; font-family: monospace; color: #cbd5e1; font-weight: 700;">${droppedVar.serialNumber}</span>
+            <span style="font-size: 9px; font-family: monospace; color: #cbd5e1; font-weight: 700;">${droppedVar.serialNumber || '#0001'}</span>
           </div>
-          <div style="font-size: 13px; font-weight: 900; color: #ffffff; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🃏 ${droppedVar.name}</div>
-          <div style="font-size: 10px; font-weight: 800; color: #fde68a; margin-top: 2px;">${droppedVar.variantTrait} • ⚔️ ATK ${droppedVar.rolledAtk} • ❤️ PV ${droppedVar.rolledPv}</div>
+          <div style="font-size: 13px; font-weight: 900; color: #ffffff; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🃏 ${droppedCardName}</div>
+          <div style="font-size: 10px; font-weight: 800; color: #fde68a; margin-top: 2px;">${droppedVar.variantTrait || ''} • ⚔️ ATK ${droppedVar.rolledAtk ?? 0} • ❤️ PV ${droppedVar.rolledPv ?? 0}</div>
         </div>
       </div>
     ` : '';
@@ -793,9 +821,17 @@ class BattleApp {
     // Audio & Entrada rápida e impactante
     setTimeout(() => { 
       overlay.style.opacity = '1'; 
-      SoundManager.playAction(isWin ? 'vitoria_fanfare' : 'derrota_sting', 0.85);
+      try {
+        SoundManager.playAction(isWin ? 'vitoria_fanfare' : 'derrota_sting', 0.85);
+      } catch (err) {
+        console.warn('Sound playAction error:', err);
+      }
       setTimeout(() => {
-        SoundManager.playAmbient(isWin ? 'vitoria' : 'derrota');
+        try {
+          SoundManager.playAmbient(isWin ? 'vitoria' : 'derrota');
+        } catch (err) {
+          console.warn('Sound playAmbient error:', err);
+        }
       }, 400);
     }, 50);
 
@@ -963,6 +999,7 @@ class BattleApp {
   }
 
   private checkAutoEnd() {
+    if (this.isGameOver()) return;
     if (this.engine.turn !== 'p') return;
 
     // Check if player can still perform ANY action
@@ -1250,6 +1287,7 @@ class BattleApp {
   }
 
   private endAITurn() {
+    if (this.isGameOver()) return;
     SoundManager.playAction('carta_sacada', 0.5); // Turn switch sound
     this.engine.endTurn();
     this.render();

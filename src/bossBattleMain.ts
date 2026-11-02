@@ -261,6 +261,10 @@ class BossBattleApp {
   }
 
   private render() {
+    FX.resetBattleTransforms();
+    if (this.engine.hp.p <= 0 || this.engine.hp.e <= 0) {
+      if (this.isGameOver()) return;
+    }
     this.syncLandscapeDeviceState();
     this.landscapeBoard.setEnemyHandCount(this.engine.aiHand.length);
     this.container.innerHTML = this.board.render(
@@ -502,6 +506,7 @@ class BossBattleApp {
 
   private handleEndTurn() {
     this.stopTimer();
+    if (this.isGameOver()) return;
     this.clearHandSelection();
 
     const side = this.engine.turn;
@@ -554,14 +559,16 @@ class BossBattleApp {
     const droppedVar = this.lastNpcOutcome?.droppedVariation || null;
 
     // Carta recompensa definida na Forja (resolvida pela Matriz + variação rolada)
+    const matrixId = (droppedVar as any)?.matrixCardId || this.mobby.rewardCardId;
+    const droppedName = (droppedVar as any)?.name || (droppedVar as any)?.variationName || (droppedVar as any)?.baseCardName;
     const tmpl =
-      resolveMatrixOrGameCard(droppedVar?.matrixCardId || this.mobby.rewardCardId, CARD_TEMPLATES) ||
+      resolveMatrixOrGameCard(matrixId, CARD_TEMPLATES) ||
       (CARD_TEMPLATES as any[]).find(c => c && c.name === this.mobby.rewardCardId) ||
       CARD_TEMPLATES[0];
     const rewardCard: Card = {
       ...tmpl,
       id: droppedVar?.variationId || `reward-${Date.now()}`,
-      name: droppedVar?.name || tmpl?.name || 'Carta Ancestral',
+      name: droppedName || tmpl?.name || 'Carta Ancestral',
       atk: droppedVar?.rolledAtk || tmpl?.baseAtk || 500,
       pv: droppedVar?.rolledPv || tmpl?.basePv || 500,
       maxPv: droppedVar?.rolledPv || tmpl?.basePv || 500,
@@ -1001,15 +1008,20 @@ class BossBattleApp {
 
   private triggerEndScreen(isWin: boolean, isSurrender: boolean = false) {
     this.stopTimer();
+    FX.resetBattleTransforms();
     if (document.getElementById('end-battle-overlay')) return;
     if (!this.lastNpcOutcome) {
-      this.lastNpcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+      try {
+        this.lastNpcOutcome = recordNpcBattleOutcome(isWin && !isSurrender);
+      } catch (err) {
+        console.error('Error recording boss battle outcome:', err);
+      }
     }
      
     let title = isWin ? t('bt.winTitle') : t('bt.loseTitle');
     if (isSurrender) title = t('bt.cowardTitle');
 
-    const pvRemain = this.engine.hp.p;
+    const pvRemain = Math.max(0, this.engine.hp.p);
     const prevData = ProgressionManager.getPlayerData();
     const xpForNextLevel = ProgressionManager.getNextLevelXpRequirement(prevData.level);
 
@@ -1019,7 +1031,21 @@ class BossBattleApp {
       cardsDefeated: 1
     };
 
-    const { data: newData, rewards } = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
+    let newData = prevData;
+    let rewards = {
+      xpGained: isWin ? 70 : 30,
+      goldGained: isWin ? 80 : 25,
+      diamondGained: isWin ? 2 : 0,
+      enjinGained: isWin ? 1 : 0
+    };
+
+    try {
+      const matchRewardsRes = ProgressionManager.applyMatchRewards(isWin && !isSurrender, matchStats);
+      newData = matchRewardsRes.data;
+      rewards = matchRewardsRes.rewards;
+    } catch (err) {
+      console.error('Error applying boss match rewards:', err);
+    }
     const coinsGained = rewards.goldGained + (this.lastNpcOutcome?.goldEarned || 0);
     const diamondsGained = rewards.diamondGained + (this.lastNpcOutcome?.gemsEarned || 0);
     const enjinGained = rewards.enjinGained ?? (isWin ? 1 : 0);

@@ -24,8 +24,24 @@ import {
   Image as ImageIcon,
   Check,
   Wand2,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  FolderPlus,
+  Copy,
+  Crosshair,
+  Grid,
+  Sliders,
+  X,
+  Move,
+  CheckCircle2,
+  Compass,
+  RotateCcw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
-import { OrnateMapMarkerPin } from './OrnateMapMarkerPin';
+import { OrnateMapMarkerPin, playConstellationStarNote } from './OrnateMapMarkerPin';
+import { uploadFileToDisk } from '../../../../core/DiskAssetEngine';
 
 export const DEFAULT_PLANET_IMAGE_URL =
   '/assets/aistudio/Planeta_ilustrado_com_fundo_transparente_d21f7d80.png';
@@ -265,7 +281,7 @@ export function buildDefaultMarkersForPlanet(
 
 function normalizeMarkerCoord(val: number): number {
   if (!Number.isFinite(val)) return 0;
-  return Math.max(-0.85, Math.min(0.85, val));
+  return Math.max(-1.0, Math.min(1.0, val));
 }
 
 /**
@@ -1114,6 +1130,10 @@ function getOrLoadPlanetTexture(url: string, wrapEquirect = false): THREE.Textur
   loader.setCrossOrigin('anonymous');
   const tex = loader.load(safeUrl, (loaded) => {
     loaded.colorSpace = THREE.SRGBColorSpace;
+    loaded.generateMipmaps = true;
+    loaded.minFilter = THREE.LinearMipmapLinearFilter;
+    loaded.magFilter = THREE.LinearFilter;
+    loaded.anisotropy = 8;
     if (wrapEquirect) {
       loaded.wrapS = THREE.RepeatWrapping;
       loaded.wrapT = THREE.ClampToEdgeWrapping;
@@ -1121,6 +1141,10 @@ function getOrLoadPlanetTexture(url: string, wrapEquirect = false): THREE.Textur
     loaded.needsUpdate = true;
   });
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 8;
   if (wrapEquirect) {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -1236,8 +1260,11 @@ function getSoftHaloTexture(): THREE.CanvasTexture {
 function create3DEquirectangularUvMaterial(options: {
   texture: THREE.Texture;
   atmosphereColor: string;
+  isStandaloneGlobe?: boolean;
 }): THREE.ShaderMaterial {
   const atmo = new THREE.Color(options.atmosphereColor || '#38bdf8');
+  const isStandalone = Boolean(options.isStandaloneGlobe);
+
   return new THREE.ShaderMaterial({
     transparent: false,
     depthWrite: true,
@@ -1245,12 +1272,14 @@ function create3DEquirectangularUvMaterial(options: {
       uTexture: { value: options.texture },
       uAtmosphereColor: { value: atmo },
       uSunWorldPos: { value: new THREE.Vector3(0, 0, 0) },
+      uIsStandalone: { value: isStandalone ? 1.0 : 0.0 },
     },
     vertexShader: `
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
       varying vec3 vViewDir;
+      varying vec3 vViewNormal;
 
       void main() {
         vUv = uv;
@@ -1259,6 +1288,7 @@ function create3DEquirectangularUvMaterial(options: {
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
         vec4 mvPosition = viewMatrix * worldPosition;
         vViewDir = normalize(-mvPosition.xyz);
+        vViewNormal = normalize(normalMatrix * normal);
         gl_Position = projectionMatrix * mvPosition;
       }
     `,
@@ -1266,33 +1296,53 @@ function create3DEquirectangularUvMaterial(options: {
       uniform sampler2D uTexture;
       uniform vec3 uAtmosphereColor;
       uniform vec3 uSunWorldPos;
+      uniform float uIsStandalone;
 
       varying vec2 vUv;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
       varying vec3 vViewDir;
+      varying vec3 vViewNormal;
 
       void main() {
         vec4 texColor = texture2D(uTexture, vUv);
 
-        vec3 toSun = normalize(uSunWorldPos - vWorldPos);
-        float ndotl = dot(normalize(vWorldNormal), toSun);
-        float dayNight = smoothstep(-0.45, 0.65, ndotl);
-        float lighting = mix(0.28, 1.18, dayNight);
+        vec3 toLight;
+        vec3 norm;
+        if (uIsStandalone > 0.5) {
+          toLight = normalize(vec3(0.48, 0.65, 0.82));
+          norm = normalize(vViewNormal);
+        } else {
+          toLight = normalize(uSunWorldPos - vWorldPos);
+          norm = normalize(vWorldNormal);
+        }
 
-        vec3 viewNormal = normalize(vec3(viewMatrix * vec4(vWorldNormal, 0.0)));
-        float fresnel = pow(1.0 - max(0.0, dot(viewNormal, normalize(vViewDir))), 2.5);
+        float ndotl = dot(norm, toLight);
+        float dayNight = smoothstep(-0.35, 0.55, ndotl);
 
-        vec3 finalRgb = texColor.rgb * lighting + uAtmosphereColor * fresnel * (0.35 + 0.35 * dayNight);
-        gl_FragColor = vec4(finalRgb, 1.0);
+        // Luz base: noite espacial com luz ambiente vibrante (0.65) e dia glorioso (1.35)
+        float directLight = mix(0.65, 1.35, dayNight);
+
+        // Efeito de pôr do sol / terminador atmosférico na fronteira do dia e da noite
+        float terminator = smoothstep(-0.35, 0.15, ndotl) * (1.0 - smoothstep(0.15, 0.75, ndotl));
+        vec3 twilightGlow = mix(uAtmosphereColor, vec3(1.0, 0.82, 0.55), 0.35) * terminator * 0.38;
+
+        // Efeito Fresnel / Halo atmosférico de borda (limbo planetário cinematográfico)
+        float fresnel = pow(1.0 - max(0.0, dot(vViewNormal, vViewDir)), 2.2);
+        vec3 atmoRim = uAtmosphereColor * fresnel * (0.45 + 0.35 * dayNight);
+
+        // Brilho especular sutil nos reflexos diretos de água e calotas polares
+        vec3 halfVec = normalize(toLight + vViewDir);
+        float spec = pow(max(0.0, dot(norm, halfVec)), 32.0) * 0.25 * dayNight;
+
+        vec3 finalColor = texColor.rgb * directLight + twilightGlow + atmoRim + vec3(spec);
+
+        gl_FragColor = vec4(clamp(finalColor, 0.0, 1.5), 1.0);
       }
     `,
   });
 }
 
-/**
- * 2) ILLUSTRATED PLANET PNG 3D RELIEF MATERIAL (Used in Planet Close-Up Dive Layer)
- */
 function create3DPlanetPngDiveMaterial(options: {
   texture: THREE.Texture;
   atmosphereColor: string;
@@ -1376,11 +1426,31 @@ export function markerNormalizedToSphereLocal3D(
   ny: number,
   radius: number
 ): THREE.Vector3 {
-  const dx = normalizeMarkerCoord(nx);
-  const dy = -normalizeMarkerCoord(ny);
-  const r2 = Math.min(0.95, dx * dx + dy * dy);
-  const dz = Math.sqrt(Math.max(0.05, 1.0 - r2));
-  return new THREE.Vector3(dx * radius, dy * radius, dz * radius * 1.02);
+  const u = Math.min(1.0, Math.max(0.0, nx * 0.5 + 0.5));
+  const v = Math.min(1.0, Math.max(0.0, ny * 0.5 + 0.5));
+  const theta = v * Math.PI;
+  const phi = u * Math.PI * 2.0;
+  const r = radius * 1.025;
+  const x = -r * Math.cos(phi) * Math.sin(theta);
+  const y = r * Math.cos(theta);
+  const z = r * Math.sin(phi) * Math.sin(theta);
+  return new THREE.Vector3(x, y, z);
+}
+
+export function sphereLocal3DToMarkerNormalized(
+  localPos: THREE.Vector3
+): { nx: number; ny: number } {
+  const r = localPos.length() || 1.0;
+  const ny_sphere = Math.min(1.0, Math.max(-1.0, localPos.y / r));
+  const theta = Math.acos(ny_sphere);
+  const v = theta / Math.PI;
+  let phi = Math.atan2(localPos.z, -localPos.x);
+  if (phi < 0) phi += Math.PI * 2.0;
+  const u = phi / (Math.PI * 2.0);
+  return {
+    nx: Number(((u - 0.5) * 2.0).toFixed(3)),
+    ny: Number(((v - 0.5) * 2.0).toFixed(3)),
+  };
 }
 
 export const DEEP_SPACE_GALACTIC_BG_URL =
@@ -1472,8 +1542,8 @@ export const AstralDestinationCapsule: React.FC<{
     <div
       className="absolute left-1/2 -translate-x-1/2 z-[140] pointer-events-auto transition-all duration-200"
       style={{
-        bottom: vp.isMobileLandscape ? '10px' : vp.isMobilePortrait ? '12px' : '16px',
-        maxWidth: `${Math.max(240, screenWidth - 20)}px`,
+        bottom: vp.isMobileLandscape ? '18px' : vp.isMobilePortrait ? '48px' : '26px',
+        maxWidth: `${Math.max(260, screenWidth - 24)}px`,
       }}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
@@ -1481,53 +1551,53 @@ export const AstralDestinationCapsule: React.FC<{
       <button
         type="button"
         onClick={onConfirm}
-        className="group flex items-center gap-2 rounded-full bg-[#070b18]/92 hover:bg-[#0c1328]/98 backdrop-blur-md border border-[#d4af37]/65 hover:border-[#fde047] shadow-[0_8px_28px_rgba(0,0,0,0.82),0_0_16px_rgba(56,189,248,0.16)] transition-all duration-200 hover:scale-[1.02] active:scale-95 cursor-pointer"
+        className="group flex items-center gap-2.5 rounded-full bg-[#070b18]/95 hover:bg-[#0c1328] backdrop-blur-md border border-[#d4af37]/75 hover:border-[#fde047] shadow-[0_10px_32px_rgba(0,0,0,0.85),0_0_20px_rgba(56,189,248,0.22)] transition-all duration-200 hover:scale-[1.03] active:scale-95 cursor-pointer"
         style={{
           padding: vp.isMobilePortrait
-            ? '5px 8px 5px 10px'
+            ? '8px 16px 8px 12px'
             : vp.isMobileLandscape
-            ? '5px 9px 5px 11px'
-            : '7px 10px 7px 14px',
+            ? '6px 14px 6px 11px'
+            : '8px 18px 8px 14px',
         }}
       >
         <span
-          className="rounded-full flex items-center justify-center shrink-0 border border-white/20"
+          className="rounded-full flex items-center justify-center shrink-0 border border-white/25 shadow-inner"
           style={{
-            width: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
-            height: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+            width: vp.isMobilePortrait ? '26px' : vp.isMobileLandscape ? '20px' : '24px',
+            height: vp.isMobilePortrait ? '26px' : vp.isMobileLandscape ? '20px' : '24px',
             background:
-              'radial-gradient(circle at 35% 35%, rgba(59,130,246,0.45), rgba(15,23,42,0.92))',
+              'radial-gradient(circle at 35% 35%, rgba(59,130,246,0.55), rgba(15,23,42,0.95))',
           }}
         >
           <Sparkles
             style={{
-              width: vp.isMobilePortrait || vp.isMobileLandscape ? '10px' : '12px',
-              height: vp.isMobilePortrait || vp.isMobileLandscape ? '10px' : '12px',
+              width: vp.isMobilePortrait ? '13px' : '12px',
+              height: vp.isMobilePortrait ? '13px' : '12px',
               color: accentColor,
             }}
           />
         </span>
 
-        <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+        <div className="flex items-baseline gap-2 whitespace-nowrap">
           <span
-            className="font-bold uppercase tracking-[0.12em] text-[#93c5fd] shrink-0"
+            className="font-bold uppercase tracking-[0.14em] text-[#93c5fd] shrink-0"
             style={{
-              fontSize: vp.isMobilePortrait ? '8.5px' : vp.isMobileLandscape ? '9px' : '10px',
+              fontSize: vp.isMobilePortrait ? '11px' : '10px',
             }}
           >
             Ir até
           </span>
           <span
-            className="font-extrabold uppercase tracking-[0.06em] text-[#f8fafc] whitespace-nowrap"
+            className="font-black uppercase tracking-[0.06em] text-[#f8fafc] whitespace-nowrap"
             style={{
               fontFamily: "'Cinzel', serif",
               fontSize: vp.isMobilePortrait
                 ? cleanName.length > 18
-                  ? '9.5px'
-                  : '10.5px'
+                  ? '12px'
+                  : '14px'
                 : vp.isMobileLandscape
-                ? '10.5px'
-                : '12px',
+                ? '11.5px'
+                : '13px',
             }}
           >
             {cleanName}
@@ -1535,13 +1605,13 @@ export const AstralDestinationCapsule: React.FC<{
         </div>
 
         <span
-          className="rounded-full bg-[#2563eb]/90 group-hover:bg-[#3b82f6] border border-[#93c5fd]/55 flex items-center justify-center shrink-0 transition-transform group-hover:translate-x-0.5"
+          className="rounded-full bg-[#2563eb] group-hover:bg-[#3b82f6] border border-[#93c5fd]/60 flex items-center justify-center shrink-0 transition-transform group-hover:translate-x-0.5 shadow-sm"
           style={{
-            width: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
-            height: vp.isMobilePortrait || vp.isMobileLandscape ? '19px' : '22px',
+            width: vp.isMobilePortrait ? '24px' : '20px',
+            height: vp.isMobilePortrait ? '24px' : '20px',
           }}
         >
-          <ChevronRight className="w-3 h-3 text-white" />
+          <ChevronRight className={vp.isMobilePortrait ? 'w-3.5 h-3.5 text-white' : 'w-3 h-3 text-white'} />
         </span>
       </button>
     </div>
@@ -1725,10 +1795,14 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
     return 17.0;
   }, [vp]);
 
-  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project]);
+  const config = useMemo(() => getOrCreatePlanetGlobeConfig(project), [project.planetGlobe]);
+  const constellationHash = useMemo(
+    () => (config.constellations || []).map((c) => `${c.id}:${c.xRatio}:${c.yRatio}`).join('|'),
+    [config.constellations]
+  );
   const constellations = useMemo(
     () => config.constellations || [],
-    [config.constellations]
+    [constellationHash]
   );
 
   const [focusedSystemId, setFocusedSystemId] = useState<string | null>(
@@ -1773,14 +1847,18 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
     startY: 0,
   });
 
+  const activeTouchesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchDistRef = useRef<number | null>(null);
+  const pinchStartZRef = useRef<number>(idealBaseCamZ);
+
   useEffect(() => {
-    if (!divingSystemId) {
+    if (!divingSystemId && !focusedSystemId) {
       orbitRef.current.targetCamZ = Math.max(
         9.5,
         Math.min(34, idealBaseCamZ / Math.max(0.7, userZoom))
       );
     }
-  }, [userZoom, divingSystemId, idealBaseCamZ]);
+  }, [userZoom, divingSystemId, focusedSystemId, idealBaseCamZ]);
 
   const star3DPositions = useMemo(() => {
     const map = new Map<string, THREE.Vector3>();
@@ -1797,13 +1875,21 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
   }, [constellations, vp.isMobilePortrait, vp.isTabletPortrait, vp.isMobileLandscape]);
 
   useEffect(() => {
-    if (!focusedSystemId || divingSystemId) return;
-    const pos = star3DPositions.get(focusedSystemId);
-    if (pos) {
-      orbitRef.current.targetPanX = pos.x * 0.25;
-      orbitRef.current.targetPanY = pos.y * 0.25;
+    if (divingSystemId) return;
+    if (focusedSystemId) {
+      const pos = star3DPositions.get(focusedSystemId);
+      if (pos) {
+        // Centraliza perfeitamente a estrela no centro exato da tela
+        orbitRef.current.targetPanX = pos.x;
+        orbitRef.current.targetPanY = pos.y;
+        orbitRef.current.targetCamZ = vp.isMobilePortrait ? 14.2 : 11.4;
+      }
+    } else {
+      orbitRef.current.targetPanX = 0;
+      orbitRef.current.targetPanY = 0;
+      orbitRef.current.targetCamZ = idealBaseCamZ;
     }
-  }, [focusedSystemId, star3DPositions, divingSystemId]);
+  }, [focusedSystemId, star3DPositions, divingSystemId, vp.isMobilePortrait, idealBaseCamZ]);
 
   const triggerZoomIntoSolarSystem = useCallback(
     (sys: ConstellationSystemNode) => {
@@ -1813,8 +1899,8 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       if (pos) {
         orbitRef.current.targetRotY = 0;
         orbitRef.current.targetRotX = 0;
-        orbitRef.current.targetPanX = pos.x * 0.92;
-        orbitRef.current.targetPanY = pos.y * 0.92;
+        orbitRef.current.targetPanX = pos.x;
+        orbitRef.current.targetPanY = pos.y;
         orbitRef.current.targetCamZ = Math.max(2.2, pos.z + 2.6);
       }
       window.setTimeout(() => {
@@ -1826,6 +1912,9 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
 
   const handleStarClick = useCallback(
     (sys: ConstellationSystemNode) => {
+      const sIdx = constellations.findIndex((c) => c.id === sys.id);
+      playConstellationStarNote(Math.max(0, sIdx), sIdx === constellations.length - 1);
+
       if (focusedSystemId === sys.id) {
         triggerZoomIntoSolarSystem(sys);
         return;
@@ -1834,9 +1923,10 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       onSelectPausedConstellation?.(sys.id);
       const pos = star3DPositions.get(sys.id);
       if (pos) {
-        orbitRef.current.targetPanX = pos.x * 0.25;
-        orbitRef.current.targetPanY = pos.y * 0.25;
-        orbitRef.current.targetCamZ = 15.2;
+        // Move e centraliza a câmera diretamente sobre a estrela clicada
+        orbitRef.current.targetPanX = pos.x;
+        orbitRef.current.targetPanY = pos.y;
+        orbitRef.current.targetCamZ = vp.isMobilePortrait ? 14.2 : 11.4;
       }
     },
     [
@@ -1844,6 +1934,8 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       onSelectPausedConstellation,
       star3DPositions,
       triggerZoomIntoSolarSystem,
+      vp.isMobilePortrait,
+      constellations,
     ]
   );
 
@@ -1942,6 +2034,8 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.22;
     holder.innerHTML = '';
     holder.appendChild(renderer.domElement);
 
@@ -2056,14 +2150,25 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       }
     >();
 
+    const STAR_HALO_COLORS: Record<string, { bloom: string; secondary: string }> = {
+      'sys-solaris-prime': { bloom: '#fbbf24', secondary: '#fef08a' }, // Dourado
+      'sys-velaris-boreal': { bloom: '#38bdf8', secondary: '#bae6fd' }, // Ciano
+      'sys-ignis-draconis': { bloom: '#f43f5e', secondary: '#fecdd3' }, // Carmesim
+      'sys-sylvan-aether': { bloom: '#10b981', secondary: '#a7f3d0' }, // Esmeralda
+      'sys-chronos-alba': { bloom: '#a855f7', secondary: '#e9d5ff' }, // Ametista
+      'sys-zenith-coroa': { bloom: '#f97316', secondary: '#ffedd5' }, // Âmbar
+    };
+
     constellations.forEach((sys) => {
       const pos = star3DPositions.get(sys.id) || new THREE.Vector3();
       const sGroup = new THREE.Group();
       sGroup.position.copy(pos);
 
+      const themeColors = STAR_HALO_COLORS[sys.id] || { bloom: '#60a5fa', secondary: '#bfdbfe' };
+
       const bloomMat = new THREE.SpriteMaterial({
         map: softHaloTex,
-        color: new THREE.Color('#60a5fa'),
+        color: new THREE.Color(themeColors.bloom),
         transparent: true,
         opacity: 0.55,
         blending: THREE.AdditiveBlending,
@@ -2087,7 +2192,7 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
 
       const secondaryMat = new THREE.SpriteMaterial({
         map: starburstTex,
-        color: new THREE.Color('#bfdbfe'),
+        color: new THREE.Color(themeColors.secondary),
         transparent: true,
         opacity: 0.78,
         blending: THREE.AdditiveBlending,
@@ -2164,14 +2269,33 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       }
 
       camera.position.set(st.panX, st.panY, st.camZ);
-      camera.lookAt(st.panX * 0.85, st.panY * 0.85, 0);
+      camera.lookAt(st.panX, st.panY, 0);
+
+      // Pulso sequencial orgânico e lento: cada estrela brilha, descansa, e só depois a próxima pulsa
+      const numStars = starFlareNodes.size || 6;
+      const slotDuration = 3.6; // tempo total por estrela (3.6s)
+      const pulseDuration = 2.0; // duração do pulso suave (2.0s). Restante de 1.6s em calma total!
+      const totalCycle = numStars * slotDuration;
+      const currentCycleTime = t % totalCycle;
+      const activeStarIdx = Math.floor(currentCycleTime / slotDuration);
+      const timeInSlot = currentCycleTime - activeStarIdx * slotDuration;
 
       let idx = 0;
       starFlareNodes.forEach((item) => {
-        const shimmer = 1 + Math.sin(t * 2.2 + idx * 1.3) * 0.07;
-        item.primaryFlare.scale.setScalar(0.87 * shimmer);
-        item.secondaryFlare.scale.setScalar(0.67 / shimmer);
-        item.secondaryFlare.material.rotation = 0.35 + Math.sin(t * 0.4 + idx) * 0.06;
+        let pulseStrength = 0;
+        if (idx === activeStarIdx && timeInSlot < pulseDuration) {
+          const progress = timeInSlot / pulseDuration;
+          pulseStrength = Math.pow(Math.sin(progress * Math.PI), 1.8);
+        }
+        const idleShimmer = 1 + Math.sin(t * 1.5 + idx * 1.3) * 0.04;
+        const totalMultiplier = idleShimmer + pulseStrength * 0.9;
+
+        item.primaryFlare.scale.setScalar(0.88 * totalMultiplier);
+        item.secondaryFlare.scale.setScalar(0.68 * (idleShimmer + pulseStrength * 1.0));
+        item.secondaryFlare.material.rotation = 0.35 + Math.sin(t * 0.25 + idx) * 0.05 + pulseStrength * 0.2;
+        item.ambientBloom.scale.setScalar(1.04 * (1 + pulseStrength * 0.95));
+        item.ambientBloom.material.opacity = 0.52 + pulseStrength * 0.46;
+        item.primaryFlare.material.opacity = Math.min(1.0, 0.9 + pulseStrength * 0.1);
         idx++;
       });
 
@@ -2210,7 +2334,20 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
 
     return () => {
       cancelAnimationFrame(rafId);
-      renderer.dispose();
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        const gl = renderer.getContext();
+        if (gl) {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        }
+      } catch {
+        // ignore
+      }
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
       bgGeo.dispose();
       bgTwinkleMat.dispose();
       lineGeo.dispose();
@@ -2220,13 +2357,23 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
   }, [constellations, star3DPositions, screenWidth, screenHeight]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    orbitRef.current.isDragging = true;
-    orbitRef.current.dragMoved = false;
-    orbitRef.current.startX = e.clientX;
-    orbitRef.current.startY = e.clientY;
+    activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activeTouchesRef.current.size === 1) {
+      orbitRef.current.isDragging = true;
+      orbitRef.current.dragMoved = false;
+      orbitRef.current.startX = e.clientX;
+      orbitRef.current.startY = e.clientY;
+    } else if (activeTouchesRef.current.size === 2) {
+      const [p1, p2] = Array.from(activeTouchesRef.current.values());
+      pinchDistRef.current = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      pinchStartZRef.current = orbitRef.current.targetCamZ;
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
     const rect = e.currentTarget.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       const nx = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
@@ -2235,27 +2382,46 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
       orbitRef.current.targetPointerParallaxY = ny;
     }
 
+    // Gesto de pinça com 2 dedos para zoom tátil fluido no mobile
+    if (activeTouchesRef.current.size === 2 && pinchDistRef.current && pinchDistRef.current > 0) {
+      const [p1, p2] = Array.from(activeTouchesRef.current.values());
+      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const ratio = pinchDistRef.current / Math.max(10, dist);
+      orbitRef.current.targetCamZ = Math.max(8.5, Math.min(35, pinchStartZRef.current * ratio));
+      orbitRef.current.dragMoved = true;
+      return;
+    }
+
     if (!orbitRef.current.isDragging) return;
     const dx = e.clientX - orbitRef.current.startX;
     const dy = e.clientY - orbitRef.current.startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
       orbitRef.current.dragMoved = true;
     }
     orbitRef.current.startX = e.clientX;
     orbitRef.current.startY = e.clientY;
 
-    orbitRef.current.targetRotY = Math.max(
-      -0.85,
-      Math.min(0.85, orbitRef.current.targetRotY + dx * 0.0045)
-    );
+    // Rotação orbital livre em 360 graus Contínua (sem bloqueio de eixo horizontal)
+    orbitRef.current.targetRotY += dx * 0.0065;
+    // Rotação vertical natural com amplitude confortável
     orbitRef.current.targetRotX = Math.max(
-      -0.55,
-      Math.min(0.55, orbitRef.current.targetRotX + dy * 0.004)
+      -1.3,
+      Math.min(1.3, orbitRef.current.targetRotX + dy * 0.0055)
     );
   };
 
-  const handlePointerUp = () => {
-    orbitRef.current.isDragging = false;
+  const handlePointerUp = (e?: React.PointerEvent) => {
+    if (e) {
+      activeTouchesRef.current.delete(e.pointerId);
+    } else {
+      activeTouchesRef.current.clear();
+    }
+    if (activeTouchesRef.current.size < 2) {
+      pinchDistRef.current = null;
+    }
+    if (activeTouchesRef.current.size === 0) {
+      orbitRef.current.isDragging = false;
+    }
   };
 
   const activeStar = useMemo(
@@ -2276,16 +2442,18 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
   return (
     <div
       className="relative w-full h-full overflow-hidden select-none bg-[#020308] cursor-grab active:cursor-grabbing"
+      style={{ touchAction: 'none' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onPointerLeave={() => {
         handlePointerUp();
         orbitRef.current.targetPointerParallaxX = 0;
         orbitRef.current.targetPointerParallaxY = 0;
       }}
-      onClick={() => {
-        if (!orbitRef.current.dragMoved) {
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !orbitRef.current.dragMoved) {
           setFocusedSystemId(null);
           onSelectPausedConstellation?.(null);
         }
@@ -2339,17 +2507,19 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
           return (
             <div
               key={sys.id}
-              className="absolute pointer-events-auto"
+              className="absolute pointer-events-auto flex items-center justify-center"
               style={{
                 left: `${proj.x}px`,
                 top: `${proj.y}px`,
+                width: '64px',
+                height: '64px',
                 transform: `translate(-50%, -50%) scale(${
                   isFocused ? Math.max(1.05, proj.scale) : proj.scale
                 })`,
                 zIndex: isFocused
-                  ? 90
+                  ? 95
                   : isHovered
-                  ? 80
+                  ? 85
                   : Math.round((1 - proj.zDepth) * 50),
               }}
               onMouseEnter={() => setHoveredSystemId(sys.id)}
@@ -2357,22 +2527,27 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
                 setHoveredSystemId((prev) => (prev === sys.id ? null : prev))
               }
             >
-              {/* Pure transparent hit area over the realistic star flare */}
+              {/* Botão de Área de Toque Direto sobre o Brilho da Estrela (64x64px) */}
               <button
                 type="button"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (orbitRef.current.dragMoved) return;
                   handleStarClick(sys);
                 }}
-                className="relative w-14 h-14 -m-7 rounded-full flex items-center justify-center cursor-pointer focus:outline-none"
+                className="w-16 h-16 rounded-full flex items-center justify-center cursor-pointer focus:outline-none transition-transform active:scale-90"
                 title={sys.name}
-              />
+              >
+                {/* Indicador de Seleção / Foco */}
+                {isFocused && (
+                  <span className="w-12 h-12 rounded-full border-2 border-amber-300 shadow-[0_0_24px_rgba(251,191,36,0.9)] animate-pulse" />
+                )}
+              </button>
 
-              {/* Popup appears ONLY when clicked or hovered, clamped so it never clips off-screen */}
+              {/* Pin de Identificação visível quando Focado ou com Hover */}
               {isExpanded && (
                 <div
-                  className="relative -top-6 cursor-pointer"
+                  className="absolute bottom-full mb-1 cursor-pointer pointer-events-auto"
                   style={{
                     transform:
                       proj.x > screenWidth * 0.72
@@ -2381,6 +2556,7 @@ export const ConstellationLayerView: React.FC<ConstellationLayerViewProps> = ({
                         ? 'translateX(22%)'
                         : undefined,
                   }}
+                  onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (isFocused) {
@@ -2447,6 +2623,118 @@ export interface SolarSystemLayerViewProps {
   onSelectPausedPlanet?: (id: string | null) => void;
   onEnterPlanetGlobe: (planet: SolarSystemPlanet) => void;
   onBackToConstellation?: () => void;
+}
+
+// Helper para gerar geometrias de micro-meteoritos 3D com ruído orgânico
+function createDeformedAsteroidGeometries(baseRadiusScale = 1.0): THREE.BufferGeometry[] {
+  const configs = [
+    { radius: 0.0022 * baseRadiusScale, detail: 0, seed: 1.34 },
+    { radius: 0.0034 * baseRadiusScale, detail: 0, seed: 4.87 },
+    { radius: 0.0016 * baseRadiusScale, detail: 0, seed: 8.92 },
+  ];
+
+  return configs.map((cfg) => {
+    const geo = new THREE.IcosahedronGeometry(cfg.radius, cfg.detail);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const noise =
+        Math.sin(x * 35.0 + cfg.seed) * 0.35 +
+        Math.cos(y * 40.0 + cfg.seed * 1.5) * 0.3 +
+        Math.sin(z * 45.0 + cfg.seed * 2.2) * 0.28;
+      const s = 1.0 + noise * 0.6;
+      pos.setXYZ(i, x * s, y * (s * 0.8), z * (s * 1.1));
+    }
+    geo.computeVertexNormals();
+    return geo;
+  });
+}
+
+// Cria anel hiper-denso de micro-meteoritos 3D instanciados, exatamente no mesmo plano do disco original
+function createDeformedAsteroidRing(
+  innerRadius: number,
+  outerRadius: number,
+  baseColorHex: string,
+  totalParticles = 56000,
+  baseScale = 1.0
+): { group: THREE.Group; disposables: Array<THREE.BufferGeometry | THREE.Material> } {
+  const group = new THREE.Group();
+  const disposables: Array<THREE.BufferGeometry | THREE.Material> = [];
+
+  const baseColor = new THREE.Color(baseColorHex);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+  dirLight.position.set(3, 4, 2);
+  group.add(dirLight);
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.85);
+  group.add(ambLight);
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: baseColor.clone().multiplyScalar(1.2),
+    roughness: 0.76,
+    metalness: 0.16,
+    flatShading: true,
+  });
+  disposables.push(mat);
+
+  const geos = createDeformedAsteroidGeometries(baseScale);
+  disposables.push(...geos);
+
+  const countPerType = Math.floor(totalParticles / geos.length);
+  const dummy = new THREE.Object3D();
+  const tempCol = new THREE.Color();
+  const cLight = new THREE.Color('#ffffff');
+  const cTheme = baseColor.clone().multiplyScalar(1.35);
+  const cShadow = baseColor.clone().multiplyScalar(0.6);
+
+  geos.forEach((geo, geoIdx) => {
+    const instMesh = new THREE.InstancedMesh(geo, mat, countPerType);
+
+    for (let i = 0; i < countPerType; i++) {
+      const t = Math.random();
+      // Distribuição circular no plano XY (o mesmo plano do RingGeometry original)
+      const r = innerRadius + Math.pow(t, 0.94) * (outerRadius - innerRadius);
+      const theta = Math.random() * Math.PI * 2;
+
+      // Espalhamento de espessura finíssimo no eixo Z
+      const spreadZ = (outerRadius - innerRadius) * 0.035;
+      const pz = (Math.random() - 0.5) * spreadZ;
+
+      dummy.position.set(Math.cos(theta) * r, Math.sin(theta) * r, pz);
+
+      // Rotação randômica tridimensional de cada pedra
+      dummy.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      );
+
+      // Escala variável: predominam partículas minúsculas, com cerca de 5% ligeiramente maiores
+      let s = 0.32 + Math.random() * 0.45;
+      if (Math.random() < 0.05 && geoIdx === 1) {
+        s = 0.85 + Math.random() * 0.55;
+      }
+      dummy.scale.set(s, s * (0.7 + Math.random() * 0.5), s);
+      dummy.updateMatrix();
+      instMesh.setMatrixAt(i, dummy.matrix);
+
+      const randColor = Math.random();
+      if (randColor > 0.55) {
+        tempCol.copy(cTheme).lerp(cLight, (randColor - 0.55) * 1.6);
+      } else {
+        tempCol.copy(cShadow).lerp(cTheme, randColor / 0.55);
+      }
+      instMesh.setColorAt(i, tempCol);
+    }
+
+    instMesh.instanceMatrix.needsUpdate = true;
+    if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
+    group.add(instMesh);
+  });
+
+  return { group, disposables };
 }
 
 export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
@@ -2584,6 +2872,8 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.22;
     holder.innerHTML = '';
     holder.appendChild(renderer.domElement);
 
@@ -2737,22 +3027,18 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
       disposables.push(pHaloMat);
 
       if (planet.hasRings) {
-        const ringGeo = new THREE.RingGeometry(
-          planetRadius * 1.38,
-          planetRadius * 2.15,
-          64
+        // Anel ultra-denso de micro-meteoritos 3D no mesmo plano original
+        const debrisRing = createDeformedAsteroidRing(
+          planetRadius * 1.35,
+          planetRadius * 2.2,
+          planet.glowColor || '#fde68a',
+          18000, // Densidade quadruplicada (4x)
+          planetRadius * 0.8
         );
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(planet.glowColor || '#fde68a'),
-          transparent: true,
-          opacity: 0.55,
-          side: THREE.DoubleSide,
-        });
-        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.rotation.x = Math.PI * 0.42;
-        ringMesh.rotation.y = 0.22;
-        planetGroup.add(ringMesh);
-        disposables.push(ringGeo, ringMat);
+        debrisRing.group.rotation.x = Math.PI * 0.42;
+        debrisRing.group.rotation.y = 0.22;
+        planetGroup.add(debrisRing.group);
+        disposables.push(...debrisRing.disposables);
       }
 
       scene.add(planetGroup);
@@ -2947,7 +3233,20 @@ export const SolarSystemLayerView: React.FC<SolarSystemLayerViewProps> = ({
 
     return () => {
       cancelAnimationFrame(rafId);
-      renderer.dispose();
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        const gl = renderer.getContext();
+        if (gl) {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        }
+      } catch {
+        // ignore
+      }
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
       disposables.forEach((d) => d.dispose());
     };
   }, [
@@ -3237,8 +3536,15 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
       const found = markers.find((m) => m.id === externalFocusedMarkerId);
       if (found) {
         setSelectedMarker(found);
-        globeViewRef.current.targetTiltY = -found.nx * 0.28;
-        globeViewRef.current.targetTiltX = found.ny * 0.28;
+        const local3D = markerNormalizedToSphereLocal3D(found.nx, found.ny, 1.0);
+        const rHoriz = Math.hypot(local3D.x, local3D.z);
+        let desiredTiltY = Math.atan2(-local3D.x, local3D.z);
+        const curTiltY = globeViewRef.current.targetTiltY;
+        const twoPi = Math.PI * 2;
+        desiredTiltY = curTiltY + (((desiredTiltY - curTiltY) % twoPi + twoPi + Math.PI) % twoPi - Math.PI);
+        const desiredTiltX = Math.atan2(local3D.y, Math.max(0.001, rHoriz));
+        globeViewRef.current.targetTiltY = desiredTiltY;
+        globeViewRef.current.targetTiltX = desiredTiltX;
         return;
       }
     }
@@ -3251,10 +3557,17 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
       setDivingMarkerId(marker.id);
 
       const local3D = markerNormalizedToSphereLocal3D(marker.nx, marker.ny, 1.0);
-      globeViewRef.current.targetTiltX = 0;
-      globeViewRef.current.targetTiltY = 0;
-      globeViewRef.current.targetCamPanX = local3D.x * 0.82;
-      globeViewRef.current.targetCamPanY = local3D.y * 0.82;
+      const rHoriz = Math.hypot(local3D.x, local3D.z);
+      let desiredTiltY = Math.atan2(-local3D.x, local3D.z);
+      const curTiltY = globeViewRef.current.targetTiltY;
+      const twoPi = Math.PI * 2;
+      desiredTiltY = curTiltY + (((desiredTiltY - curTiltY) % twoPi + twoPi + Math.PI) % twoPi - Math.PI);
+      const desiredTiltX = Math.atan2(local3D.y, Math.max(0.001, rHoriz));
+
+      globeViewRef.current.targetTiltX = desiredTiltX;
+      globeViewRef.current.targetTiltY = desiredTiltY;
+      globeViewRef.current.targetCamPanX = 0;
+      globeViewRef.current.targetCamPanY = 0;
       globeViewRef.current.targetCamZ = 1.15;
 
       const matchedMap =
@@ -3275,8 +3588,15 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
         return;
       }
       setSelectedMarker(marker);
-      globeViewRef.current.targetTiltY = -marker.nx * 0.28;
-      globeViewRef.current.targetTiltX = marker.ny * 0.28;
+      const local3D = markerNormalizedToSphereLocal3D(marker.nx, marker.ny, 1.0);
+      const rHoriz = Math.hypot(local3D.x, local3D.z);
+      let desiredTiltY = Math.atan2(-local3D.x, local3D.z);
+      const curTiltY = globeViewRef.current.targetTiltY;
+      const twoPi = Math.PI * 2;
+      desiredTiltY = curTiltY + (((desiredTiltY - curTiltY) % twoPi + twoPi + Math.PI) % twoPi - Math.PI);
+      const desiredTiltX = Math.atan2(local3D.y, Math.max(0.001, rHoriz));
+      globeViewRef.current.targetTiltY = desiredTiltY;
+      globeViewRef.current.targetTiltX = desiredTiltX;
     },
     [selectedMarker, triggerEnterRegion]
   );
@@ -3308,6 +3628,8 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.22;
     holder.innerHTML = '';
     holder.appendChild(renderer.domElement);
 
@@ -3320,6 +3642,7 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
     const planetMat = create3DEquirectangularUvMaterial({
       texture: tex,
       atmosphereColor,
+      isStandaloneGlobe: true,
     });
     const planetMesh = new THREE.Mesh(sphereGeo, planetMat);
     planetRoot.add(planetMesh);
@@ -3337,20 +3660,20 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
     haloSprite.scale.setScalar(2.75);
     planetRoot.add(haloSprite);
 
-    let ringGeo: THREE.RingGeometry | null = null;
-    let ringMat: THREE.MeshBasicMaterial | null = null;
+    let ringDisposables: Array<THREE.BufferGeometry | THREE.Material> = [];
     if (hasRings) {
-      ringGeo = new THREE.RingGeometry(1.32, 1.98, 96);
-      ringMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(atmosphereColor),
-        transparent: true,
-        opacity: 0.5,
-        side: THREE.DoubleSide,
-      });
-      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.rotation.x = Math.PI * 0.41;
-      ringMesh.rotation.y = 0.18;
-      planetRoot.add(ringMesh);
+      // Anel ultra-denso de micro-meteoritos 3D em close-up no mesmo plano exato
+      const debrisRing = createDeformedAsteroidRing(
+        1.30,
+        2.12,
+        atmosphereColor || '#38bdf8',
+        56000, // Densidade quadruplicada (4x)
+        1.0
+      );
+      debrisRing.group.rotation.x = Math.PI * 0.41;
+      debrisRing.group.rotation.y = 0.18;
+      planetRoot.add(debrisRing.group);
+      ringDisposables = debrisRing.disposables;
     }
 
     const markerAnchors = new Map<string, THREE.Object3D>();
@@ -3415,12 +3738,24 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
 
     return () => {
       cancelAnimationFrame(rafId);
-      renderer.dispose();
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        const gl = renderer.getContext();
+        if (gl) {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        }
+      } catch {
+        // ignore
+      }
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
       sphereGeo.dispose();
       planetMat.dispose();
       haloMat.dispose();
-      if (ringGeo) ringGeo.dispose();
-      if (ringMat) ringMat.dispose();
+      ringDisposables.forEach((d) => d.dispose());
     };
   }, [
     planetId,
@@ -3506,7 +3841,7 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
               style={{
                 left: `${proj.x}px`,
                 top: `${proj.y}px`,
-                transform: 'translate(-50%, -100%)',
+                transform: 'translate(-20%, -84%)',
                 zIndex: isSelected ? 95 : isHovered ? 85 : 50,
               }}
               onMouseEnter={() => setHoveredMarkerId(marker.id)}
@@ -3535,6 +3870,9 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
                   isSelected={isSelected}
                   isFocused={isSelected || isHovered}
                   scale={marker.scale || 1.0}
+                  pngScale={marker.pngScale}
+                  pngOffsetX={marker.pngOffsetX}
+                  pngOffsetY={marker.pngOffsetY}
                   sizeVariant="md"
                   revealStage={isSelected || isHovered ? 'full' : 'star_only'}
                 />
@@ -3566,14 +3904,301 @@ export const PlanetGlobeEmulatorView: React.FC<PlanetGlobeEmulatorViewProps> = (
  * 4. PLANET GLOBE & UV 2:1 TEXTURE GALLERY EDITOR SECTION
  * ============================================================================
  */
+// ============================================================================
+// MINI GLOBO 3D COMPACTO (PREVIEW AUXILIAR)
+// ============================================================================
+const InteractiveMiniGlobe: React.FC<{
+  textureUrl: string;
+  atmosphereColor?: string;
+  hasRings?: boolean;
+  markers: PlanetGlobeMarker[];
+  selectedMarkerId?: string | null;
+  width?: number;
+  height?: number;
+  onSelectMarker?: (markerId: string) => void;
+  onGlobeClick?: (nx: number, ny: number) => void;
+}> = ({
+  textureUrl,
+  atmosphereColor = '#38bdf8',
+  hasRings,
+  markers,
+  selectedMarkerId,
+  width = 200,
+  height = 200,
+  onSelectMarker,
+  onGlobeClick,
+}) => {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    camera.position.set(0, 0, 3.1);
+
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch {
+      return;
+    }
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.25;
+    mount.innerHTML = '';
+    mount.appendChild(renderer.domElement);
+
+    const planetRoot = new THREE.Group();
+    scene.add(planetRoot);
+
+    const sphereGeo = new THREE.SphereGeometry(1.0, 48, 48);
+    const tex = getOrLoadPlanetTexture(textureUrl, true);
+    const planetMat = create3DEquirectangularUvMaterial({
+      texture: tex,
+      atmosphereColor,
+      isStandaloneGlobe: true,
+    });
+    const planetMesh = new THREE.Mesh(sphereGeo, planetMat);
+    planetRoot.add(planetMesh);
+
+    const softHaloTex = getSoftHaloTexture();
+    const haloMat = new THREE.SpriteMaterial({
+      map: softHaloTex,
+      color: new THREE.Color(atmosphereColor || '#38bdf8'),
+      transparent: true,
+      opacity: 0.45,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const haloSprite = new THREE.Sprite(haloMat);
+    haloSprite.scale.setScalar(2.7);
+    planetRoot.add(haloSprite);
+
+    let ringDisposables: Array<THREE.BufferGeometry | THREE.Material> = [];
+    if (hasRings) {
+      const debrisRing = createDeformedAsteroidRing(
+        1.28,
+        2.12,
+        atmosphereColor || '#38bdf8',
+        3000,
+        1.0
+      );
+      debrisRing.group.rotation.x = Math.PI * 0.41;
+      debrisRing.group.rotation.y = 0.18;
+      planetRoot.add(debrisRing.group);
+      ringDisposables = debrisRing.disposables;
+    }
+
+    const markerGroup = new THREE.Group();
+    planetRoot.add(markerGroup);
+    const markerMeshDisposables: Array<THREE.BufferGeometry | THREE.Material> = [];
+
+    // Renderiza marcadores com agulha e cabeça esférica
+    markers.forEach((m) => {
+      const isSel = m.id === selectedMarkerId;
+      const pos = markerNormalizedToSphereLocal3D(m.nx, m.ny, 1.0);
+      const normal = pos.clone().normalize();
+
+      // Haste do pino (agulha fina)
+      const stemLength = 0.07;
+      const stemGeo = new THREE.CylinderGeometry(0.008, 0.008, stemLength, 8);
+      const stemMat = new THREE.MeshBasicMaterial({ color: isSel ? 0xf59e0b : 0x94a3b8 });
+      const stemMesh = new THREE.Mesh(stemGeo, stemMat);
+      stemMesh.position.copy(pos.clone().add(normal.clone().multiplyScalar(stemLength * 0.5)));
+      stemMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+      stemMesh.userData = { markerId: m.id };
+      markerGroup.add(stemMesh);
+      markerMeshDisposables.push(stemGeo, stemMat);
+
+      // Cabeça do pino (esfera brilhante)
+      const headRadius = isSel ? 0.048 : 0.034;
+      const pinGeo = new THREE.SphereGeometry(headRadius, 16, 16);
+      const pinMat = new THREE.MeshBasicMaterial({
+        color: isSel ? 0xfbbf24 : 0x38bdf8,
+      });
+      const pinMesh = new THREE.Mesh(pinGeo, pinMat);
+      pinMesh.position.copy(pos.clone().add(normal.clone().multiplyScalar(stemLength + headRadius * 0.5)));
+      pinMesh.userData = { markerId: m.id };
+      markerGroup.add(pinMesh);
+      markerMeshDisposables.push(pinGeo, pinMat);
+    });
+
+    let isDragging = false;
+    let dragMoved = false;
+    let startX = 0;
+    let startY = 0;
+    let rotX = 0;
+    let rotY = 0;
+    let targetRotX = 0;
+    let targetRotY = 0;
+
+    // Se houver marcador selecionado, alinha o globo para focar nele
+    if (selectedMarkerId) {
+      const sel = markers.find((m) => m.id === selectedMarkerId);
+      if (sel) {
+        const local3D = markerNormalizedToSphereLocal3D(sel.nx, sel.ny, 1.0);
+        const rHoriz = Math.hypot(local3D.x, local3D.z);
+        targetRotY = Math.atan2(-local3D.x, local3D.z);
+        targetRotX = Math.atan2(local3D.y, Math.max(0.001, rHoriz));
+        rotX = targetRotX;
+        rotY = targetRotY;
+      }
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      isDragging = true;
+      dragMoved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        dragMoved = true;
+      }
+      startX = e.clientX;
+      startY = e.clientY;
+      targetRotY += dx * 0.01;
+      targetRotX += dy * 0.01;
+      targetRotX = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, targetRotX));
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      const wasDragging = isDragging;
+      isDragging = false;
+
+      // Se foi um clique direto sem arrastar, faz raycast preciso na superfície 3D
+      if (wasDragging && !dragMoved && mount) {
+        const rect = mount.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+          ((e.clientX - rect.left) / width) * 2 - 1,
+          -((e.clientY - rect.top) / height) * 2 + 1
+        );
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, camera);
+
+        // 1. Clique em marcador existente
+        const pinHits = raycaster.intersectObjects(markerGroup.children, true);
+        if (pinHits.length > 0) {
+          const topHit = pinHits[0].object;
+          const mId = (topHit.userData as { markerId?: string })?.markerId;
+          if (mId && onSelectMarker) {
+            onSelectMarker(mId);
+            return;
+          }
+        }
+
+        // 2. Clique na superfície do globo
+        const sphereHits = raycaster.intersectObject(planetMesh);
+        if (sphereHits.length > 0) {
+          const hit = sphereHits[0];
+          const localPt = planetMesh.worldToLocal(hit.point.clone());
+          const coords = sphereLocal3DToMarkerNormalized(localPt);
+          onGlobeClick?.(coords.nx, coords.ny);
+        }
+      }
+    };
+
+    mount.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+
+    let rafId = 0;
+    const animate = () => {
+      rafId = requestAnimationFrame(animate);
+      if (!isDragging && !selectedMarkerId) {
+        targetRotY += 0.003;
+      }
+      rotX += (targetRotX - rotX) * 0.12;
+      rotY += (targetRotY - rotY) * 0.12;
+      planetRoot.rotation.x = rotX;
+      planetRoot.rotation.y = rotY;
+      renderer.render(scene, camera);
+    };
+    rafId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      mount.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+        const gl = renderer.getContext();
+        if (gl) {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        }
+      } catch {
+        // ignore
+      }
+      if (renderer.domElement && renderer.domElement.parentNode) {
+        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      }
+      sphereGeo.dispose();
+      planetMat.dispose();
+      haloMat.dispose();
+      ringDisposables.forEach((d) => d.dispose());
+      markerMeshDisposables.forEach((d) => d.dispose());
+    };
+  }, [textureUrl, atmosphereColor, hasRings, markers, selectedMarkerId, width, height, onSelectMarker, onGlobeClick]);
+
+  return (
+    <div
+      ref={mountRef}
+      className="cursor-grab active:cursor-grabbing select-none rounded-xl overflow-hidden"
+      style={{ width, height }}
+      title="Clique para selecionar/posicionar ou arraste para girar em 360°"
+    />
+  );
+};
+
+export const POI_EMOJI_PRESETS = [
+  { emoji: '🏰', label: 'Castelo' },
+  { emoji: '🏘️', label: 'Vila' },
+  { emoji: '⛰️', label: 'Caverna' },
+  { emoji: '✨', label: 'Santuário' },
+  { emoji: '🌌', label: 'Portal' },
+  { emoji: '💀', label: 'Chefe' },
+  { emoji: '⛺', label: 'Acampamento' },
+  { emoji: '💎', label: 'Tesouro' },
+  { emoji: '🗼', label: 'Torre' },
+  { emoji: '⚓', label: 'Porto' },
+  { emoji: '🌴', label: 'Oásis' },
+  { emoji: '❄️', label: 'Gelo' },
+  { emoji: '🌋', label: 'Vulcão' },
+  { emoji: '🛡️', label: 'Forte' },
+  { emoji: '👑', label: 'Capital' },
+  { emoji: '⚔️', label: 'Arena' },
+];
+
 export interface PlanetGlobeEditorSectionProps {
   project: MapProject;
   setProject: React.Dispatch<React.SetStateAction<MapProject>>;
   savedWorldMaps: WorldMapConfig[];
-  onSwitchToRegionalMapEditor: (targetMapId: string) => void;
+  selectedSysId?: string;
+  onSelectSysId?: (sysId: string) => void;
+  selectedPlanetId?: string;
+  onSelectPlanetId?: (planetId: string) => void;
+  selectedMarkerId?: string | null;
+  onSelectMarkerId?: (markerId: string | null) => void;
+  onSwitchToRegionalMapEditor: (
+    targetMapId: string,
+    planetId?: string,
+    markerId?: string
+  ) => void;
   onCreateNewRegionalMapForMarker: (
     markerId: string,
-    markerName: string
+    markerName: string,
+    planetId?: string
   ) => void;
   showToast?: (msg: string) => void;
 }
@@ -3582,6 +4207,12 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
   project,
   setProject,
   savedWorldMaps,
+  selectedSysId: propSelectedSysId,
+  onSelectSysId,
+  selectedPlanetId: propSelectedPlanetId,
+  onSelectPlanetId,
+  selectedMarkerId: propSelectedMarkerId,
+  onSelectMarkerId,
   onSwitchToRegionalMapEditor,
   onCreateNewRegionalMapForMarker,
   showToast,
@@ -3590,15 +4221,37 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
   const constellations = config.constellations || [];
   const uvLibrary = config.uvTextureLibrary || getDefaultUvTextureLibrary();
 
-  const [selectedSysId, setSelectedSysId] = useState<string>(
-    constellations[0]?.id || 'sys-solaris-prime'
+  // Cores de halo identificadoras das 6 estrelas
+  const STAR_COLORS: Record<string, string> = {
+    'sys-solaris-prime': '#fbbf24',
+    'sys-velaris-boreal': '#38bdf8',
+    'sys-ignis-draconis': '#f43f5e',
+    'sys-sylvan-aether': '#10b981',
+    'sys-chronos-alba': '#a855f7',
+    'sys-zenith-coroa': '#f97316',
+  };
+
+  // 1. SELEÇÃO DA ESTRELA
+  const [internalSysId, setInternalSysId] = useState<string>(
+    propSelectedSysId || constellations[0]?.id || 'sys-solaris-prime'
   );
+  const selectedSysId = propSelectedSysId ?? internalSysId;
+  const setSelectedSysId = (id: string) => {
+    setInternalSysId(id);
+    onSelectSysId?.(id);
+  };
   const activeSystem =
     constellations.find((c) => c.id === selectedSysId) || constellations[0];
 
-  const [selectedPlanetId, setSelectedPlanetId] = useState<string>(
-    activeSystem?.planets?.[0]?.id || 'planet-slimelands'
+  // 2. SELEÇÃO DO PLANETA
+  const [internalPlanetId, setInternalPlanetId] = useState<string>(
+    propSelectedPlanetId || activeSystem?.planets?.[0]?.id || 'planet-slimelands'
   );
+  const selectedPlanetId = propSelectedPlanetId ?? internalPlanetId;
+  const setSelectedPlanetId = (id: string) => {
+    setInternalPlanetId(id);
+    onSelectPlanetId?.(id);
+  };
 
   useEffect(() => {
     if (
@@ -3626,15 +4279,80 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
       : buildDefaultMarkersForPlanet(activePlanet.id, activePlanet.name, project);
   }, [activePlanet, config.markers, project]);
 
-  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(
-    activeMarkers[0]?.id || null
+  // Sidebar Tab: 'markers' | 'textures' | 'globe3d'
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'markers' | 'textures' | 'globe3d'>('markers');
+  const [internalMarkerId, setInternalMarkerId] = useState<string | null>(
+    propSelectedMarkerId ?? activeMarkers[0]?.id ?? null
   );
-  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
-  const discRef = useRef<HTMLDivElement>(null);
-  const pngFileInputRef = useRef<HTMLInputElement>(null);
-  const uvFileInputRef = useRef<HTMLInputElement>(null);
-  const uvLibraryMultiInputRef = useRef<HTMLInputElement>(null);
+  const selectedMarkerId = propSelectedMarkerId !== undefined ? propSelectedMarkerId : internalMarkerId;
+  const setSelectedMarkerId = (id: string | null) => {
+    setInternalMarkerId(id);
+    onSelectMarkerId?.(id);
+  };
 
+  // Canvas View State
+  const [canvasZoom, setCanvasZoom] = useState<number>(0.85);
+  const [canvasPan, setCanvasPan] = useState<{ x: number; y: number }>({ x: 30, y: 25 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isAddMarkerMode, setIsAddMarkerMode] = useState(false);
+  const [showGridLines, setShowGridLines] = useState(false);
+  const [showMiniGlobeHud, setShowMiniGlobeHud] = useState(true);
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
+  const [hoveredCoords, setHoveredCoords] = useState<{ nx: number; ny: number } | null>(null);
+
+  const textureSurfaceRef = useRef<HTMLDivElement>(null);
+  const uvUploadInputRef = useRef<HTMLInputElement>(null);
+  const markerPngInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload de PNG do Marcador da Região persistido no disco local
+  const handleUploadMarkerIconPng = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedMarker) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const diskUrl = await uploadFileToDisk(file, 'maps');
+      if (diskUrl) {
+        updatePlanetMarkers(
+          activeMarkers.map((m) =>
+            m.id === selectedMarker.id ? { ...m, iconPng: diskUrl } : m
+          )
+        );
+        showToast?.('🖼️ PNG da região importado e salvo no disco local!');
+      }
+    } catch (err) {
+      console.error('[PlanetGlobe] Falha ao importar PNG do marcador:', err);
+      showToast?.('Erro ao importar imagem PNG.');
+    }
+  };
+
+  // Upload de Textura UV 2:1 persistida no disco local
+  const handleUploadUvTexture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const diskUrl = await uploadFileToDisk(file, 'maps');
+      if (diskUrl) {
+        assignUvTexture(diskUrl, file.name);
+      }
+    } catch (err) {
+      console.error('[PlanetGlobe] Falha ao importar textura UV:', err);
+      showToast?.('Erro ao importar arquivo de textura.');
+    }
+  };
+
+  const starColor = STAR_COLORS[selectedSysId] || '#38bdf8';
+  const activeAtmosphereColor = activePlanet?.glowColor || '#38bdf8';
+
+  const activeTextureUrl =
+    activePlanet?.uvTexturePng ||
+    config.uvTexturePng ||
+    OFFICIAL_40_UV_TEXTURES[0]?.url ||
+    DEFAULT_PLANET_IMAGE_URL;
+
+  // Atualização dos Marcadores no Planeta
   const updatePlanetMarkers = (nextMarkers: PlanetGlobeMarker[]) => {
     setProject((prev) => {
       const curr = getOrCreatePlanetGlobeConfig(prev);
@@ -3664,7 +4382,47 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
     });
   };
 
-  const assignUvTextureToActivePlanet = (uvDataUrl: string, label?: string) => {
+  const handleAddNewMarkerAtCoords = (nx = 0, ny = 0) => {
+    const firstMapId =
+      project.worldMap?.id || savedWorldMaps[0]?.id || 'world-map-main';
+    const newMarker: PlanetGlobeMarker = {
+      id: `p-marker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      name: `Região ${activeMarkers.length + 1}`,
+      description: `Região mapeada na superfície de ${activePlanet?.name || 'Mundo'}.`,
+      nx: Number(nx.toFixed(3)),
+      ny: Number(ny.toFixed(3)),
+      iconEmoji: '🏰',
+      targetWorldMapId: firstMapId,
+      status: 'unlocked',
+      badgeText: 'REGIÃO',
+      scale: 1.0,
+    };
+    const next = [...activeMarkers, newMarker];
+    updatePlanetMarkers(next);
+    setSelectedMarkerId(newMarker.id);
+    setIsAddMarkerMode(false);
+    showToast?.(`✨ Região adicionada em (${nx.toFixed(2)}, ${ny.toFixed(2)})!`);
+  };
+
+  // Clique interativo direto no Globo 3D
+  const handleMiniGlobeClick = useCallback(
+    (nx: number, ny: number) => {
+      if (isAddMarkerMode) {
+        handleAddNewMarkerAtCoords(nx, ny);
+      } else if (selectedMarkerId) {
+        const updated = activeMarkers.map((m) =>
+          m.id === selectedMarkerId
+            ? { ...m, nx: Number(nx.toFixed(3)), ny: Number(ny.toFixed(3)) }
+            : m
+        );
+        updatePlanetMarkers(updated);
+        showToast?.(`📍 Região reposicionada no globo em (${nx.toFixed(2)}, ${ny.toFixed(2)})`);
+      }
+    },
+    [activeMarkers, isAddMarkerMode, selectedMarkerId, showToast]
+  );
+
+  const assignUvTexture = (url: string, name?: string) => {
     if (!activePlanet || !activeSystem) return;
     setProject((prev) => {
       const curr = getOrCreatePlanetGlobeConfig(prev);
@@ -3676,7 +4434,7 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
         return {
           ...sys,
           planets: (sys.planets || []).map((p) =>
-            p.id === activePlanet.id ? { ...p, uvTexturePng: uvDataUrl } : p
+            p.id === activePlanet.id ? { ...p, uvTexturePng: url } : p
           ),
         };
       });
@@ -3684,224 +4442,61 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
         ...prev,
         planetGlobe: {
           ...curr,
-          uvTexturePng: isMain ? uvDataUrl : curr.uvTexturePng,
+          uvTexturePng: isMain ? url : curr.uvTexturePng,
           constellations: nextConstellations,
         },
       };
     });
-    showToast?.(
-      `🪐 Textura UV 2:1 ${label ? `"${label}" ` : ''}aplicada à esfera 3D de ${activePlanet.name}!`
-    );
+    showToast?.(`🪐 Textura aplicada a ${activePlanet.name}!`);
   };
 
-  const handleUploadDirectPlanetUv = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activePlanet || !activeSystem) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      if (!dataUrl) return;
-      const newItem: PlanetUvTextureItem = {
-        id: `uv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: file.name.replace(/\.[^.]+$/, ''),
-        url: dataUrl,
-        accentColor: activePlanet.glowColor || '#38bdf8',
-        createdAt: new Date().toISOString(),
-      };
-      setProject((prev) => {
-        const curr = getOrCreatePlanetGlobeConfig(prev);
-        const isMain =
-          activePlanet.id === 'planet-slimelands' ||
-          activePlanet.id === 'solar-planet-1';
-        const nextLib = [newItem, ...(curr.uvTextureLibrary || [])];
-        const nextConstellations = (curr.constellations || []).map((sys) => {
-          if (sys.id !== activeSystem.id) return sys;
-          return {
-            ...sys,
-            planets: (sys.planets || []).map((p) =>
-              p.id === activePlanet.id ? { ...p, uvTexturePng: dataUrl } : p
-            ),
-          };
-        });
-        return {
-          ...prev,
-          planetGlobe: {
-            ...curr,
-            uvTexturePng: isMain ? dataUrl : curr.uvTexturePng,
-            uvTextureLibrary: nextLib,
-            constellations: nextConstellations,
-          },
-        };
-      });
-      showToast?.(
-        `✨ Textura UV 2:1 "${newItem.name}" adicionada à galeria e aplicada em ${activePlanet.name}!`
+  // Canvas Drag / Click Handlers
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isAddMarkerMode && textureSurfaceRef.current) {
+      const rect = textureSurfaceRef.current.getBoundingClientRect();
+      const ratioX = (e.clientX - rect.left) / rect.width;
+      const ratioY = (e.clientY - rect.top) / rect.height;
+      if (ratioX >= 0 && ratioX <= 1 && ratioY >= 0 && ratioY <= 1) {
+        const nx = normalizeMarkerCoord((ratioX - 0.5) * 2);
+        const ny = normalizeMarkerCoord((ratioY - 0.5) * 2);
+        handleAddNewMarkerAtCoords(nx, ny);
+        return;
+      }
+    }
+
+    if (e.button === 1 || e.button === 0) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - canvasPan.x, y: e.clientY - canvasPan.y });
+    }
+  };
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (draggingMarkerId && textureSurfaceRef.current) {
+      const rect = textureSurfaceRef.current.getBoundingClientRect();
+      const ratioX = (e.clientX - rect.left) / rect.width;
+      const ratioY = (e.clientY - rect.top) / rect.height;
+      const nx = normalizeMarkerCoord((ratioX - 0.5) * 2);
+      const ny = normalizeMarkerCoord((ratioY - 0.5) * 2);
+      const updated = activeMarkers.map((m) =>
+        m.id === draggingMarkerId
+          ? { ...m, nx: Number(nx.toFixed(3)), ny: Number(ny.toFixed(3)) }
+          : m
       );
-    };
-    reader.readAsDataURL(file);
-  };
+      updatePlanetMarkers(updated);
+      return;
+    }
 
-  const handleBatchUploadUvLibrary = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    Promise.all(
-      files.map(
-        (file) =>
-          new Promise<PlanetUvTextureItem | null>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = String(reader.result || '');
-              if (!dataUrl) {
-                resolve(null);
-                return;
-              }
-              resolve({
-                id: `uv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                name: file.name.replace(/\.[^.]+$/, ''),
-                url: dataUrl,
-                accentColor: '#38bdf8',
-                createdAt: new Date().toISOString(),
-              });
-            };
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(file);
-          })
-      )
-    ).then((items) => {
-      const valid = items.filter((x): x is PlanetUvTextureItem => Boolean(x));
-      if (valid.length === 0) return;
-      setProject((prev) => {
-        const curr = getOrCreatePlanetGlobeConfig(prev);
-        return {
-          ...prev,
-          planetGlobe: {
-            ...curr,
-            uvTextureLibrary: [...valid, ...(curr.uvTextureLibrary || [])],
-          },
-        };
+    if (isPanning) {
+      setCanvasPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y,
       });
-      showToast?.(
-        `🪐 ${valid.length} textura(s) UV 2:1 importada(s) para a Galeria Planetária!`
-      );
-    });
+    }
   };
 
-  const handleDistributeUvAcrossSystem = () => {
-    if (!activeSystem || uvLibrary.length === 0) return;
-    setProject((prev) => {
-      const curr = getOrCreatePlanetGlobeConfig(prev);
-      const nextConstellations = (curr.constellations || []).map((sys) => {
-        if (sys.id !== activeSystem.id) return sys;
-        return {
-          ...sys,
-          planets: (sys.planets || []).map((p, idx) => ({
-            ...p,
-            uvTexturePng: uvLibrary[idx % uvLibrary.length].url,
-            moons: (p.moons || []).map((m, mIdx) => ({
-              ...m,
-              uvTexturePng:
-                uvLibrary[(idx + mIdx + 1) % uvLibrary.length].url,
-            })),
-          })),
-        };
-      });
-      return {
-        ...prev,
-        planetGlobe: {
-          ...curr,
-          constellations: nextConstellations,
-        },
-      };
-    });
-    showToast?.(
-      `✨ Texturas UV 2:1 distribuídas pelos planetas e luas de ${activeSystem.name}!`
-    );
-  };
-
-  const handleDeleteUvFromLibrary = (uvId: string) => {
-    setProject((prev) => {
-      const curr = getOrCreatePlanetGlobeConfig(prev);
-      return {
-        ...prev,
-        planetGlobe: {
-          ...curr,
-          uvTextureLibrary: (curr.uvTextureLibrary || []).filter(
-            (item) => item.id !== uvId
-          ),
-        },
-      };
-    });
-  };
-
-  const handleUploadPlanetPng = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activePlanet || !activeSystem) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || '');
-      if (!dataUrl) return;
-      setProject((prev) => {
-        const curr = getOrCreatePlanetGlobeConfig(prev);
-        const isMain =
-          activePlanet.id === 'planet-slimelands' ||
-          activePlanet.id === 'solar-planet-1';
-        const nextConstellations = (curr.constellations || []).map((sys) => {
-          if (sys.id !== activeSystem.id) return sys;
-          return {
-            ...sys,
-            planets: (sys.planets || []).map((p) =>
-              p.id === activePlanet.id ? { ...p, planetImagePng: dataUrl } : p
-            ),
-          };
-        });
-        return {
-          ...prev,
-          planetGlobe: {
-            ...curr,
-            planetImagePng: isMain ? dataUrl : curr.planetImagePng,
-            constellations: nextConstellations,
-          },
-        };
-      });
-      showToast?.('✨ PNG de Mergulho do Planeta atualizado!');
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePointerMoveDisc = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingMarkerId || !discRef.current) return;
-    const rect = discRef.current.getBoundingClientRect();
-    const ratioX = (e.clientX - rect.left) / rect.width;
-    const ratioY = (e.clientY - rect.top) / rect.height;
-    const nx = normalizeMarkerCoord((ratioX - 0.5) * 2);
-    const ny = normalizeMarkerCoord((ratioY - 0.5) * 2);
-    const updated = activeMarkers.map((m) =>
-      m.id === draggingMarkerId
-        ? { ...m, nx: Number(nx.toFixed(3)), ny: Number(ny.toFixed(3)) }
-        : m
-    );
-    updatePlanetMarkers(updated);
-  };
-
-  const handleAddMarker = () => {
-    const firstMapId =
-      project.worldMap?.id || savedWorldMaps[0]?.id || 'world-map-main';
-    const newMarker: PlanetGlobeMarker = {
-      id: `p-marker-${Date.now().toString(36)}`,
-      name: `Nova Região ${activeMarkers.length + 1}`,
-      description: 'Clique para viajar diretamente para o mapa regional.',
-      nx: 0,
-      ny: 0,
-      iconEmoji: '🏰',
-      targetWorldMapId: firstMapId,
-      status: 'unlocked',
-      badgeText: 'REGIÃO',
-      scale: 1.0,
-    };
-    const next = [...activeMarkers, newMarker];
-    updatePlanetMarkers(next);
-    setSelectedMarkerId(newMarker.id);
-    showToast?.('✨ Novo marcador adicionado à superfície do planeta!');
+  const handleCanvasPointerUp = () => {
+    setIsPanning(false);
+    setDraggingMarkerId(null);
   };
 
   const selectedMarker =
@@ -3910,312 +4505,198 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
     null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-zinc-950 text-white">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-amber-500/30 bg-slate-950/90 p-5 space-y-4 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2.5">
-              <Globe className="w-5 h-5 text-amber-400" />
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300">
-                  Atlas Astral 3D • 6 Estrelas Realistas & 40 Planetas/Luas (UV 2:1 + PNG)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Use suas texturas retangulares UV 2:1 para girar em 360° no Sistema Solar 3D, e os PNGs ilustrados para o mergulho close-up com marcadores fixos!
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                1. Estrela da Constelação (6 Sistemas Populados • 40 Mundos)
+    <div className="flex-1 flex overflow-hidden relative bg-[#060913] text-white select-none">
+      
+      {/* =========================================================================
+          PAINEL LATERAL ESQUERDO: LIMPO, INTUITIVO E DIRETO AO PONTO
+         ========================================================================= */}
+      <div className="w-[380px] xl:w-[410px] bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 z-20 shadow-xl overflow-hidden">
+        
+        {/* SELETORES CLAROS E DIRETOS: ESTRELA & PLANETA */}
+        <div className="p-3 bg-zinc-950 border-b border-zinc-800 space-y-2">
+          
+          {/* Seletor 1: Estrela da Constelação */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow" style={{ backgroundColor: starColor }} />
+                <span>Estrela / Sistema</span>
               </label>
-              <select
-                value={selectedSysId}
-                onChange={(e) => setSelectedSysId(e.target.value)}
-                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white font-semibold"
-              >
-                {constellations.map((sys) => {
-                  const moonCount = (sys.planets || []).reduce(
-                    (acc, p) => acc + (p.moons?.length || 0),
-                    0
-                  );
-                  return (
-                    <option key={sys.id} value={sys.id}>
-                      {sys.name} ({sys.planets?.length || 0} planetas + {moonCount} luas)
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                2. Planeta Selecionado neste Sistema Solar
-              </label>
-              <select
-                value={activePlanet?.id || ''}
-                onChange={(e) => setSelectedPlanetId(e.target.value)}
-                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-white font-semibold"
-              >
-                {(activeSystem?.planets || []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION A: GALERIA DE TEXTURAS RETANGULARES UV 2:1 (SISTEMA PLANETÁRIO 3D) */}
-        <div className="rounded-2xl border border-cyan-500/35 bg-slate-950/90 p-5 space-y-4 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2.5">
-              <Layers className="w-5 h-5 text-cyan-400" />
-              <div>
-                <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-cyan-300">
-                  Galeria de Texturas Retangulares UV 2:1 (Visão Sistema Planetário 3D)
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  Importe suas texturas retangulares equiretangulares (2:1) e clique em qualquer textura abaixo para aplicá-la à esfera 3D de{' '}
-                  <strong className="text-white">{activePlanet?.name}</strong>.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={uvLibraryMultiInputRef}
-                type="file"
-                multiple
-                accept="image/png,image/webp,image/jpeg"
-                className="hidden"
-                onChange={handleBatchUploadUvLibrary}
-              />
-              <button
-                type="button"
-                onClick={() => uvLibraryMultiInputRef.current?.click()}
-                className="px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-400/50 text-cyan-200 text-xs font-bold flex items-center gap-1.5 hover:bg-cyan-500/30 cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                + Importar Texturas UV 2:1 (Lote)
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDistributeUvAcrossSystem}
-                className="px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30 cursor-pointer"
-                title="Distribuir automaticamente as texturas da galeria pelos planetas deste sistema solar"
-              >
-                <Wand2 className="w-3.5 h-3.5" />
-                Distribuir no Sistema Atual
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
-            <div className="relative w-44 aspect-[2/1] rounded-lg overflow-hidden border-2 border-cyan-400/60 bg-black shrink-0 shadow-md">
-              <img
-                src={activePlanet?.uvTexturePng || uvLibrary[0]?.url}
-                alt="UV 2:1 Ativa"
-                className="w-full h-full object-cover"
-              />
-              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-bold text-cyan-300 border border-cyan-400/40">
-                UV 2:1 ATIVA
+              <span className="text-[10px] text-zinc-400 font-mono">
+                {activeSystem?.planets?.length || 0} mundos
               </span>
             </div>
 
-            <div className="flex-1 min-w-0 space-y-1 text-center sm:text-left">
-              <div className="text-xs font-bold text-white">
-                Textura Esférica 3D Atual de <span className="text-cyan-300">{activePlanet?.name}</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Esta textura retangular 2:1 é mapeada em 360° ao redor da esfera 3D do planeta enquanto ele gira e orbita o sol na camada do Sistema Planetário.
-              </p>
-            </div>
-
-            <div>
-              <input
-                ref={uvFileInputRef}
-                type="file"
-                accept="image/png,image/webp,image/jpeg"
-                className="hidden"
-                onChange={handleUploadDirectPlanetUv}
-              />
-              <button
-                type="button"
-                onClick={() => uvFileInputRef.current?.click()}
-                className="px-3 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shrink-0 shadow"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Enviar UV 2:1 p/ {activePlanet?.name}
-              </button>
-            </div>
+            <select
+              value={selectedSysId}
+              onChange={(e) => setSelectedSysId(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-750 text-xs font-bold text-white focus:border-amber-400 outline-none cursor-pointer"
+            >
+              {constellations.map((sys) => (
+                <option key={sys.id} value={sys.id}>
+                  {sys.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {uvLibrary.map((uvItem) => {
-              const isAssigned = activePlanet?.uvTexturePng === uvItem.url;
-              return (
-                <div
-                  key={uvItem.id}
-                  onClick={() =>
-                    assignUvTextureToActivePlanet(uvItem.url, uvItem.name)
-                  }
-                  className={`group relative rounded-xl overflow-hidden border transition-all cursor-pointer flex flex-col bg-slate-900 ${
-                    isAssigned
-                      ? 'border-cyan-400 ring-2 ring-cyan-400/40 shadow-lg'
-                      : 'border-slate-800 hover:border-cyan-400/60'
-                  }`}
-                >
-                  <div className="relative w-full aspect-[2/1] bg-black overflow-hidden">
-                    <img
-                      src={uvItem.url}
-                      alt={uvItem.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                    />
-                    {isAssigned && (
-                      <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded-md bg-cyan-500 text-slate-950 text-[9px] font-black uppercase flex items-center gap-1 shadow">
-                        <Check className="w-3 h-3 stroke-[3]" />
-                        Em Uso
-                      </div>
-                    )}
-                    {!uvItem.id.startsWith('uv-preset-') && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteUvFromLibrary(uvItem.id);
-                        }}
-                        className="absolute top-1.5 right-1.5 p-1 rounded bg-rose-950/85 text-rose-300 hover:bg-rose-600 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="Remover da galeria"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="px-2.5 py-1.5 flex items-center justify-between gap-1">
-                    <span className="text-[10px] font-bold text-slate-200 truncate">
-                      {uvItem.name}
-                    </span>
-                    <span className="text-[9px] font-bold text-cyan-400 shrink-0">
-                      Aplicar
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+          {/* Seletor 2: Planeta deste Sistema */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: activeAtmosphereColor }} />
+                <span>Planeta Atual</span>
+              </label>
+              <span className="text-[10px] text-amber-400/90 font-bold">
+                {activeMarkers.length} Regiões
+              </span>
+            </div>
+
+            <select
+              value={activePlanet?.id || ''}
+              onChange={(e) => setSelectedPlanetId(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-750 text-xs font-bold text-white focus:border-amber-400 outline-none cursor-pointer"
+            >
+              {(activeSystem?.planets || []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.hasRings ? '🪐 (com anel)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* SECTION B: PNG DO MERGULHO PLANETÁRIO + EDITOR DE MARCADORES FIXOS 1:1 */}
-        <div className="rounded-2xl border border-amber-500/35 bg-slate-950/90 p-5 space-y-4 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2.5">
-              <ImageIcon className="w-5 h-5 text-amber-400" />
-              <div>
-                <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-300">
-                  PNG Ilustrado do Mergulho Close-up & Marcadores Fixos ({activePlanet?.name})
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  Quando o jogador dá o mergulho no planeta, este PNG ilustrado é exibido em 3D com os marcadores de continentes 100% cravados nas coordenadas abaixo.
-                </p>
-              </div>
-            </div>
+        {/* ABAS COMPACTAS: REGIÕES | TEXTURAS | GLOBO 3D */}
+        <div className="grid grid-cols-3 p-1 bg-zinc-950 border-b border-zinc-800 gap-1 text-[11px] font-bold">
+          <button
+            type="button"
+            onClick={() => setActiveSidebarTab('markers')}
+            className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeSidebarTab === 'markers'
+                ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+            }`}
+          >
+            Regiões ({activeMarkers.length})
+          </button>
 
-            <div>
-              <input
-                ref={pngFileInputRef}
-                type="file"
-                accept="image/png,image/webp,image/jpeg"
-                className="hidden"
-                onChange={handleUploadPlanetPng}
-              />
-              <button
-                type="button"
-                onClick={() => pngFileInputRef.current?.click()}
-                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Trocar PNG de Mergulho ({activePlanet?.name})
-              </button>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveSidebarTab('textures')}
+            className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeSidebarTab === 'textures'
+                ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+            }`}
+          >
+            Textura UV
+          </button>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-            <div
-              ref={discRef}
-              onPointerMove={handlePointerMoveDisc}
-              onPointerUp={() => setDraggingMarkerId(null)}
-              onPointerLeave={() => setDraggingMarkerId(null)}
-              className="relative aspect-square w-full max-w-[380px] mx-auto rounded-2xl border border-slate-800 bg-[#030712] overflow-hidden select-none shadow-inner"
-            >
-              <img
-                src={
-                  activePlanet?.planetImagePng ||
-                  config.planetImagePng ||
-                  DEFAULT_PLANET_IMAGE_URL
-                }
-                alt={activePlanet?.name || 'Planeta'}
-                className="w-full h-full object-contain pointer-events-none select-none"
-                draggable={false}
-              />
-              {activeMarkers.map((m) => {
-                const isSel = selectedMarker?.id === m.id;
-                const leftPct = (m.nx * 0.5 + 0.5) * 100;
-                const topPct = (m.ny * 0.5 + 0.5) * 100;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      setSelectedMarkerId(m.id);
-                      setDraggingMarkerId(m.id);
-                    }}
-                    style={{
-                      left: `${leftPct}%`,
-                      top: `${topPct}%`,
-                      transform: 'translate(-50%, -50%)',
-                    }}
-                    className={`absolute px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-transform cursor-move ${
-                      isSel
-                        ? 'bg-amber-400 text-slate-950 border-white scale-110 z-20 shadow-lg'
-                        : 'bg-slate-900/90 text-amber-200 border-amber-400/50 hover:scale-105 z-10'
-                    }`}
-                  >
-                    <span className="flex items-center gap-1 whitespace-nowrap">
-                      <MapPin className="w-3 h-3" />
-                      {m.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <button
+            type="button"
+            onClick={() => setActiveSidebarTab('globe3d')}
+            className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeSidebarTab === 'globe3d'
+                ? 'bg-amber-500 text-black font-extrabold shadow-sm'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-850'
+            }`}
+          >
+            Globo 3D
+          </button>
+        </div>
 
+        {/* CONTEÚDO PRINCIPAL DA SIDEBAR */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          
+          {/* TAB 1: MARCADORES / REGIÕES */}
+          {activeSidebarTab === 'markers' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300">
-                  Continentes / Regiões Fixas no PNG ({activeMarkers.length})
-                </span>
+              {/* Botão Principal: Nova Região */}
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={handleAddMarker}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-bold hover:bg-emerald-500/30 cursor-pointer"
+                  onClick={() => handleAddNewMarkerAtCoords(0, 0)}
+                  className="flex-1 py-1.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer shadow transition-all active:scale-95"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Nova Região
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>+ Nova Região</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddMarkerMode(!isAddMarkerMode)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                    isAddMarkerMode
+                      ? 'bg-emerald-500 text-black border-emerald-400 font-extrabold'
+                      : 'bg-zinc-850 text-zinc-300 border-zinc-700 hover:text-white'
+                  }`}
+                  title="Clique na textura para posicionar"
+                >
+                  {isAddMarkerMode ? 'Clique na Tela' : 'Modo Clique'}
                 </button>
               </div>
 
-              {selectedMarker && (
-                <div className="space-y-3 rounded-xl bg-slate-900/90 border border-slate-800 p-4">
+              {/* Lista Rápida de Regiões */}
+              <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                {activeMarkers.map((m) => {
+                  const isSel = selectedMarker?.id === m.id;
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => setSelectedMarkerId(m.id)}
+                      className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer border transition-all text-xs ${
+                        isSel
+                          ? 'bg-amber-500/15 border-amber-400 text-amber-200 font-bold'
+                          : 'bg-zinc-950/60 border-zinc-800 text-zinc-300 hover:bg-zinc-850'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center shrink-0 overflow-hidden">
+                          {m.iconPng ? (
+                            <img src={m.iconPng} alt="" className="w-full h-full object-contain filter drop-shadow" />
+                          ) : (
+                            <span className="text-xs">{m.iconEmoji || '🏰'}</span>
+                          )}
+                        </div>
+                        <span className="truncate">{m.name}</span>
+                      </div>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono shrink-0">
+                        {m.badgeText || 'PONTO'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Edição da Região Selecionada */}
+              {selectedMarker ? (
+                <div className="space-y-2.5 rounded-xl bg-zinc-950/80 border border-zinc-800 p-3 shadow-lg">
+                  <div className="flex items-center justify-between border-b border-zinc-850 pb-1.5">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>{selectedMarker.iconEmoji || '🏰'}</span>
+                      <span>Propriedades da Região</span>
+                    </span>
+                    {activeMarkers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = activeMarkers.filter((m) => m.id !== selectedMarker.id);
+                          updatePlanetMarkers(next);
+                          setSelectedMarkerId(next[0]?.id || null);
+                          showToast?.('🗑️ Região removida.');
+                        }}
+                        className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
+                        title="Excluir Região"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Nome da Região */}
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                      Nome do Continente / Região
+                    <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                      Nome
                     </label>
                     <input
                       type="text"
@@ -4228,109 +4709,856 @@ export const PlanetGlobeEditorSection: React.FC<PlanetGlobeEditorSectionProps> =
                           )
                         );
                       }}
-                      className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs text-white"
+                      className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1 text-xs text-white font-semibold focus:border-amber-400 outline-none"
                     />
                   </div>
 
+                  {/* Descrição */}
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                      Selo / Subtítulo
+                    <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                      Lore / Descrição
                     </label>
-                    <input
-                      type="text"
-                      value={selectedMarker.badgeText || ''}
+                    <textarea
+                      rows={2}
+                      value={selectedMarker.description || ''}
                       onChange={(e) => {
                         const val = e.target.value;
                         updatePlanetMarkers(
                           activeMarkers.map((m) =>
-                            m.id === selectedMarker.id
-                              ? { ...m, badgeText: val }
-                              : m
+                            m.id === selectedMarker.id ? { ...m, description: val } : m
                           )
                         );
                       }}
-                      className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs text-white"
+                      className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1 text-xs text-white focus:border-amber-400 outline-none resize-none"
+                      placeholder="Breve história desta região no planeta..."
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                      Mapa Regional Vinculado
-                    </label>
-                    <div className="flex gap-2">
+                  {/* Asset PNG da Região (Persistência no Disco com DiskAssetEngine) */}
+                  <div className="space-y-2 p-2.5 rounded-lg bg-zinc-900 border border-zinc-800">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Asset PNG da Região</span>
+                      </label>
+                      {selectedMarker.iconPng && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, iconPng: undefined } : m
+                              )
+                            );
+                            showToast?.('PNG removido da região.');
+                          }}
+                          className="text-[9px] text-rose-400 hover:text-rose-300 font-semibold cursor-pointer"
+                        >
+                          Remover PNG
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      ref={markerPngInputRef}
+                      type="file"
+                      accept="image/png,image/webp,image/jpeg,image/svg+xml"
+                      className="hidden"
+                      onChange={handleUploadMarkerIconPng}
+                    />
+
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-12 h-12 rounded-xl bg-zinc-950 border border-zinc-750 flex items-center justify-center shrink-0 overflow-hidden p-1 shadow-inner relative group">
+                        {selectedMarker.iconPng ? (
+                          <img
+                            src={selectedMarker.iconPng}
+                            alt={selectedMarker.name}
+                            className="w-full h-full object-contain filter drop-shadow"
+                          />
+                        ) : (
+                          <span className="text-xl">{selectedMarker.iconEmoji || '🏰'}</span>
+                        )}
+                      </div>
+
+                      <div className="flex-1 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => markerPngInputRef.current?.click()}
+                          className="w-full py-1.5 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer active:scale-95"
+                        >
+                          <Upload className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>{selectedMarker.iconPng ? 'Trocar PNG' : 'Importar PNG Próprio'}</span>
+                        </button>
+                        <span className="text-[9px] text-zinc-400 block truncate font-mono">
+                          {selectedMarker.iconPng ? selectedMarker.iconPng.split('/').pop() : 'Salvo no disco (/assets/engine/maps/)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Escala da Região */}
+                    <div className="flex items-center justify-between text-xs pt-1.5 border-t border-zinc-850">
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase">Escala do Pin</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cur = selectedMarker.scale || 1.0;
+                            const next = Math.max(0.4, Number((cur - 0.1).toFixed(1)));
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, scale: next } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold flex items-center justify-center cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="text-[10px] font-mono font-bold text-amber-300 min-w-[36px] text-center">
+                          {Math.round((selectedMarker.scale || 1.0) * 100)}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cur = selectedMarker.scale || 1.0;
+                            const next = Math.min(3.0, Number((cur + 0.1).toFixed(1)));
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, scale: next } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold flex items-center justify-center cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Ajustes Independentes do PNG do Marcador */}
+                    {selectedMarker.iconPng && (
+                      <div className="pt-2 border-t border-zinc-800 space-y-2 bg-zinc-950/50 p-2.5 rounded-lg border border-zinc-800/80">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-amber-400 font-bold uppercase flex items-center gap-1">
+                            <span>🖼️ Asset PNG Próprio</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updatePlanetMarkers(
+                                activeMarkers.map((m) =>
+                                  m.id === selectedMarker.id
+                                    ? { ...m, pngScale: 1.0, pngOffsetX: 0, pngOffsetY: 0 }
+                                    : m
+                                )
+                              );
+                            }}
+                            className="text-[9px] text-zinc-400 hover:text-white underline cursor-pointer"
+                          >
+                            Resetar
+                          </button>
+                        </div>
+
+                        {/* Escala Exclusiva do Asset PNG */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-zinc-400 font-semibold">Escala do PNG:</span>
+                            <span className="font-mono font-bold text-amber-300">
+                              {Math.round((selectedMarker.pngScale ?? 1.0) * 100)}%
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="range"
+                              min="0.2"
+                              max="3.5"
+                              step="0.05"
+                              value={selectedMarker.pngScale ?? 1.0}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 1.0;
+                                updatePlanetMarkers(
+                                  activeMarkers.map((m) =>
+                                    m.id === selectedMarker.id ? { ...m, pngScale: val } : m
+                                  )
+                                );
+                              }}
+                              className="flex-1 accent-amber-500 cursor-pointer h-1.5"
+                            />
+                            <div className="flex items-center gap-0.5">
+                              {[0.8, 1.0, 1.5, 2.0].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => {
+                                    updatePlanetMarkers(
+                                      activeMarkers.map((m) =>
+                                        m.id === selectedMarker.id ? { ...m, pngScale: s } : m
+                                      )
+                                    );
+                                  }}
+                                  className={`px-1 py-0.5 rounded text-[8px] font-mono ${
+                                    Math.abs((selectedMarker.pngScale ?? 1.0) - s) < 0.05
+                                      ? 'bg-amber-500 text-black font-bold'
+                                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                                  }`}
+                                >
+                                  {Math.round(s * 100)}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Deslocamento X e Y Exclusivo do PNG */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                              <span>Offset X:</span>
+                              <span className="font-mono text-zinc-300">{selectedMarker.pngOffsetX || 0}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-60"
+                              max="60"
+                              step="1"
+                              value={selectedMarker.pngOffsetX || 0}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                updatePlanetMarkers(
+                                  activeMarkers.map((m) =>
+                                    m.id === selectedMarker.id ? { ...m, pngOffsetX: val } : m
+                                  )
+                                );
+                              }}
+                              className="w-full accent-amber-500 cursor-pointer h-1.5"
+                            />
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                              <span>Offset Y:</span>
+                              <span className="font-mono text-zinc-300">{selectedMarker.pngOffsetY || 0}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="-60"
+                              max="60"
+                              step="1"
+                              value={selectedMarker.pngOffsetY || 0}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                updatePlanetMarkers(
+                                  activeMarkers.map((m) =>
+                                    m.id === selectedMarker.id ? { ...m, pngOffsetY: val } : m
+                                  )
+                                );
+                              }}
+                              className="w-full accent-amber-500 cursor-pointer h-1.5"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selo & Status */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                        Selo / Badge
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedMarker.badgeText || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updatePlanetMarkers(
+                            activeMarkers.map((m) =>
+                              m.id === selectedMarker.id ? { ...m, badgeText: val } : m
+                            )
+                          );
+                        }}
+                        placeholder="Ex: CAPITAL"
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs text-white outline-none focus:border-amber-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-0.5">
+                        Status
+                      </label>
+                      <select
+                        value={selectedMarker.status || 'unlocked'}
+                        onChange={(e) => {
+                          const val = e.target.value as PlanetGlobeMarker['status'];
+                          updatePlanetMarkers(
+                            activeMarkers.map((m) =>
+                              m.id === selectedMarker.id ? { ...m, status: val } : m
+                            )
+                          );
+                        }}
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs text-white outline-none focus:border-amber-400 cursor-pointer"
+                      >
+                        <option value="unlocked">Desbloqueado</option>
+                        <option value="locked">Bloqueado</option>
+                        <option value="completed">Concluído</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Coordenadas e Ajuste Fino Milimétrico */}
+                  <div className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1">
+                        <Compass className="w-3 h-3 text-cyan-400" />
+                        <span>Posição Geográfica</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-cyan-300 font-bold">
+                        {selectedMarker.ny <= 0
+                          ? `${Math.abs(selectedMarker.ny * 90).toFixed(1)}°N`
+                          : `${(selectedMarker.ny * 90).toFixed(1)}°S`},{' '}
+                        {selectedMarker.nx >= 0
+                          ? `${(selectedMarker.nx * 180).toFixed(1)}°E`
+                          : `${Math.abs(selectedMarker.nx * 180).toFixed(1)}°W`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <div className="flex justify-between text-[9px] text-zinc-400 mb-0.5">
+                          <span>Longitude (X)</span>
+                          <span className="font-mono text-amber-300">{selectedMarker.nx.toFixed(3)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-1"
+                          max="1"
+                          step="0.005"
+                          value={selectedMarker.nx}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, nx: Number(val.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[9px] text-zinc-400 mb-0.5">
+                          <span>Latitude (Y)</span>
+                          <span className="font-mono text-amber-300">{selectedMarker.ny.toFixed(3)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-1"
+                          max="1"
+                          step="0.005"
+                          value={selectedMarker.ny}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, ny: Number(val.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Micro-Ajuste D-Pad (0.005 por clique) */}
+                    <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
+                      <span className="text-[9px] text-zinc-400 font-medium">Micro-Ajuste:</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          title="Mover para Esquerda (-X)"
+                          onClick={() => {
+                            const nx = Math.max(-1, selectedMarker.nx - 0.005);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, nx: Number(nx.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ◀
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Cima (-Y)"
+                          onClick={() => {
+                            const ny = Math.max(-1, selectedMarker.ny - 0.005);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, ny: Number(ny.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Baixo (+Y)"
+                          onClick={() => {
+                            const ny = Math.min(1, selectedMarker.ny + 0.005);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, ny: Number(ny.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          title="Mover para Direita (+X)"
+                          onClick={() => {
+                            const nx = Math.min(1, selectedMarker.nx + 0.005);
+                            updatePlanetMarkers(
+                              activeMarkers.map((m) =>
+                                m.id === selectedMarker.id ? { ...m, nx: Number(nx.toFixed(3)) } : m
+                              )
+                            );
+                          }}
+                          className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center justify-center cursor-pointer active:scale-90"
+                        >
+                          ▶
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vínculo Hierárquico com o Mapa Regional */}
+                  <div className="pt-2 border-t border-zinc-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Compass className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Mapa Regional Desta Região</span>
+                      </label>
+                      {selectedMarker.targetWorldMapId && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 font-bold font-mono">
+                          Vinculado
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Botão de Destaque: Abrir / Editar Mapa Regional */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedMarker.targetWorldMapId) {
+                          onSwitchToRegionalMapEditor(
+                            selectedMarker.targetWorldMapId,
+                            activePlanet?.id,
+                            selectedMarker.id
+                          );
+                        } else {
+                          onCreateNewRegionalMapForMarker(
+                            selectedMarker.id,
+                            selectedMarker.name,
+                            activePlanet?.id
+                          );
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/50 transition-all cursor-pointer active:scale-95"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>🗺️ Abrir Mapa Regional Desta Região</span>
+                    </button>
+
+                    {/* Seleção de Destino ou Criar Novo Mapa */}
+                    <div className="flex items-center gap-1.5 pt-0.5">
                       <select
                         value={selectedMarker.targetWorldMapId || ''}
                         onChange={(e) => {
                           const val = e.target.value;
                           updatePlanetMarkers(
                             activeMarkers.map((m) =>
-                              m.id === selectedMarker.id
-                                ? { ...m, targetWorldMapId: val }
-                                : m
+                              m.id === selectedMarker.id ? { ...m, targetWorldMapId: val } : m
                             )
                           );
                         }}
-                        className="flex-1 rounded-lg bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-white"
+                        className="flex-1 rounded-lg bg-zinc-900 border border-zinc-750 px-2 py-1 text-[11px] text-white font-semibold outline-none focus:border-amber-400 cursor-pointer"
+                        title="Vincular a outro Mapa Regional existente"
                       >
+                        <option value="">-- Mapa Vinculado --</option>
                         {savedWorldMaps.map((wm) => (
                           <option key={wm.id} value={wm.id}>
                             {wm.title || wm.id}
                           </option>
                         ))}
                       </select>
-                      {selectedMarker.targetWorldMapId && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onSwitchToRegionalMapEditor(
-                              selectedMarker.targetWorldMapId!
-                            )
-                          }
-                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 border border-indigo-400/40 text-indigo-200 text-xs font-bold flex items-center gap-1 hover:bg-indigo-600/50 cursor-pointer"
-                          title="Abrir Editor deste Mapa Regional"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Editar
-                        </button>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onCreateNewRegionalMapForMarker(
-                          selectedMarker.id,
-                          selectedMarker.name
-                        )
-                      }
-                      className="text-[11px] font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
-                    >
-                      + Criar Novo Mapa Regional Exclusivo
-                    </button>
-
-                    {activeMarkers.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => {
-                          const filtered = activeMarkers.filter(
-                            (m) => m.id !== selectedMarker.id
-                          );
-                          updatePlanetMarkers(filtered);
-                          setSelectedMarkerId(filtered[0]?.id || null);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 text-[11px] font-bold hover:bg-rose-500/30 cursor-pointer"
+                        onClick={() =>
+                          onCreateNewRegionalMapForMarker(
+                            selectedMarker.id,
+                            selectedMarker.name,
+                            activePlanet?.id
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-amber-300 border border-amber-400/25 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                        title="Criar novo mapa exclusivo para esta região"
                       >
-                        <Trash2 className="w-3 h-3" />
-                        Remover
+                        <Plus className="w-3 h-3" />
+                        <span>Novo</span>
                       </button>
-                    )}
+                    </div>
                   </div>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-zinc-500 text-xs">
+                  Selecione ou adicione uma região.
                 </div>
               )}
             </div>
+          )}
+
+          {/* TAB 2: TEXTURAS UV */}
+          {activeSidebarTab === 'textures' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">40 Texturas Planetárias</span>
+                <div>
+                  <input
+                    ref={uvUploadInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={handleUploadUvTexture}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => uvUploadInputRef.current?.click()}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Upload className="w-3 h-3" />
+                    <span>Upload</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 max-h-[460px] overflow-y-auto pr-1">
+                {uvLibrary.map((item) => {
+                  const isCur = activeTextureUrl === item.url;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => assignUvTexture(item.url, item.name)}
+                      className={`rounded-lg border overflow-hidden cursor-pointer transition-all ${
+                        isCur ? 'border-cyan-400 ring-2 ring-cyan-400/40' : 'border-zinc-800 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="aspect-[2/1] w-full bg-black relative">
+                        <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                        {isCur && (
+                          <span className="absolute top-1 left-1 px-1 py-0.2 rounded bg-cyan-500 text-black text-[8px] font-extrabold">
+                            Ativo
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-1 bg-zinc-900 text-[10px] truncate font-semibold text-zinc-300">
+                        {item.name}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: GLOBO 3D */}
+          {activeSidebarTab === 'globe3d' && (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 space-y-2 text-center">
+                <span className="text-xs font-bold text-white block">Globo 3D do Planeta</span>
+                <div className="flex justify-center p-1 bg-[#010309] rounded-lg border border-zinc-850">
+                  <InteractiveMiniGlobe
+                    textureUrl={activeTextureUrl}
+                    atmosphereColor={activeAtmosphereColor}
+                    hasRings={activePlanet?.hasRings}
+                    markers={activeMarkers}
+                    selectedMarkerId={selectedMarkerId}
+                    width={260}
+                    height={260}
+                    onSelectMarker={(id) => setSelectedMarkerId(id)}
+                    onGlobeClick={handleMiniGlobeClick}
+                  />
+                </div>
+                <span className="text-[10px] text-zinc-400 block">Arraste para inspecionar em 360°</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* =========================================================================
+          ÁREA CENTRAL: CANVAS LIMPO E EXPANSIVO COM A TEXTURA DO PLANETA
+         ========================================================================= */}
+      <div
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={handleCanvasPointerUp}
+        onWheel={(e) => {
+          e.preventDefault();
+          const factor = e.deltaY < 0 ? 1.08 : 0.92;
+          setCanvasZoom((z) => Math.min(2.8, Math.max(0.35, z * factor)));
+        }}
+        className="flex-1 h-full overflow-hidden relative cursor-default bg-[#030611] select-none"
+      >
+        {/* BARRA SUPERIOR FLUTUANTE ULTRA-COMPACTA & LIMPA */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 p-1.5 rounded-xl bg-zinc-900/80 backdrop-blur-md border border-zinc-800 shadow-xl">
+          <button
+            type="button"
+            onClick={() => setIsAddMarkerMode(false)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              !isAddMarkerMode ? 'bg-amber-500 text-black font-extrabold shadow-sm' : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Move className="w-3.5 h-3.5" />
+            <span>Mover</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsAddMarkerMode(true)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              isAddMarkerMode ? 'bg-emerald-500 text-black font-extrabold shadow-sm' : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            <span>+ Ponto</span>
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-zinc-700" />
+
+          <button
+            type="button"
+            onClick={() => setShowGridLines(!showGridLines)}
+            className={`p-1 rounded-lg transition-all cursor-pointer ${
+              showGridLines ? 'bg-cyan-500/20 text-cyan-300' : 'text-zinc-400 hover:text-white'
+            }`}
+            title="Alternar Grade Náutica"
+          >
+            <Grid className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="w-[1px] h-3.5 bg-zinc-700" />
+
+          {/* Zoom */}
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setCanvasZoom((z) => Math.max(0.35, z - 0.1))}
+              className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[10px] font-mono font-bold text-zinc-300 px-1 min-w-[36px] text-center">
+              {Math.round(canvasZoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setCanvasZoom((z) => Math.min(2.8, z + 0.1))}
+              className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCanvasZoom(0.85);
+                setCanvasPan({ x: 30, y: 25 });
+              }}
+              className="p-1 text-zinc-400 hover:text-white rounded cursor-pointer"
+              title="Resetar"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
           </div>
+        </div>
+
+        {/* MAPA DA TEXTURA PLANETÁRIA 2:1 */}
+        <div
+          style={{
+            transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+            transformOrigin: '0 0',
+            transition: isPanning ? 'none' : 'transform 0.08s ease-out',
+          }}
+          className="absolute inset-0 pointer-events-auto"
+        >
+          <div
+            ref={textureSurfaceRef}
+            onPointerMove={(e) => {
+              if (!textureSurfaceRef.current) return;
+              const rect = textureSurfaceRef.current.getBoundingClientRect();
+              const ratioX = (e.clientX - rect.left) / rect.width;
+              const ratioY = (e.clientY - rect.top) / rect.height;
+              if (ratioX >= 0 && ratioX <= 1 && ratioY >= 0 && ratioY <= 1) {
+                const nx = normalizeMarkerCoord((ratioX - 0.5) * 2);
+                const ny = normalizeMarkerCoord((ratioY - 0.5) * 2);
+                setHoveredCoords({ nx: Number(nx.toFixed(3)), ny: Number(ny.toFixed(3)) });
+              } else {
+                setHoveredCoords(null);
+              }
+            }}
+            onPointerLeave={() => setHoveredCoords(null)}
+            style={{ width: 1600, height: 800 }}
+            className={`relative rounded-2xl border border-slate-700/50 shadow-2xl overflow-hidden ${
+              isAddMarkerMode ? 'cursor-crosshair' : 'cursor-default'
+            }`}
+          >
+            <img
+              src={activeTextureUrl}
+              alt={activePlanet?.name || 'Textura'}
+              className="w-full h-full object-cover pointer-events-none select-none"
+              draggable={false}
+            />
+
+            {/* Grade Cartográfica Sutil */}
+            {showGridLines && (
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-cyan-400/30" />
+                <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-cyan-400/30" />
+              </div>
+            )}
+
+            {/* MARCADORES SOBRE O MAPA COM ALINHAMENTO GEOGRÁFICO EXATO (20%, 84%) */}
+            {activeMarkers.map((m) => {
+              const isSel = selectedMarker?.id === m.id;
+              const leftPct = (m.nx * 0.5 + 0.5) * 100;
+              const topPct = (m.ny * 0.5 + 0.5) * 100;
+
+              return (
+                <div
+                  key={m.id}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setSelectedMarkerId(m.id);
+                    setDraggingMarkerId(m.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (m.targetWorldMapId) {
+                      onSwitchToRegionalMapEditor(m.targetWorldMapId, activePlanet?.id, m.id);
+                    } else {
+                      onCreateNewRegionalMapForMarker(m.id, m.name, activePlanet?.id);
+                    }
+                  }}
+                  style={{
+                    left: `${leftPct}%`,
+                    top: `${topPct}%`,
+                    transform: 'translate(-20%, -84%)',
+                  }}
+                  className={`absolute group cursor-grab active:cursor-grabbing z-20 ${
+                    isSel ? 'scale-110 z-30' : 'hover:scale-105'
+                  }`}
+                >
+                  {/* Retículo Alvo Subpixel (Bulls-eye Anchor Point) */}
+                  <div
+                    className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-amber-400 bg-amber-500/40 pointer-events-none shadow-sm flex items-center justify-center"
+                    style={{ left: '20%', top: '84%' }}
+                  >
+                    <div className="w-1 h-1 rounded-full bg-amber-300" />
+                  </div>
+
+                  <OrnateMapMarkerPin
+                    name={m.name}
+                    iconPng={m.iconPng}
+                    iconEmoji={m.iconEmoji || '🏰'}
+                    badgeText={m.badgeText || 'REGIÃO'}
+                    status={m.status || 'unlocked'}
+                    isSelected={isSel}
+                    scale={m.scale || 1.0}
+                    pngScale={m.pngScale}
+                    pngOffsetX={m.pngOffsetX}
+                    pngOffsetY={m.pngOffsetY}
+                  />
+
+                  {isSel && (
+                    <div
+                      className="absolute -inset-2.5 rounded-full pointer-events-none animate-ping opacity-30"
+                      style={{ backgroundColor: activeAtmosphereColor }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* HUD DE COORDENADAS DO CURSOR (PRECISÃO CARTOGRÁFICA) */}
+        {hoveredCoords && (
+          <div className="absolute bottom-3 left-3 z-30 px-3 py-1.5 rounded-xl bg-zinc-950/85 backdrop-blur-md border border-zinc-800 text-[10px] font-mono text-zinc-300 flex items-center gap-2 pointer-events-none shadow-xl">
+            <span className="text-amber-400 font-bold flex items-center gap-1">
+              <Compass className="w-3.5 h-3.5" />
+              <span>Cursor:</span>
+            </span>
+            <span className="text-cyan-300 font-semibold">
+              {hoveredCoords.ny <= 0
+                ? `${Math.abs(hoveredCoords.ny * 90).toFixed(1)}°N`
+                : `${(hoveredCoords.ny * 90).toFixed(1)}°S`},{' '}
+              {hoveredCoords.nx >= 0
+                ? `${(hoveredCoords.nx * 180).toFixed(1)}°E`
+                : `${Math.abs(hoveredCoords.nx * 180).toFixed(1)}°W`}
+            </span>
+            <span className="text-zinc-600">|</span>
+            <span className="text-zinc-400">
+              nx: {hoveredCoords.nx.toFixed(3)}, ny: {hoveredCoords.ny.toFixed(3)}
+            </span>
+          </div>
+        )}
+
+        {/* MINI GLOBO 3D HUD (DISCRETO NO CANTO) */}
+        <div className="absolute bottom-3 right-3 z-30">
+          {showMiniGlobeHud ? (
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/85 backdrop-blur-md p-2 shadow-2xl space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] text-zinc-400 border-b border-zinc-850 pb-1">
+                <span className="font-bold text-amber-300">Globo 3D Live</span>
+                <button
+                  type="button"
+                  onClick={() => setShowMiniGlobeHud(false)}
+                  className="hover:text-white p-0.5 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+
+              <div className="flex justify-center bg-[#010309] rounded-lg border border-zinc-850 p-1">
+                <InteractiveMiniGlobe
+                  textureUrl={activeTextureUrl}
+                  atmosphereColor={activeAtmosphereColor}
+                  hasRings={activePlanet?.hasRings}
+                  markers={activeMarkers}
+                  selectedMarkerId={selectedMarkerId}
+                  width={160}
+                  height={160}
+                  onSelectMarker={(id) => setSelectedMarkerId(id)}
+                  onGlobeClick={handleMiniGlobeClick}
+                />
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowMiniGlobeHud(true)}
+              className="p-2 rounded-xl bg-zinc-900/90 border border-zinc-750 text-amber-300 text-[11px] font-bold flex items-center gap-1.5 shadow-xl hover:bg-zinc-800 cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Globo 3D</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

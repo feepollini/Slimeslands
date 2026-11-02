@@ -16,42 +16,34 @@ import {
   renderGoldDividerHHtml,
   renderGoldDividerVHtml,
 } from '../components/OrnateFrameHtml';
+import {
+  isMagicCard,
+  getCardCost,
+  getCardRank,
+  getCardRankWeight,
+  buildBalancedPlayerDeck,
+  getDeckCompositionStats,
+} from '../../core/DeckBuilder';
 
-export function getCardRank(card: any): string {
-  if (!card) return 'C';
-  const raw =
-    card.rank ||
-    card.cardRank ||
-    card.cardData?.cardRank ||
-    card.matrixCard?.cardRank ||
-    card.meta?.rank;
-  if (raw && typeof raw === 'string') {
-    const u = raw.toUpperCase().trim();
-    if (['S', 'A', 'B', 'C', 'D'].includes(u)) return u;
-  }
-  const rarity = (card.preferredRarity || card.rarity || '').toLowerCase();
-  if (rarity === 'legendary' || rarity === 'mitica' || rarity === 'mítica') return 'S';
-  if (rarity === 'epic' || rarity === 'épica' || rarity === 'epica') return 'A';
-  if (rarity === 'rare' || rarity === 'rara') return 'B';
-  return 'C';
-}
-
-export function getCardRankWeight(card: any): number {
-  const rank = getCardRank(card);
-  const weights: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
-  return weights[rank] || 1;
-}
+export {
+  isMagicCard,
+  getCardCost,
+  getCardRank,
+  getCardRankWeight,
+  buildBalancedPlayerDeck,
+  getDeckCompositionStats,
+};
 
 export function sortStackInstances(instances: any[]): any[] {
   return [...instances].sort((a, b) => {
     const wA = getCardRankWeight(a);
     const wB = getCardRankWeight(b);
     if (wB !== wA) return wB - wA;
-    const pvA = Number(a.pv || a.basePv || a.pvNumber || 0);
-    const pvB = Number(b.pv || b.basePv || b.pvNumber || 0);
+    const pvA = Number(a.pv || a.basePv || a.pvNumber || a.df || a.playerDefenseBonus || 0);
+    const pvB = Number(b.pv || b.basePv || b.pvNumber || b.df || b.playerDefenseBonus || 0);
     if (pvB !== pvA) return pvB - pvA;
-    const atkA = Number(a.atk || a.baseAtk || a.maxDamage || 0);
-    const atkB = Number(b.atk || b.baseAtk || a.maxDamage || 0);
+    const atkA = Number(a.atk || a.baseAtk || a.maxDamage || a.specialAttack?.damage || 0);
+    const atkB = Number(b.atk || b.baseAtk || a.maxDamage || b.specialAttack?.damage || 0);
     return atkB - atkA;
   });
 }
@@ -157,9 +149,7 @@ export class ArsenalScreen {
             .fill(null)
             .map((_, i) => this.resolveCardEntry(parsed.cards[i]));
         } else {
-          this.preDeckCards = Array(12)
-            .fill(null)
-            .map((_, i) => this.templates[i] || null);
+          this.preDeckCards = buildBalancedPlayerDeck(this.templates, 12);
         }
         if (Array.isArray(parsed.artifacts)) {
           this.preDeckArtifacts = [0, 1, 2].map((i) => {
@@ -187,9 +177,7 @@ export class ArsenalScreen {
       }
     } catch (_) {}
 
-    this.preDeckCards = Array(12)
-      .fill(null)
-      .map((_, i) => this.templates[i] || null);
+    this.preDeckCards = buildBalancedPlayerDeck(this.templates, 12);
     this.preDeckArtifacts = [
       this.artifacts[0] || null,
       this.artifacts[1] || null,
@@ -237,7 +225,11 @@ export class ArsenalScreen {
         (c) =>
           (c.name || c.title || '').toLowerCase().includes(q) ||
           (c.race || '').toLowerCase().includes(q) ||
-          (c.class || '').toLowerCase().includes(q)
+          (c.class || '').toLowerCase().includes(q) ||
+          (c.entityType || '').toLowerCase().includes(q) ||
+          (c.type || '').toLowerCase().includes(q) ||
+          (isMagicCard(c) && (q.includes('mag') || q.includes('spel') || q.includes('feitic'))) ||
+          (!isMagicCard(c) && (q.includes('cria') || q.includes('slim')))
       );
     }
     if (this.rarityFilter !== 'all') {
@@ -286,6 +278,7 @@ export class ArsenalScreen {
 
     const isLandscape = this.isLandscapeMode || window.innerWidth > window.innerHeight;
     const filledCount = this.preDeckCards.filter(Boolean).length;
+    const deckStats = getDeckCompositionStats(this.preDeckCards);
     const filteredEntries = this.getFilteredCards();
 
     const deckSelectorButtonsHtml = [1, 2, 3]
@@ -297,26 +290,39 @@ export class ArsenalScreen {
       .join('');
 
     const deck12GridHtml = this.preDeckCards
-      .map(
-        (card, i) => `
+      .map((card, i) => {
+        const isMag = isMagicCard(card);
+        const rank = card ? getCardRank(card) : '';
+        const borderColor = card
+          ? isMag
+            ? '1.5px solid #c084fc'
+            : '1.5px solid #f5d98b'
+          : '1.5px dashed rgba(212, 168, 75, 0.55)';
+        const boxShadow = card
+          ? isMag
+            ? '0 8px 18px rgba(168,85,247,0.35)'
+            : '0 8px 18px rgba(0,0,0,0.6)'
+          : 'none';
+        return `
         <div data-predeck-idx="${i}" style="width:100%; aspect-ratio:680/990; position:relative; overflow:hidden; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; background:${
           card ? '#0b1830' : 'rgba(8, 20, 42, 0.55)'
-        }; border:${
-          card ? '1.5px solid #f5d98b' : '1.5px dashed rgba(212, 168, 75, 0.55)'
-        }; box-shadow:${card ? '0 8px 18px rgba(0,0,0,0.6)' : 'none'};" title="${
-          card ? `${card.name || card.title} (Toque para abrir em Tela Cheia)` : `Slot ${i + 1}`
+        }; border:${borderColor}; box-shadow:${boxShadow};" title="${
+          card ? `${isMag ? '🔮 [MAGIA]' : '🐉 [SLIME]'} ${card.name || card.title} (Rank ${rank}) - Toque para inspecionar` : `Slot ${i + 1}`
         }">
           ${
             card
               ? `
                 ${this.renderCardThumbHtml(card)}
+                <div style="position:absolute; top:4px; left:4px; padding:1px 5px; border-radius:4px; background:${isMag ? 'rgba(168,85,247,0.92)' : 'rgba(16,185,129,0.92)'}; font-size:7px; font-weight:900; color:#fff; z-index:11; box-shadow:0 1px 4px rgba(0,0,0,0.5);">
+                  ${isMag ? '🔮 MAG' : '🐉 CRI'}
+                </div>
                 <button type="button" data-quick-remove-predeck="${i}" style="position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:9999px; background:rgba(153,27,27,0.92); border:1px solid #fecaca; color:#fff; font-size:10px; font-weight:900; display:flex; align-items:center; justify-content:center; z-index:12; cursor:pointer; padding:0;" title="Remover do Deck">✕</button>
               `
               : `<span style="font-family:var(--font-display); font-size:11px; font-weight:800; color:rgba(245,217,139,0.6);">${i + 1}</span>`
           }
         </div>
-      `
-      )
+      `;
+      })
       .join('');
 
     const artifacts3SlotsHtml = [0, 1, 2]
@@ -360,20 +366,31 @@ export class ArsenalScreen {
                 (c) => c && (c.name === cardKey || c.title === cardKey || c.id === card.id)
               ).length;
               const isFav = this.favorites.includes(cardKey);
+              const isMag = isMagicCard(card);
+              const cost = getCardCost(card);
               return `
                 <div data-col-card="${idx}" style="width:100%; aspect-ratio:680/990; position:relative; overflow:hidden; border-radius:11px; cursor:pointer; background:#0b1830; border:${
-                inDeckCount > 0 ? '2px solid #f5d98b' : '1.5px solid rgba(212,168,75,0.42)'
+                inDeckCount > 0
+                  ? (isMag ? '2px solid #c084fc' : '2px solid #f5d98b')
+                  : (isMag ? '1.5px solid rgba(168,85,247,0.45)' : '1.5px solid rgba(212,168,75,0.42)')
               }; box-shadow:${
                 inDeckCount > 0
                   ? '0 10px 22px rgba(0,0,0,0.68), 0 0 14px rgba(245,217,139,0.45)'
                   : '0 8px 18px rgba(0,0,0,0.55)'
               };">
                   ${this.renderCardThumbHtml(card)}
-                  ${
-                    inDeckCount > 0
-                      ? `<div style="position:absolute; top:5px; left:5px; padding:2px 6px; border-radius:5px; background:rgba(6,35,86,0.94); border:1px solid #f5d98b; font-family:var(--font-display); font-weight:900; font-size:8px; color:#fff3c2; z-index:10; box-shadow:0 2px 6px rgba(0,0,0,0.6);">NO DECK x${inDeckCount}</div>`
-                      : ''
-                  }
+                  <div style="position:absolute; top:5px; left:5px; display:flex; flex-direction:column; gap:3px; z-index:10;">
+                    <div style="padding:2px 6px; border-radius:5px; background:${isMag ? 'rgba(168,85,247,0.92)' : 'rgba(16,185,129,0.92)'}; font-family:var(--font-display); font-weight:900; font-size:7.5px; color:#fff; box-shadow:0 1px 4px rgba(0,0,0,0.6); display:flex; align-items:center; gap:3px;">
+                      <span>${isMag ? '🔮 MAG' : '🐉 CRI'}</span>
+                      <span style="opacity:0.85;">•</span>
+                      <span>${cost} ${isMag ? '💎' : '⚡'}</span>
+                    </div>
+                    ${
+                      inDeckCount > 0
+                        ? `<div style="padding:2px 6px; border-radius:5px; background:rgba(6,35,86,0.94); border:1px solid #f5d98b; font-family:var(--font-display); font-weight:900; font-size:7.5px; color:#fff3c2; box-shadow:0 2px 6px rgba(0,0,0,0.6);">NO DECK x${inDeckCount}</div>`
+                        : ''
+                    }
+                  </div>
                   ${
                     this.isStacked && count > 1
                       ? `<div style="position:absolute; top:5px; right:5px; padding:2px 6px; border-radius:5px; background:rgba(43,31,20,0.92); border:1px solid #d4a84b; font-family:var(--font-display); font-weight:800; font-size:8.5px; color:#fff3c2; z-index:10;">x${count}</div>`
@@ -547,7 +564,7 @@ export class ArsenalScreen {
                 ${deckSelectorButtonsHtml}
               </div>
             </div>
-            <div class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:10px; color:#8c6518;">${filledCount}/12 CARTAS</div>
+            <div class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:10px; color:#8c6518;">${filledCount}/12 (${deckStats.creatures} 🐉 / ${deckStats.spells} 🔮)</div>
           </div>
 
           <div style="display:grid; grid-template-columns:68% 14px 1fr; gap:12px; align-items:center;">
@@ -655,7 +672,7 @@ export class ArsenalScreen {
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
             <span style="font-family:var(--font-display); font-weight:900; font-size:12px; color:#fff3c2; text-shadow:0 2px 4px rgba(0,0,0,0.88); text-transform:uppercase;">PREPARAÇÃO DO DECK</span>
             <button type="button" id="arsenal-collapse-toggle" class="pearl-pill" style="padding:3px 10px; border-radius:9999px; font-family:var(--font-display); font-weight:800; font-size:9px; color:#8c6518; cursor:pointer;">
-              ${this.isPreDeckCollapsed ? `Expandir (${filledCount}/12) ⌄` : `Recolher (${filledCount}/12) ⌃`}
+              ${this.isPreDeckCollapsed ? `Expandir (${filledCount}/12 · ${deckStats.creatures}🐉 ${deckStats.spells}🔮) ⌄` : `Recolher (${filledCount}/12 · ${deckStats.creatures}🐉 ${deckStats.spells}🔮) ⌃`}
             </button>
           </div>
           <div style="display:flex; gap:6px;">
@@ -834,12 +851,10 @@ export class ArsenalScreen {
 
     container.querySelector('#arsenal-autofill-deck')?.addEventListener('click', () => {
       SoundManager.play('ui_confirm');
-      const sorted = sortStackInstances(this.templates);
-      this.preDeckCards = Array(12)
-        .fill(null)
-        .map((_, idx) => sorted[idx % sorted.length] || null);
+      this.preDeckCards = buildBalancedPlayerDeck(this.templates, 12);
       this.saveCurrentSlot();
       this.paint(container);
+      this.showAutoFillToast(container);
     });
 
     container.querySelectorAll<HTMLElement>('[data-quick-remove-predeck]').forEach((btn) => {
@@ -1101,5 +1116,24 @@ export class ArsenalScreen {
         }
       });
     });
+  }
+
+  protected showAutoFillToast(container: HTMLElement) {
+    const stats = getDeckCompositionStats(this.preDeckCards);
+    const existing = container.querySelector('#arsenal-autofill-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'arsenal-autofill-toast';
+    toast.style.cssText =
+      'position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:99999; background:linear-gradient(135deg, rgba(16,185,129,0.96), rgba(147,51,234,0.96)); border:1.5px solid #ffd700; color:#fff; border-radius:9999px; padding:10px 22px; font-family:var(--font-display); font-size:11px; font-weight:900; letter-spacing:0.04em; text-transform:uppercase; box-shadow:0 8px 30px rgba(0,0,0,0.85); display:flex; align-items:center; gap:8px; pointer-events:none; transition:all 0.35s ease;';
+    toast.innerHTML = `<span>⚡ DECK EQUILIBRADO:</span> <span style="color:#a7f3d0;">${stats.creatures} CRIATURAS</span> <span style="color:#e9d5ff;">& ${stats.spells} MAGIAS</span> <span style="color:#fde047; font-size:9.5px;">(Média: ${stats.avgCost} | ⭐ S: ${stats.rankCounts.S || 0})</span>`;
+
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(12px)';
+      setTimeout(() => toast.remove(), 400);
+    }, 2800);
   }
 }

@@ -49,12 +49,11 @@ function computeQuickSignature(input: string): string {
 export function isBase64DataUrl(url: unknown): url is string {
   if (typeof url !== 'string') return false;
   if (!url.startsWith('data:')) return false;
-  // SVGs vetoriais inline minúsculos (< 2KB) podem permanecer inline se não forem base64 pesado,
-  // mas qualquer imagem/vídeo/áudio Base64 é persistido como arquivo real no disco.
-  if (url.startsWith('data:image/svg+xml;utf8,') && url.length < 2048) {
-    return false;
+  // SVGs inline sem base64 não precisam ser desidratados para arquivos físicos
+  if (url.startsWith('data:image/svg+xml')) {
+    return url.includes(';base64,');
   }
-  return url.includes(';base64,') || url.length > 1024;
+  return url.includes(';base64,');
 }
 
 /**

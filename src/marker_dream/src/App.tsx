@@ -35,11 +35,13 @@ import { QuestSoloScreen } from './components/quests/QuestSoloScreen';
 import { HudUniversalSoloScreen } from './components/screens/HudUniversalSoloScreen';
 import { MindMapSoloScreen } from './components/mindmap/MindMapSoloScreen';
 import { MotionSoloScreen } from './components/motion/MotionSoloScreen';
+import { AudioStudioSoloScreen } from './components/audio/AudioStudioSoloScreen';
+import { SkillsForgeSoloScreen } from './components/skills/SkillsForgeSoloScreen';
 import { saveSingleLevelSlot } from './utils/storage';
 
 export default function App() {
-  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio'
-  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio'>(() => {
+  // Engine Screen Architecture: 'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio' | 'audio_studio' | 'skills_forge'
+  const [hubView, setHubView] = useState<'intro' | 'dashboard' | 'editor' | 'play' | 'world_map' | 'characters' | 'inventory' | 'quests' | 'hud_universal' | 'mindmap' | 'motion_studio' | 'audio_studio' | 'skills_forge'>(() => {
     if (typeof window !== 'undefined') {
       const skip = localStorage.getItem('marker_dream_skip_intro');
       if (skip === 'true') {
@@ -372,11 +374,39 @@ export default function App() {
         }}
         onOpenMindMap={() => setHubView('mindmap')}
         onOpenMotionStudio={() => setHubView('motion_studio')}
+        onOpenAudioStudio={() => setHubView('audio_studio')}
+        onOpenSkillsForge={() => setHubView('skills_forge')}
         onUpdateProject={(updates) => {
           if (updates && typeof updates === 'object' && !(updates instanceof Event)) {
             setProject((prev) => ({ ...prev, ...updates }));
           }
         }}
+      />
+    );
+  }
+
+  // Screen 2.76: Dedicated Standalone Audio Studio (Fish Audio Engine)
+  if (hubView === 'audio_studio') {
+    return (
+      <AudioStudioSoloScreen
+        project={project}
+        setProject={setProject}
+        onGoToDashboard={() => setHubView('dashboard')}
+        onGoToEditor={() => setHubView('editor')}
+        onOpenSkillsForge={() => setHubView('skills_forge')}
+      />
+    );
+  }
+
+  // Screen 2.77: Dedicated Standalone Skills Forge (VFX Studio Pro Arena)
+  if (hubView === 'skills_forge') {
+    return (
+      <SkillsForgeSoloScreen
+        project={project}
+        setProject={setProject}
+        onGoToDashboard={() => setHubView('dashboard')}
+        onGoToEditor={() => setHubView('editor')}
+        onOpenAudioStudio={() => setHubView('audio_studio')}
       />
     );
   }
@@ -631,6 +661,8 @@ export default function App() {
         onOpenHudUniversal={() => setHubView('hud_universal')}
         onOpenMindMap={() => setHubView('mindmap')}
         onOpenMotionStudio={() => setHubView('motion_studio')}
+        onOpenAudioStudio={() => setHubView('audio_studio')}
+        onOpenSkillsForge={() => setHubView('skills_forge')}
       />
 
       {/* Régua de TELAS (canvas tabs) */}

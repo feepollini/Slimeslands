@@ -6,6 +6,67 @@ import { spawnCombatBurst } from './ParticleUtils';
  * Ported from battleMain.ts to reduce file size and increase modularity.
  */
 
+export function resetBattleTransforms() {
+  if (typeof document !== 'undefined') {
+    if (document.body && document.body.style.transform) document.body.style.transform = '';
+    if (document.body && document.body.style.filter) document.body.style.filter = '';
+    const board = document.getElementById('board');
+    if (board) gsap.set(board, { clearProps: 'transform,x,y,rotation,filter' });
+    const screen = document.getElementById('battle-screen');
+    if (screen) gsap.set(screen, { clearProps: 'transform,x,y,rotation,filter' });
+  }
+}
+
+export function safeShakeScreen(options: {
+  x?: number;
+  y?: number;
+  rotation?: number;
+  duration?: number;
+  repeat?: number;
+  delay?: number;
+}) {
+  if (typeof document === 'undefined') return;
+  const target = document.getElementById('board') || document.getElementById('battle-screen') || document.body;
+  if (!target) return;
+
+  const repeatCount = (options.repeat ?? 7) % 2 === 0 ? (options.repeat ?? 7) + 1 : (options.repeat ?? 7);
+
+  gsap.killTweensOf(target, 'x,y,rotation');
+  gsap.to(target, {
+    x: options.x ?? 0,
+    y: options.y ?? 0,
+    rotation: options.rotation ?? 0,
+    duration: options.duration ?? 0.04,
+    yoyo: true,
+    repeat: repeatCount,
+    delay: options.delay ?? 0,
+    onComplete: () => {
+      gsap.set(target, { clearProps: 'transform,x,y,rotation' });
+      if (document.body && document.body.style.transform) {
+        document.body.style.transform = '';
+      }
+    },
+  });
+}
+
+export function safeScreenFilter(filter: string, duration: number = 0.6) {
+  if (typeof document === 'undefined') return;
+  const target = document.getElementById('battle-screen') || document.getElementById('board') || document.body;
+  if (!target) return;
+  gsap.to(target, {
+    filter,
+    duration: duration / 2,
+    yoyo: true,
+    repeat: 1,
+    onComplete: () => {
+      gsap.set(target, { clearProps: 'filter' });
+      if (document.body && document.body.style.filter) {
+        document.body.style.filter = '';
+      }
+    },
+  });
+}
+
 export function spawnParticles(x: number, y: number, color = '#ff4400', count = 18) {
   const c = document.getElementById('particle-container');
   if (!c) return;
@@ -35,7 +96,7 @@ export function deathExplosion(el: Element, onDone?: () => void) {
   spawnParticles(centerX, centerY, '#ffffff', 10);
 
   // Screen shake on death
-  gsap.to(document.getElementById('board'), { x: 10, y: -5, duration: 0.05, repeat: 7, yoyo: true });
+  safeShakeScreen({ x: 10, y: -5, duration: 0.05, repeat: 7 });
 
   gsap.to(el, {
     scale: 2.2,
@@ -47,23 +108,47 @@ export function deathExplosion(el: Element, onDone?: () => void) {
   });
 }
 
-export function spawnFloatingText(slotIdx: number, text: string, color = '#ff4444', fontSize = '1.1rem') {
-  const slot = document.querySelector(`[data-idx="${slotIdx}"]`);
-  const container = document.getElementById('float-container');
-  if (!slot || !container) return;
-  const rect = slot.getBoundingClientRect();
+export function spawnFloatingText(
+  slotIdxOrX: number,
+  textOrY: string | number,
+  colorOrText: string = '#ff4444',
+  fontSizeOrColor: string = '1.1rem'
+) {
+  const container = document.getElementById('float-container') || document.body;
+  let posX = 0;
+  let posY = 0;
+  let displayText = '';
+  let displayColor = '#ff4444';
+  let displayFontSize = '1.1rem';
+
+  if (typeof textOrY === 'number') {
+    posX = slotIdxOrX;
+    posY = textOrY;
+    displayText = String(colorOrText || '');
+    displayColor = fontSizeOrColor || '#ff4444';
+  } else {
+    const slot = document.querySelector(`[data-idx="${slotIdxOrX}"]`);
+    if (!slot) return;
+    const rect = slot.getBoundingClientRect();
+    posX = rect.left + rect.width / 2;
+    posY = rect.top + rect.height / 2;
+    displayText = textOrY;
+    displayColor = colorOrText;
+    displayFontSize = fontSizeOrColor;
+  }
+
   const el = document.createElement('div');
-  el.textContent = text;
+  el.textContent = displayText;
   el.style.cssText = `
     position:fixed;
-    left:${rect.left + rect.width / 2}px;
-    top:${rect.top + rect.height / 2}px;
+    left:${posX}px;
+    top:${posY}px;
     transform:translate(-50%,-50%);
-    color:${color};
-    font-size:${fontSize};
+    color:${displayColor};
+    font-size:${displayFontSize};
     font-weight:900;
     font-family:'Orbitron',monospace;
-    text-shadow:0 0 8px ${color},0 0 20px ${color};
+    text-shadow:0 0 8px ${displayColor},0 0 20px ${displayColor};
     pointer-events:none;
     white-space:nowrap;
     z-index:9001;
@@ -257,7 +342,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                   .to(impact, { opacity: 0, scale: 3.5, duration: 0.8 });
                 
                 gsap.to(targetEl, { scale: 0.75, rotation: 5, duration: 0.08, yoyo: true, repeat: 1 });
-                gsap.to(document.body, { y: 25, duration: 0.05, yoyo: true, repeat: 10 });
+                safeShakeScreen({ y: 25, duration: 0.05, repeat: 9 });
                 break;
             }
             case 'vfx_dimensional_slash': {
@@ -298,7 +383,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                 tl.add(() => spawnCombatBurst(overlay, '#ffffaa', 60, 400), 0.5)
                   .to(flashFill, { opacity: 0, duration: 2.0 }, 0.5);
                   
-                gsap.to(document.body, { x: 30, y: -30, rotation: 3, yoyo: true, repeat: 20, duration: 0.04, delay: 0.5 });
+                safeShakeScreen({ x: 25, y: -25, rotation: 2, duration: 0.04, repeat: 15, delay: 0.5 });
                 break;
             }
             case 'vfx_fire_persistent':
@@ -316,7 +401,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                   .to(heat, { opacity: 0, duration: 1.2 });
                 
                 gsap.to(targetEl, { filter: 'brightness(3) saturate(3) hue-rotate(-20deg)', duration: 0.4, yoyo: true, repeat: 1 });
-                gsap.to(document.body, { filter: 'sepia(1) contrast(1.5)', duration: 0.8, yoyo: true, repeat: 1 });
+                safeScreenFilter('sepia(1) contrast(1.5)', 0.8);
                 break;
             }
             case 'vfx_ice_prison':
@@ -420,7 +505,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                 tl.to(rock, { opacity: 1, scaleY: 2, duration: 0.1 })
                   .to(rock, { opacity: 0, scaleX: 1.5, scaleY: 0.5, duration: 0.4 });
                 gsap.to(targetEl, { y: -20, duration: 0.1, yoyo: true, repeat: 1, ease: 'power2.out' });
-                gsap.to(document.body, { y: 15, duration: 0.05, yoyo: true, repeat: 5 });
+                safeShakeScreen({ y: 15, duration: 0.05, repeat: 7 });
                 break;
             }
             case 'vfx_acid_rain': {
@@ -475,7 +560,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                 tl.to(wave, { left: '200%', duration: 0.8, ease: 'power2.in' })
                   .add(() => spawnCombatBurst(overlay, '#51c5ff', 40, 350));
                 gsap.to(targetEl, { x: 80, rotation: 15, duration: 0.4, yoyo: true, repeat: 1, delay: 0.2, ease: 'power2.out' });
-                gsap.to(document.body, { x: -20, duration: 0.1, yoyo: true, repeat: 8 });
+                safeShakeScreen({ x: -20, duration: 0.08, repeat: 9 });
                 break;
             }
             case 'vfx_time_fracture': {
@@ -489,7 +574,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                    gsap.to(slice, { opacity: 1, delay: 0.1 + i*0.1, duration: 0.05 });
                    gsap.to(slice, { opacity: 0, delay: 0.6, duration: 0.1 });
                 }
-                gsap.to(document.body, { filter: 'sepia(1) hue-rotate(-90deg)', duration: 0.6, yoyo: true, repeat: 1 });
+                safeScreenFilter('sepia(1) hue-rotate(-90deg)', 0.6);
                 break;
             }
             case 'vfx_meteor_strike': {
@@ -512,7 +597,7 @@ export async function playVFX(vfxId: string, targetEl: HTMLElement, _sourceEl?: 
                   .to(fireball, { opacity: 0, scale: 4, duration: 0.2 })
                   .to(shadow, { opacity: 0, duration: 0.8 });
                   
-                gsap.to(document.body, { y: 40, x: 20, rotation: 4, duration: 0.05, repeat: 15, yoyo: true, delay: 0.9 });
+                safeShakeScreen({ y: 35, x: 15, rotation: 3, duration: 0.05, repeat: 15, delay: 0.9 });
                 gsap.to(targetEl, { scale: 0.6, y: 100, duration: 0.1, yoyo: true, repeat: 1, delay: 0.9 });
                 break;
             }
